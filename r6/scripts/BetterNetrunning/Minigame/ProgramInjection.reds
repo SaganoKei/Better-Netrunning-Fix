@@ -1,7 +1,8 @@
 module BetterNetrunning.Minigame
 
 import BetterNetrunningConfig.*
-import BetterNetrunning.Common.*
+import BetterNetrunning.Core.*
+import BetterNetrunning.Utils.*
 
 /*
  * ============================================================================
@@ -63,7 +64,7 @@ public final func InjectBetterNetrunningPrograms(programs: script_ref<array<Mini
     }
 
   if !IsDefined(device) {
-    BNLog("[InjectBetterNetrunningPrograms] ERROR: device (SharedGameplayPS) is null!");
+    BNError("InjectBetterNetrunningPrograms", "device (SharedGameplayPS) is null!");
     return;
   }
 
@@ -95,38 +96,50 @@ public final func InjectBetterNetrunningPrograms(programs: script_ref<array<Mini
 
   // TURRETS: Access Points, Computers, or Netrunners
   // Backdoor devices do NOT have turret access (security restriction)
-  if !device.m_betterNetrunningBreachedTurrets && (isAccessPoint || isComputer || isNetrunner) {
+  if !BreachStatusUtils.IsTurretsBreached(device) && (isAccessPoint || isComputer || isNetrunner) {
     let turretAccessProgram: MinigameProgramData;
-    turretAccessProgram.actionID = t"MinigameAction.UnlockTurretQuickhacks";
-    turretAccessProgram.programName = n"LocKey#34844";
+    turretAccessProgram.actionID = BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS();
+    turretAccessProgram.programName = BNConstants.LOCKEY_ACCESS();
     ArrayInsert(Deref(programs), 0, turretAccessProgram);
-    }
+    BNDebug("ProgramInjection", "Turret program added (isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isNetrunner=" + ToString(isNetrunner) + ")");
+  } else {
+    BNTrace("ProgramInjection", "Turret program SKIPPED (breached=" + ToString(BreachStatusUtils.IsTurretsBreached(device)) + ", isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isNetrunner=" + ToString(isNetrunner) + ")");
+  }
 
   // CAMERAS: Access Points, Computers, Backdoors, or Netrunners
   // Backdoor devices HAVE camera access (surveillance network connection)
-  if !device.m_betterNetrunningBreachedCameras && (isAccessPoint || isComputer || isBackdoor || isNetrunner) {
+  if !BreachStatusUtils.IsCamerasBreached(device) && (isAccessPoint || isComputer || isBackdoor || isNetrunner) {
     let cameraAccessProgram: MinigameProgramData;
-    cameraAccessProgram.actionID = t"MinigameAction.UnlockCameraQuickhacks";
-    cameraAccessProgram.programName = n"LocKey#34844";
+    cameraAccessProgram.actionID = BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS();
+    cameraAccessProgram.programName = BNConstants.LOCKEY_ACCESS();
     ArrayInsert(Deref(programs), 0, cameraAccessProgram);
-    }
+    BNDebug("ProgramInjection", "Camera program added (isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isBackdoor=" + ToString(isBackdoor) + ", isNetrunner=" + ToString(isNetrunner) + ")");
+  } else {
+    BNTrace("ProgramInjection", "Camera program SKIPPED (breached=" + ToString(BreachStatusUtils.IsCamerasBreached(device)) + ", isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isBackdoor=" + ToString(isBackdoor) + ", isNetrunner=" + ToString(isNetrunner) + ")");
+  }
 
   // NPCs: Access Points, Computers, Unconscious NPCs, or Netrunners
   // Backdoor devices do NOT have NPC access (requires full network or direct neural link)
-  if !device.m_betterNetrunningBreachedNPCs && (isAccessPoint || isComputer || isUnconsciousNPC || isNetrunner) {
+  if !BreachStatusUtils.IsNPCsBreached(device) && (isAccessPoint || isComputer || isUnconsciousNPC || isNetrunner) {
     let npcAccessProgram: MinigameProgramData;
-    npcAccessProgram.actionID = t"MinigameAction.UnlockNPCQuickhacks";
-    npcAccessProgram.programName = n"LocKey#34844";
+    npcAccessProgram.actionID = BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS();
+    npcAccessProgram.programName = BNConstants.LOCKEY_ACCESS();
     ArrayInsert(Deref(programs), 0, npcAccessProgram);
-    }
+    BNDebug("ProgramInjection", "NPC program added (isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isUnconsciousNPC=" + ToString(isUnconsciousNPC) + ", isNetrunner=" + ToString(isNetrunner) + ")");
+  } else {
+    BNTrace("ProgramInjection", "NPC program SKIPPED (breached=" + ToString(BreachStatusUtils.IsNPCsBreached(device)) + ", isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isUnconsciousNPC=" + ToString(isUnconsciousNPC) + ", isNetrunner=" + ToString(isNetrunner) + ")");
+  }
 
   // BASIC: All breach points (always available)
   // This is the root access program - available from any breach point
-  if !device.m_betterNetrunningBreachedBasic {
+  if !BreachStatusUtils.IsBasicBreached(device) {
     let basicAccessProgram: MinigameProgramData;
-    basicAccessProgram.actionID = t"MinigameAction.UnlockQuickhacks";
-    basicAccessProgram.programName = n"LocKey#34844";
+    basicAccessProgram.actionID = BNConstants.PROGRAM_UNLOCK_QUICKHACKS();
+    basicAccessProgram.programName = BNConstants.LOCKEY_ACCESS();
     ArrayInsert(Deref(programs), 0, basicAccessProgram);
-    }
+    BNDebug("ProgramInjection", "Basic program added");
+  } else {
+    BNTrace("ProgramInjection", "Basic program SKIPPED (breached=" + ToString(BreachStatusUtils.IsBasicBreached(device)) + ")");
+  }
 
 }

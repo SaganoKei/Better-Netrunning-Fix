@@ -17,11 +17,13 @@ registerForEvent("onInit", function()
     -- Load settings from file
     SettingsManager.Load()
 
+    -- Override Redscript config functions BEFORE UI build
+    SettingsManager.OverrideConfigFunctions()
+
     -- Setup NativeSettings UI
     local nativeSettings = GetMod("nativeSettings")
     if nativeSettings then
         NativeSettingsUI.Build(nativeSettings, SettingsManager, TweakDBSetup)
-        SettingsManager.OverrideConfigFunctions()
     else
         print("[Better Netrunning] NativeSettings not found")
     end

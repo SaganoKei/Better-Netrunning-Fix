@@ -3,6 +3,29 @@
 -- -----------------------------------------------------------------------------
 -- Configures CustomHackingSystem minigame for remote breach
 -- Requires: CustomHackingSystem v1.3.0+
+--
+-- CRITICAL ARCHITECTURE NOTES:
+-- RemoteBreach uses CustomHackingSystem's static minigame definition system.
+-- Daemon lists are defined HERE at initialization and CANNOT be filtered
+-- dynamically at runtime.
+--
+-- DAEMON LIST DESIGN:
+-- - ComputerRemoteBreach: Basic + Camera (represents "access point control")
+-- - DeviceRemoteBreach: Basic only (represents "single device control")
+-- - VehicleRemoteBreach: All 4 types (represents "full vehicle control")
+--
+-- These daemon lists are based on TARGET TYPE, not actual network composition.
+-- This is by design - daemons represent the CAPABILITIES granted by breaching
+-- that target type.
+--
+-- LIMITATION:
+-- BetterNetrunning's PhysicalRangeFilter and other dynamic daemon filters
+-- do NOT apply to RemoteBreach. The FilterPlayerPrograms() pipeline is not
+-- used by CustomHackingSystem - it has its own separate minigame system.
+--
+-- To change this behavior would require:
+-- 1. Modifying CustomHackingSystem API to support runtime daemon filtering, OR
+-- 2. Creating 48+ minigame variants (2^4 device types × 3 difficulties)
 -- -----------------------------------------------------------------------------
 
 RemoteBreach = {}
@@ -140,7 +163,7 @@ function RemoteBreach.Setup()
     -- Computer devices have network access, supporting Basic and Camera daemons
     local computerMinigameEasy = api.CreateHackingMinigame(
         "ComputerRemoteBreachEasy",
-        20.00,  -- timeLimit: 20 seconds
+        10.00,  -- timeLimit: 20 seconds
         5,      -- gridSize: 5x5
         -20,    -- extraDifficulty: easier
         7,      -- bufferSize
@@ -153,7 +176,7 @@ function RemoteBreach.Setup()
 
     local computerMinigameMedium = api.CreateHackingMinigame(
         "ComputerRemoteBreachMedium",
-        25.00,  -- timeLimit: 25 seconds
+        10.00,  -- timeLimit: 25 seconds
         6,      -- gridSize: 6x6
         10,     -- extraDifficulty: moderate
         8,      -- bufferSize
@@ -166,7 +189,7 @@ function RemoteBreach.Setup()
 
     local computerMinigameHard = api.CreateHackingMinigame(
         "ComputerRemoteBreachHard",
-        30.00,  -- timeLimit: 30 seconds
+        10.00,  -- timeLimit: 30 seconds
         7,      -- gridSize: 7x7
         30,     -- extraDifficulty: hard
         9,      -- bufferSize
@@ -183,7 +206,7 @@ function RemoteBreach.Setup()
     -- Generic devices (doors, terminals, etc.) support only Basic daemon
     local deviceMinigameEasy = api.CreateHackingMinigame(
         "DeviceRemoteBreachEasy",
-        20.00,
+        10.00,
         5,
         -20,
         7,
@@ -195,7 +218,7 @@ function RemoteBreach.Setup()
 
     local deviceMinigameMedium = api.CreateHackingMinigame(
         "DeviceRemoteBreachMedium",
-        25.00,
+        10.00,
         6,
         10,
         8,
@@ -207,7 +230,7 @@ function RemoteBreach.Setup()
 
     local deviceMinigameHard = api.CreateHackingMinigame(
         "DeviceRemoteBreachHard",
-        30.00,
+        10.00,
         7,
         30,
         9,
@@ -223,7 +246,7 @@ function RemoteBreach.Setup()
     -- Camera devices support Basic and Camera-specific daemons
     local cameraMinigameEasy = api.CreateHackingMinigame(
         "CameraRemoteBreachEasy",
-        20.00,
+        10.00,
         5,
         -20,
         7,
@@ -236,7 +259,7 @@ function RemoteBreach.Setup()
 
     local cameraMinigameMedium = api.CreateHackingMinigame(
         "CameraRemoteBreachMedium",
-        25.00,
+        10.00,
         6,
         10,
         8,
@@ -249,7 +272,7 @@ function RemoteBreach.Setup()
 
     local cameraMinigameHard = api.CreateHackingMinigame(
         "CameraRemoteBreachHard",
-        30.00,
+        10.00,
         7,
         30,
         9,
@@ -266,7 +289,7 @@ function RemoteBreach.Setup()
     -- Turret devices support Basic and Turret-specific daemons
     local turretMinigameEasy = api.CreateHackingMinigame(
         "TurretRemoteBreachEasy",
-        20.00,
+        10.00,
         5,
         -20,
         7,
@@ -279,7 +302,7 @@ function RemoteBreach.Setup()
 
     local turretMinigameMedium = api.CreateHackingMinigame(
         "TurretRemoteBreachMedium",
-        25.00,
+        10.00,
         6,
         10,
         8,
@@ -292,7 +315,7 @@ function RemoteBreach.Setup()
 
     local turretMinigameHard = api.CreateHackingMinigame(
         "TurretRemoteBreachHard",
-        30.00,
+        10.00,
         7,
         30,
         9,
@@ -308,7 +331,7 @@ function RemoteBreach.Setup()
     -- =========================================================================
     local vehicleMinigameEasy = api.CreateHackingMinigame(
         "VehicleRemoteBreachEasy",
-        20.00,
+        10.00,
         5,
         -20,
         7,
@@ -320,7 +343,7 @@ function RemoteBreach.Setup()
 
     local vehicleMinigameMedium = api.CreateHackingMinigame(
         "VehicleRemoteBreachMedium",
-        25.00,
+        10.00,
         6,
         10,
         8,
@@ -332,7 +355,7 @@ function RemoteBreach.Setup()
 
     local vehicleMinigameHard = api.CreateHackingMinigame(
         "VehicleRemoteBreachHard",
-        30.00,
+        10.00,
         7,
         30,
         9,

@@ -12,7 +12,7 @@ If you choose to endorse my mod page, I kindly ask that you also endorse theirs.
 
 ### Core Documentation
 
-- **[ARCHITECTURE_DESIGN.md](ARCHITECTURE_DESIGN.md)** - System Architecture & Design Document
+- **[ARCHITECTURE_DESIGN.md](.docs/ARCHITECTURE_DESIGN.md)** - System Architecture & Design Document
   - Complete architectural overview of Better Netrunning
   - Module structure and dependencies
   - Core subsystems (Breach Protocol, Remote Breach, Quickhacks, RadialUnlock)
@@ -20,28 +20,31 @@ If you choose to endorse my mod page, I kindly ask that you also endorse theirs.
   - Configuration system and extension points
   - Performance considerations
 
-- **[BREACH_SYSTEM_REFERENCE.md](BREACH_SYSTEM_REFERENCE.md)** - Breach System Technical Reference
+- **[BREACH_SYSTEM_REFERENCE.md](.docs/BREACH_SYSTEM_REFERENCE.md)** - Breach System Technical Reference
   - Detailed breach type comparison (AP Breach, Unconscious NPC Breach, Remote Breach)
   - Daemon injection logic and filtering pipeline
   - Minigame parameters and processing flow
   - Network access relaxation features
   - Device-specific daemon determination
 
-- **[TODO.md](TODO.md)** - Development Roadmap & Task List
+- **[TODO.md](.docs/TODO.md)** - Development Roadmap & Task List
   - High priority tasks with completion status
   - Customizable key bindings implementation plan
   - MOD compatibility improvements (Phase 2 & 3)
   - RadialBreach integration status
   - Technical implementation details and success criteria
 
-### Release Notes
+- **[FEATURE_OVERVIEW_JP.md](.docs/FEATURE_OVERVIEW_JP.md)** - 機能概要 (日本語)
+  - Better Netrunning の主要機能の日本語ドキュメント
 
-- **[RELEASE_NOTES_v0.5.0.md](RELEASE_NOTES_v0.5.0.md)** - Version 0.5.0 Release Notes
-  - Auto-Daemon System (PING auto-execution, Datamine scaling)
-  - RemoteBreach toggle controls
-  - Lua module refactoring (init.lua 424→33 lines)
-  - Code quality improvements (nesting reduction)
-  - Bug fixes and technical details
+- **[DEVELOPMENT_GUIDELINES.md](.docs/DEVELOPMENT_GUIDELINES.md)** - Development Guidelines
+  - Code style and best practices
+  - Testing procedures
+  - Contribution workflow
+
+- **[DOCUMENTATION_STANDARDS.md](.docs/DOCUMENTATION_STANDARDS.md)** - Documentation Standards
+  - Documentation structure and templates
+  - Writing guidelines
 
 ---
 
@@ -83,13 +86,13 @@ Settings can be configured via:
 - `r6/scripts/BetterNetrunning/config.reds` (manual editing)
 - CET console (advanced users)
 
-See [ARCHITECTURE_DESIGN.md](ARCHITECTURE_DESIGN.md#configuration-system) for detailed configuration options.
+See [ARCHITECTURE_DESIGN.md](.docs/ARCHITECTURE_DESIGN.md#configuration-system) for detailed configuration options.
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please check [TODO.md](TODO.md) for current development priorities.
+Contributions are welcome! Please check [TODO.md](.docs/TODO.md) for current development priorities and [DEVELOPMENT_GUIDELINES.md](.docs/DEVELOPMENT_GUIDELINES.md) for contribution guidelines.
 
 ---
 
@@ -107,7 +110,6 @@ Contributions are welcome! Please check [TODO.md](TODO.md) for current developme
 - **lorddarkflare** - Developer of [Breach Takedown Improved](https://www.nexusmods.com/cyberpunk2077/mods/14171), technical collaboration
 - **rpierrecollado** - Integration features, CustomHackingSystem prototyping, and testing
 
-For detailed collaboration history, see [COLLABORATION_THREAD.md](COLLABORATION_THREAD.md)
 ---
 
 ## 📄 License

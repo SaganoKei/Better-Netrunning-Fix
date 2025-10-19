@@ -11,22 +11,24 @@ public class BetterNetrunningSettings {
     // Breaching
     public static func EnableClassicMode() -> Bool { return false; }
     public static func AllowBreachingUnconsciousNPCs() -> Bool { return true; }
+    public static func QuickhackUnlockDurationHours() -> Int32 { return 6; }
 
     // RemoteBreach
-    public static func RemoteBreachEnabledComputer() -> Bool { return true; }
     public static func RemoteBreachEnabledDevice() -> Bool { return true; }
+    public static func RemoteBreachEnabledComputer() -> Bool { return true; }
+    public static func RemoteBreachEnabledCamera() -> Bool { return true; }
+    public static func RemoteBreachEnabledTurret() -> Bool { return true; }
     public static func RemoteBreachEnabledVehicle() -> Bool { return true; }
-    public static func RemoteBreachRAMCostPercent() -> Int32 { return 35; }
+    public static func RemoteBreachRAMCostPercent() -> Int32 { return 50; }
+
+    // Breach Failure Penalty
+    public static func BreachFailurePenaltyEnabled() -> Bool { return true; }
+    public static func RemoteBreachLockDurationMinutes() -> Int32 { return 10; }
 
     // Access Points
     public static func UnlockIfNoAccessPoint() -> Bool { return false; }
     public static func AutoDatamineBySuccessCount() -> Bool { return true; }
     public static func AutoExecutePingOnSuccess() -> Bool { return true; }
-    public static func AllowAllDaemonsOnAccessPoints() -> Bool { return false; }
-
-    // Removed Quickhacks
-    public static func BlockCameraDisableQuickhack() -> Bool { return false; }
-    public static func BlockTurretDisableQuickhack() -> Bool { return false; }
 
     // Always Unlocked Quickhacks
     public static func AlwaysAllowPing() -> Bool { return true; }
@@ -72,4 +74,5 @@ public class BetterNetrunningSettings {
 
     // Debug
     public static func EnableDebugLog() -> Bool { return false; }
+    public static func DebugLogLevel() -> Int32 { return 2; } // 0=ERROR, 1=WARNING, 2=INFO (default), 3=DEBUG, 4=TRACE
 }

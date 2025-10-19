@@ -48,6 +48,19 @@ protected func ExposeQuickHakcsIfNotConnnectedToAP() -> Bool {
  *
  * RATIONALE: The Radial Unlock system already provides standalone device hacking.
  * This change makes RemoteBreach action consistently available as an entry point.
+ *
+ * SIDE EFFECTS (20 call sites in vanilla code):
+ * 1. QuickHack icon display: DetermineInitialPlaystyle() (desired ✅)
+ * 2. Door QuickHack menu: Door.IsNetrunner() (desired ✅)
+ * 3. Network prerequisites: ConnectedToBackdoorPrereq (desired ✅)
+ * 4. Vanilla RemoteBreach addition: FinalizeGetQuickHackActions() (undesired ❌)
+ *
+ * NOTE: Side effect #4 is intentionally reversed by ReplaceVanillaRemoteBreachWithCustom()
+ * which removes vanilla RemoteBreach and adds BetterNetrunning's CustomRemoteBreach.
+ * This two-stage approach (enable → replace) is necessary because:
+ * - We need side effects #1-3 for QuickHack system to work on standalone devices
+ * - We cannot selectively disable side effect #4 without @replaceMethod on 290-line function
+ * - Current approach maintains modularity and MOD compatibility via @wrapMethod
  */
 @wrapMethod(SharedGameplayPS)
 public func IsConnectedToBackdoorDevice() -> Bool {

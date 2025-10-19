@@ -1,10 +1,14 @@
 module BetterNetrunning
 
-import BetterNetrunning.Common.*
-import BetterNetrunning.CustomHacking.*
+import BetterNetrunning.Core.*
+import BetterNetrunning.Utils.*
+import BetterNetrunning.Integration.*
+import BetterNetrunning.RemoteBreach.Core.*
+import BetterNetrunning.RemoteBreach.Actions.*
+import BetterNetrunning.RemoteBreach.UI.*
 import BetterNetrunning.Minigame.*
 import BetterNetrunning.Progression.*
-import BetterNetrunning.RadialUnlock.*
+import BetterNetrunning.RadialUnlock.Core.*
 import BetterNetrunningConfig.*
 
 // ==================== MODULE ARCHITECTURE ====================
@@ -22,8 +26,6 @@ import BetterNetrunningConfig.*
 //
 // DEVICE QUICKHACKS:
 // - Devices/DeviceQuickhacks.reds: Progressive unlock, action finalization, remote actions
-// - Devices/TurretExtensions.reds: Security turret quickhack extensions
-// - Devices/CameraExtensions.reds: Surveillance camera quickhack extensions
 //
 // NPC QUICKHACKS:
 // - NPCs/NPCQuickhacks.reds: Progressive unlock, permission calculation
@@ -36,12 +38,15 @@ import BetterNetrunningConfig.*
 // - Common/Events.reds: Persistent field definitions, breach events
 // - Common/DaemonUtils.reds: Daemon filtering utilities
 // - Common/DeviceTypeUtils.reds: Device type detection
-// - Common/DNRGating.reds: Daemon Netrunning Revamp integration
 // - Common/Logger.reds: Debug logging
+//
+// INTEGRATION (External MOD Dependencies):
+// - Integration/DNRGating.reds: Daemon Netrunning Revamp MOD integration
+// - Integration/TracePositionOverhaulGating.reds: TracePositionOverhaul MOD integration
+// - Integration/RadialBreachGating.reds: RadialBreach MOD integration
 //
 // RADIAL UNLOCK SYSTEM:
 // - RadialUnlock/RadialUnlockSystem.reds: Position-based breach tracking (50m radius)
-// - RadialUnlock/RadialBreachGating.reds: RadialBreach MOD integration
 // - RadialUnlock/RemoteBreachNetworkUnlock.reds: RemoteBreach network unlock
 //
 // CUSTOM HACKING SYSTEM:
@@ -67,21 +72,24 @@ import BetterNetrunningConfig.*
 // MOD COMPATIBILITY: @wrapMethod allows other mods to also hook this function
 @wrapMethod(MinigameGenerationRuleScalingPrograms)
 public final func FilterPlayerPrograms(programs: script_ref<array<MinigameProgramData>>) -> Void {
-  BNLog("[FilterPlayerPrograms] Starting daemon filtering");
+  BNDebug("FilterPlayerPrograms", "Starting daemon filtering");
 
-  // Inject Better Netrunning specific programs into player's program list
-  this.InjectBetterNetrunningPrograms(programs);
   // Store the hacking target entity in minigame blackboard (used for access point logic)
   this.m_blackboardSystem.Get(GetAllBlackboardDefs().HackingMinigame).SetVariant(GetAllBlackboardDefs().HackingMinigame.Entity, ToVariant(this.m_entity));
 
-  // Call vanilla filtering logic FIRST to properly initialize program data
+  // Call base game filtering logic FIRST to properly initialize program data
   // This populates actionID fields correctly
   wrappedMethod(programs);
 
-  BNLog("[FilterPlayerPrograms] Initial program count: " + ToString(ArraySize(Deref(programs))));
+  // CRITICAL: Inject Better Netrunning programs AFTER wrappedMethod()
+  // This ensures our programs are not overwritten by base game logic
+  this.InjectBetterNetrunningPrograms(programs);
+
+  let initialProgramCount: Int32 = ArraySize(Deref(programs));
+  BNDebug("FilterPlayerPrograms", "Programs after injection (before filtering): " + ToString(initialProgramCount));
 
   // CRITICAL: Remove already-breached programs AFTER wrappedMethod()
-  // This ensures actionID fields are properly initialized by vanilla logic
+  // This ensures actionID fields are properly initialized by base game logic
   let i: Int32 = ArraySize(Deref(programs)) - 1;
   while i >= 0 {
     if ShouldRemoveBreachedPrograms(Deref(programs)[i].actionID, this.m_entity as GameObject) {
@@ -100,29 +108,63 @@ public final func FilterPlayerPrograms(programs: script_ref<array<MinigameProgra
     connectedToNetwork = true;
     data = (this.m_entity as ScriptedPuppet).GetMasterConnectedClassTypes();
     devPS = (this.m_entity as ScriptedPuppet).GetPS().GetDeviceLink();
-    BNLog("[FilterPlayerPrograms] Target: NPC (always connected)");
+    BNDebug("FilterPlayerPrograms", "Target: NPC (always connected)");
   } else {
-    connectedToNetwork = (this.m_entity as Device).GetDevicePS().IsConnectedToPhysicalAccessPoint();
+    // CRITICAL FIX: Access Points are always connected to network (they ARE the network)
+    let isAccessPoint: Bool = IsDefined(this.m_entity as AccessPoint);
+    if isAccessPoint {
+      connectedToNetwork = true;
+      BNDebug("FilterPlayerPrograms", "Target: Access Point (always connected)");
+    } else {
+      connectedToNetwork = (this.m_entity as Device).GetDevicePS().IsConnectedToPhysicalAccessPoint();
+      BNDebug("FilterPlayerPrograms", "Target: Device (connected=" + ToString(connectedToNetwork) + ")");
+    }
     data = (this.m_entity as Device).GetDevicePS().CheckMasterConnectedClassTypes();
     devPS = (this.m_entity as Device).GetDevicePS();
-    BNLog("[FilterPlayerPrograms] Target: Device (connected=" + ToString(connectedToNetwork) + ")");
   }
 
-  // Filter programs in reverse order to safely remove elements
+  // Track removed programs for detailed logging
+  let removedPrograms: array<TweakDBID>;
   let removedCount: Int32 = 0;
+
+  // Filter programs in reverse order to safely remove elements
   i = ArraySize(Deref(programs)) - 1;
   while i >= 0 {
     let actionID: TweakDBID = Deref(programs)[i].actionID;
     let miniGameActionRecord: wref<MinigameAction_Record> = TweakDBInterface.GetMinigameActionRecord(actionID);
+    let programCountBefore: Int32 = ArraySize(Deref(programs));
+    let shouldRemove: Bool = false;
+    let filterName: String = "";
 
-    // Remove programs that don't match current context
-    if ShouldRemoveNetworkPrograms(actionID, connectedToNetwork)
-        || ShouldRemoveDeviceBackdoorPrograms(actionID, this.m_entity as GameObject)
-        || ShouldRemoveAccessPointPrograms(actionID, miniGameActionRecord, this.m_isRemoteBreach)
-        || ShouldRemoveNonNetrunnerPrograms(actionID, miniGameActionRecord, this.m_isRemoteBreach, this.m_entity as GameObject)
-        || ShouldRemoveDeviceTypePrograms(actionID, miniGameActionRecord, data) {
+    // Check each filter and log which one removed the program
+    if ShouldRemoveNetworkPrograms(actionID, connectedToNetwork) {
+      shouldRemove = true;
+      filterName = "NetworkFilter";
+    } else if ShouldRemoveDeviceBackdoorPrograms(actionID, this.m_entity as GameObject) {
+      shouldRemove = true;
+      filterName = "DeviceBackdoorFilter";
+    } else if ShouldRemoveAccessPointPrograms(actionID, miniGameActionRecord, this.m_isRemoteBreach) {
+      shouldRemove = true;
+      filterName = "AccessPointFilter";
+    } else if ShouldRemoveNonNetrunnerPrograms(actionID, miniGameActionRecord, this.m_isRemoteBreach, this.m_entity as GameObject) {
+      shouldRemove = true;
+      filterName = "NonNetrunnerFilter";
+    } else if ShouldRemoveDeviceTypePrograms(actionID, miniGameActionRecord, data) {
+      shouldRemove = true;
+      filterName = "DeviceTypeFilter";
+    } else if ShouldRemoveDataminePrograms(actionID) {
+      shouldRemove = true;
+      filterName = "DatamineFilter";
+    } else if ShouldRemoveOutOfRangeDevicePrograms(actionID, (this.m_entity as GameObject).GetGame(), this.GetBreachPositionForFiltering(), this.m_entity as GameObject) {
+      shouldRemove = true;
+      filterName = "PhysicalRangeFilter";
+    }
+
+    if shouldRemove {
       ArrayErase(Deref(programs), i);
+      ArrayPush(removedPrograms, actionID);
       removedCount += 1;
+      LogProgramFilteringStep(filterName, programCountBefore, ArraySize(Deref(programs)), actionID, "[FilterPlayerPrograms]");
     }
     i -= 1;
   };
@@ -131,7 +173,12 @@ public final func FilterPlayerPrograms(programs: script_ref<array<MinigameProgra
   // This integrates DNR's advanced daemon system with Better Netrunning's subnet-based progression
   ApplyDNRDaemonGating(programs, devPS, this.m_isRemoteBreach, this.m_player as PlayerPuppet, this.m_entity);
 
-  BNLog("[FilterPlayerPrograms] Removed " + ToString(removedCount) + " programs, final count: " + ToString(ArraySize(Deref(programs))));
+  // CRITICAL: Count programs AFTER DNR gating (may add/remove programs)
+  let finalProgramCount: Int32 = ArraySize(Deref(programs));
+  BNDebug("FilterPlayerPrograms", "After filtering/DNR gating - final count: " + ToString(finalProgramCount));
+
+  // Log detailed filtering summary
+  LogFilteringSummary(initialProgramCount, finalProgramCount, removedPrograms, "[FilterPlayerPrograms]");
 }
 
 // ==================== DESIGN DOCUMENTATION ====================
@@ -173,12 +220,10 @@ public final func FilterPlayerPrograms(programs: script_ref<array<MinigameProgra
 // - Minigame/ProgramFiltering.reds: Which daemons appear in minigame
 // - Minigame/ProgramInjection.reds: Adding custom unlock daemons
 //
-// Device Quickhacks (Before/After Breach):
+// Device Quickhacks (Breached/Unbreached States):
 // - Devices/DeviceQuickhacks.reds: Main logic
-// - Devices/TurretExtensions.reds: Turret-specific extensions
-// - Devices/CameraExtensions.reds: Camera-specific extensions
 //
-// NPC Quickhacks (Before/After Breach):
+// NPC Quickhacks (Breached/Unbreached States):
 // - NPCs/NPCQuickhacks.reds: Main logic
 // - NPCs/NPCLifecycle.reds: Incapacitation/death handling
 //
@@ -191,12 +236,46 @@ public final func FilterPlayerPrograms(programs: script_ref<array<MinigameProgra
 //
 // Radial Unlock System (50m breach radius):
 // - RadialUnlock/RadialUnlockSystem.reds: Position-based breach tracking
-// - RadialUnlock/RadialBreachGating.reds: RadialBreach MOD integration
 // - RadialUnlock/RemoteBreachNetworkUnlock.reds: RemoteBreach network unlock
 //
 // Persistent State:
 // - Common/Events.reds: Breach state fields and events
 //
-// MOD INTEGRATIONS:
-// - Common/DNRGating.reds: Daemon Netrunning Revamp compatibility
+// MOD INTEGRATIONS (External Dependencies):
+// - Integration/DNRGating.reds: Daemon Netrunning Revamp compatibility
+// - Integration/TracePositionOverhaulGating.reds: TracePositionOverhaul compatibility
+// - Integration/RadialBreachGating.reds: RadialBreach MOD physical range filtering
 // - CustomHacking/*: RemoteBreach action integration (9 files)
+
+// ==================== PHYSICAL RANGE FILTERING HELPERS ====================
+
+/*
+ * Gets the breach position for physical range filtering
+ *
+ * Returns the position of the target entity (Access Point, Device, or NPC).
+ * Used to determine the center point for RadialBreach range scanning.
+ *
+ * @return Breach position (or error signal if position unavailable)
+ */
+@addMethod(MinigameGenerationRuleScalingPrograms)
+private final func GetBreachPositionForFiltering() -> Vector4 {
+  let targetEntity: wref<GameObject> = this.m_entity as GameObject;
+
+  if IsDefined(targetEntity) {
+    let position: Vector4 = targetEntity.GetWorldPosition();
+    BNTrace("GetBreachPositionForFiltering", "Using target entity position: " + ToString(position));
+    return position;
+  }
+
+  // Fallback: player position (should not happen in normal breach scenarios)
+  let player: ref<PlayerPuppet> = this.m_player as PlayerPuppet;
+  if IsDefined(player) {
+    let playerPosition: Vector4 = player.GetWorldPosition();
+    BNWarn("GetBreachPositionForFiltering", "Using player position as fallback: " + ToString(playerPosition));
+    return playerPosition;
+  }
+
+  // Error signal (prevents filtering all devices if position unavailable)
+  BNError("GetBreachPositionForFiltering", "Could not get breach position, returning error signal");
+  return Vector4(-999999.0, -999999.0, -999999.0, 1.0);
+}

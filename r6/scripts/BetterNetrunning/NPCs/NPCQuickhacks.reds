@@ -1,8 +1,10 @@
 module BetterNetrunning.NPCs
 
 import BetterNetrunningConfig.*
-import BetterNetrunning.Common.*
+import BetterNetrunning.Core.*
+import BetterNetrunning.Utils.*
 import BetterNetrunning.Progression.*
+import BetterNetrunning.Breach.Systems.*
 
 /*
  * ============================================================================
@@ -24,66 +26,115 @@ import BetterNetrunning.Progression.*
  * - Shallow nesting (max 2 levels) using Extract Method pattern
  * - Continue Pattern for cleaner control flow
  *
+ * BUG FIX (2025-10-19):
+ * - Issue: Basic Daemon success sets m_quickHacksExposed = true for NPCs
+ * - Root Cause: Vanilla SetExposeQuickHacks event fires unconditionally
+ * - Solution: Event interception - block event if NPC Subnet not unlocked
+ *
  * ============================================================================
  */
 
 /*
- * Controls NPC quickhack availability based on breach status and progression
+ * Prevent vanilla from setting m_quickHacksExposed when NPC Subnet not unlocked (Problem ③ fix)
+ * ARCHITECTURE: Event interception before vanilla processing
  *
- * VANILLA DIFF: Complete rewrite to implement progressive unlock system
- * - Progressive unlock via ShouldUnlockHackNPC() (checks Cyberdeck tier, Intelligence, Enemy Rarity)
- * - Network isolation detection -> auto-unlock for isolated NPCs
- * - Category-based restrictions (Covert, Combat, Control, Ultimate, Ping, Whistle)
- *
- * ARCHITECTURE: Shallow nesting (max 2 levels) using Continue Pattern + Extract Method
+ * LOGIC:
+ * - Standalone NPCs (no network) -> Allow vanilla processing (auto-unlock)
+ * - Network-connected NPCs -> Check m_betterNetrunningUnlockTimestampNPCs
+ *   - If timestamp > 0.0 -> NPC Subnet unlocked -> Allow vanilla processing
+ *   - If timestamp == 0.0 -> NPC Subnet NOT unlocked -> Block event
  */
-@replaceMethod(ScriptedPuppetPS)
-public final const func GetAllChoices(const actions: script_ref<array<wref<ObjectAction_Record>>>, const context: script_ref<GetActionsContext>, puppetActions: script_ref<array<ref<PuppetAction>>>) -> Void {
-  // Step 1: Calculate NPC permissions (breach state + progression)
-  let permissions: NPCHackPermissions = this.CalculateNPCHackPermissions();
-
-  // Step 2: Get activity state
-  let isPuppetActive: Bool = ScriptedPuppet.IsActive(this.GetOwnerEntity());
-  let attiudeTowardsPlayer: EAIAttitude = this.GetOwnerEntity().GetAttitudeTowards(GetPlayer(this.GetGameInstance()));
-  let instigator: wref<GameObject> = Deref(context).processInitiatorObject;
-
-  // Step 3: Process all actions
-  let i: Int32 = 0;
-  while i < ArraySize(Deref(actions)) {
-    // Early skip: Not a remote quickhack
-    if this.IsRemoteQuickHackAction(Deref(actions)[i], context) {
-      // Process quickhack action
-      this.ProcessQuickhackAction(Deref(actions)[i], instigator, permissions, isPuppetActive, attiudeTowardsPlayer, puppetActions);
-    }
-    i += 1;
+@wrapMethod(ScriptedPuppetPS)
+public func OnSetExposeQuickHacks(evt: ref<SetExposeQuickHacks>) -> EntityNotificationType {
+  // Check if NPC is connected to network
+  if !this.IsConnectedToAccessPoint() {
+    // Standalone NPC - allow vanilla processing (auto-unlock)
+    return wrappedMethod(evt);
   }
+
+  // Network-connected NPC - check if NPC subnet was unlocked
+  let deviceLink: ref<SharedGameplayPS> = this.GetDeviceLink();
+  if !IsDefined(deviceLink) {
+    // No device link - allow vanilla processing
+    return wrappedMethod(evt);
+  }
+
+  // Check NPC subnet timestamp
+  let npcUnlockTime: Float = deviceLink.m_betterNetrunningUnlockTimestampNPCs;
+  if npcUnlockTime > 0.0 {
+    // NPC Subnet unlocked - allow vanilla processing
+    return wrappedMethod(evt);
+  }
+
+  // NPC Subnet NOT unlocked - block vanilla processing
+  BNDebug("NPCQuickhacks", "Blocked OnSetExposeQuickHacks (NPC Subnet not unlocked)");
+  return EntityNotificationType.DoNotNotifyEntity;
 }
 
-// Helper: Process a single quickhack action (reduced nesting)
+/*
+ * Controls NPC quickhack availability based on breach status and progression
+ *
+ * VANILLA DIFF: @wrapMethod approach - base game generates quickhacks, Better Netrunning filters
+ * - Pre-processing: Calculate NPC permissions (breach state + progression)
+ * - Base Game Processing: Generate all quickhacks with base game logic (76-line black box)
+ * - Post-processing: Remove AccessBreach + Apply Progressive Unlock filter
+ *
+ * ARCHITECTURE: 3-step workflow (Pre ↁEBase Game ↁEPost) with Extract Method pattern
+ * - Preserves base game behavior for better mod compatibility
+ * - Better Netrunning logic applied as post-processing filter
+ */
+@wrapMethod(ScriptedPuppetPS)
+public final const func GetAllChoices(const actions: script_ref<array<wref<ObjectAction_Record>>>, const context: script_ref<GetActionsContext>, puppetActions: script_ref<array<ref<PuppetAction>>>) -> Void {
+  // Pre-processing: Calculate NPC permissions (breach state + progression)
+  let permissions: NPCHackPermissions = this.CalculateNPCHackPermissions();
+
+  // Base Game Processing: Generate quickhacks with wrappedMethod()
+  wrappedMethod(actions, context, puppetActions);
+
+  // Post-processing: Apply Better Netrunning filter
+  let attiudeTowardsPlayer: EAIAttitude = this.GetOwnerEntity().GetAttitudeTowards(GetPlayer(this.GetGameInstance()));
+  this.ApplyBetterNetrunningQuickhackFilter(puppetActions, permissions, attiudeTowardsPlayer);
+}
+
+// ==================== Post-Processing Filter ====================
+
+/*
+ * Applies Better Netrunning's Progressive Unlock filter to vanilla-generated quickhacks
+ *
+ * FUNCTIONALITY:
+ * - Removes AccessBreach (Better Netrunning uses Access Point breach instead)
+ * - Activates quickhacks that meet Progressive Unlock requirements
+ * - Deactivates quickhacks that don't meet requirements
+ *
+ * ARCHITECTURE: Reverse iteration for safe array removal
+ */
 @addMethod(ScriptedPuppetPS)
-private final func ProcessQuickhackAction(
-  action: wref<ObjectAction_Record>,
-  instigator: wref<GameObject>,
+private final func ApplyBetterNetrunningQuickhackFilter(
+  puppetActions: script_ref<array<ref<PuppetAction>>>,
   permissions: NPCHackPermissions,
-  isPuppetActive: Bool,
-  attiudeTowardsPlayer: EAIAttitude,
-  puppetActions: script_ref<array<ref<PuppetAction>>>
+  attiudeTowardsPlayer: EAIAttitude
 ) -> Void {
-  let puppetAction: ref<PuppetAction> = this.CreatePuppetAction(action, instigator);
+  let i: Int32 = ArraySize(Deref(puppetActions)) - 1;
 
-  // Early skip: Not a quickhack
-  if !puppetAction.IsQuickHack() {
-    return;
+  while i >= 0 {
+    let action: ref<PuppetAction> = Deref(puppetActions)[i];
+
+    // Step 1: Remove AccessBreach (Better Netrunning design)
+    if IsDefined(action as AccessBreach) {
+      ArrayErase(Deref(puppetActions), i);
+    } else {
+      // Step 2: Apply Progressive Unlock logic
+      if this.ShouldQuickhackBeInactive(action, permissions) {
+        // Deactivate with Better Netrunning reason
+        this.SetQuickhackInactiveReason(action, attiudeTowardsPlayer);
+      } else {
+        // Activate - override vanilla inactive state
+        action.SetActive();
+      }
+    }
+
+    i -= 1;
   }
-
-  // Apply progressive unlock restrictions
-  if this.ShouldQuickhackBeInactive(puppetAction, permissions) {
-    this.SetQuickhackInactiveReason(puppetAction, attiudeTowardsPlayer);
-  } else if !isPuppetActive || this.Sts_Ep1_12_ActiveForQHack_Hack() {
-    puppetAction.SetInactiveWithReason(false, "LocKey#7018");
-  }
-
-  ArrayPush(Deref(puppetActions), puppetAction);
 }
 
 // ==================== Permission Calculation ====================
@@ -115,34 +166,6 @@ private final func CalculateNPCHackPermissions() -> NPCHackPermissions {
   permissions.allowWhistle = BetterNetrunningSettings.AlwaysAllowWhistle() || permissions.allowCovert;
 
   return permissions;
-}
-
-// ==================== Action Processing ====================
-
-// Helper: Checks if action is a remote quickhack type
-@addMethod(ScriptedPuppetPS)
-private final func IsRemoteQuickHackAction(action: wref<ObjectAction_Record>, const context: script_ref<GetActionsContext>) -> Bool {
-  if !Equals(Deref(context).requestType, gamedeviceRequestType.Remote) {
-    return false;
-  }
-  let actionType: gamedataObjectActionType = action.ObjectActionType().Type();
-  let isRemoteType: Bool = Equals(actionType, gamedataObjectActionType.MinigameUpload)
-                        || Equals(actionType, gamedataObjectActionType.VehicleQuickHack)
-                        || Equals(actionType, gamedataObjectActionType.PuppetQuickHack)
-                        || Equals(actionType, gamedataObjectActionType.DeviceQuickHack)
-                        || Equals(actionType, gamedataObjectActionType.Remote);
-  return isRemoteType && TweakDBInterface.GetBool(action.GetID() + t".isQuickHack", false);
-}
-
-// Helper: Creates and initializes puppet action from record
-@addMethod(ScriptedPuppetPS)
-private final func CreatePuppetAction(action: wref<ObjectAction_Record>, instigator: wref<GameObject>) -> ref<PuppetAction> {
-  let puppetAction: ref<PuppetAction> = this.GetAction(action);
-  puppetAction.SetExecutor(instigator);
-  puppetAction.RegisterAsRequester(PersistentID.ExtractEntityID(this.GetID()));
-  puppetAction.SetObjectActionID(action.GetID());
-  puppetAction.SetUp(this);
-  return puppetAction;
 }
 
 // ==================== Permission Enforcement ====================
@@ -181,13 +204,28 @@ private final func ShouldQuickhackBeInactive(puppetAction: ref<PuppetAction>, pe
   return true;
 }
 
-// Helper: Sets appropriate inactive reason message based on NPC attitude
+// Helper: Sets inactive reason for unbreached network (unified message for all NPCs)
 @addMethod(ScriptedPuppetPS)
 private final func SetQuickhackInactiveReason(puppetAction: ref<PuppetAction>, attiudeTowardsPlayer: EAIAttitude) -> Void {
-  if NotEquals(attiudeTowardsPlayer, EAIAttitude.AIA_Friendly) {
-    puppetAction.SetInactiveWithReason(false, "LocKey#7021");
+  // Check if RemoteBreach is locked due to breach failure
+  let isRemoteBreachLocked: Bool = false;
+  if BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
+    let puppet: wref<ScriptedPuppet> = this.GetOwnerEntity() as ScriptedPuppet;
+    if IsDefined(puppet) {
+      let player: ref<PlayerPuppet> = GetPlayer(this.GetGameInstance());
+      if IsDefined(player) {
+        let npcPosition: Vector4 = puppet.GetWorldPosition();
+        isRemoteBreachLocked = RemoteBreachLockUtils.IsRemoteBreachLockedForDevice(player, npcPosition, this.GetGameInstance());
+      }
+    }
+  }
+
+  // Use vanilla lock message when RemoteBreach is locked (breach failure penalty)
+  // Otherwise use Better Netrunning's custom message
+  if isRemoteBreachLocked {
+    puppetAction.SetInactiveWithReason(false, BNConstants.LOCKEY_NO_NETWORK_ACCESS());  // "No network access rights"
   } else {
-    puppetAction.SetInactiveWithReason(false, "LocKey#27694");
+    puppetAction.SetInactiveWithReason(false, "LocKey#" + NameToString(BNConstants.LOCKEY_QUICKHACKS_LOCKED()));
   }
 }
 

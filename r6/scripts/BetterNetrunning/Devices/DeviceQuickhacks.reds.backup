@@ -1,0 +1,721 @@
+module BetterNetrunning.Devices
+
+import BetterNetrunningConfig.*
+import BetterNetrunning.Core.*
+import BetterNetrunning.Utils.*
+import BetterNetrunning.Progression.*
+import BetterNetrunning.Breach.Systems.*
+import BetterNetrunning.RemoteBreach.Core.*
+import BetterNetrunning.RemoteBreach.Actions.*
+import BetterNetrunning.RemoteBreach.UI.*
+import BetterNetrunning.RadialUnlock.Core.*
+
+/*
+ * ============================================================================
+ * DEVICE QUICKHACKS MODULE
+ * ============================================================================
+ *
+ * PURPOSE:
+ * Manages device quickhack availability based on breach status and player
+ * progression requirements.
+ *
+ * FUNCTIONALITY:
+ * - Progressive unlock restrictions (Cyberdeck tier, Intelligence stat)
+ * - Standalone device support via radial breach system (50m radius)
+ * - Network isolation detection -> auto-unlock for unsecured networks
+ * - Device-type-specific permissions (Camera, Turret, Basic)
+ * - Special always-allowed quickhacks (Ping, Distraction)
+ *
+ * ARCHITECTURE:
+ * - SetActionsInactiveUnbreached(): Main entry point for progressive unlock
+ * - FinalizeGetQuickHackActions(): Finalizes actions before presenting to player
+ * - GetRemoteActions(): Provides device quickhack actions based on breach status
+ * - CanRevealRemoteActionsWheel(): Controls quickhack menu visibility
+ *
+ * ARCHITECTURE:
+ * - Shallow nesting (max 2 levels) using Extract Method pattern
+ * - Clear separation of concerns
+ *
+ * ============================================================================
+ */
+
+// ==================== Progressive Unlock System ====================
+
+/*
+ * Checks if device is breached with expiration support
+ * Overrides vanilla IsBreached() to support temporary unlock feature
+ *
+ * FUNCTIONALITY:
+ * - Returns true if device has valid (non-expired) breach timestamp
+ * - Supports permanent unlock (duration = 0)
+ * - Supports temporary unlock with expiration check
+ *
+ * APPLIES TO: All breach types (AP Breach, Unconscious NPC Breach, RemoteBreach)
+ */
+@addMethod(ScriptableDeviceComponentPS)
+public final func IsBreached() -> Bool {
+  let sharedPS: ref<SharedGameplayPS> = this;
+  if !IsDefined(sharedPS) {
+    return false;
+  }
+
+  // Check all device types with expiration
+  let gameInstance: GameInstance = this.GetGameInstance();
+
+  // Check Basic subnet (most common)
+  if BreachStatusUtils.IsBreachedWithExpiration(sharedPS.m_betterNetrunningUnlockTimestampBasic, gameInstance) {
+    return true;
+  }
+
+  // Check Camera subnet
+  if BreachStatusUtils.IsBreachedWithExpiration(sharedPS.m_betterNetrunningUnlockTimestampCameras, gameInstance) {
+    return true;
+  }
+
+  // Check Turret subnet
+  if BreachStatusUtils.IsBreachedWithExpiration(sharedPS.m_betterNetrunningUnlockTimestampTurrets, gameInstance) {
+    return true;
+  }
+
+  // Check NPC subnet
+  if BreachStatusUtils.IsBreachedWithExpiration(sharedPS.m_betterNetrunningUnlockTimestampNPCs, gameInstance) {
+    return true;
+  }
+
+  return false;
+}
+
+/*
+ * Applies progressive unlock restrictions to device quickhacks before breach
+ * Checks player progression (Cyberdeck tier, Intelligence stat) and device type
+ * to determine which quickhacks should be available before successful breach
+ *
+ * ARCHITECTURE: Shallow nesting (max 2 levels) using Extract Method pattern for clarity
+ */
+@addMethod(ScriptableDeviceComponentPS)
+public final func SetActionsInactiveUnbreached(actions: script_ref<array<ref<DeviceAction>>>) -> Void {
+  // Step 1: Get device classification
+  let deviceInfo: DeviceBreachInfo = this.GetDeviceBreachInfo();
+
+  // Step 2: Update standalone device breach state (radial unlock)
+  this.UpdateStandaloneDeviceBreachState(deviceInfo);
+
+  // Step 3: Calculate device permissions based on breach state + progression
+  let permissions: DevicePermissions = this.CalculateDevicePermissions(deviceInfo);
+
+  // Step 4: Apply permissions to all actions
+  this.ApplyPermissionsToActions(actions, deviceInfo, permissions);
+}
+
+// Helper: Gets device classification and network status
+@addMethod(ScriptableDeviceComponentPS)
+private final func GetDeviceBreachInfo() -> DeviceBreachInfo {
+  let info: DeviceBreachInfo;
+  info.isCamera = DaemonFilterUtils.IsCamera(this);
+  info.isTurret = DaemonFilterUtils.IsTurret(this);
+
+  let sharedPS: ref<SharedGameplayPS> = this;
+  if IsDefined(sharedPS) {
+    let apControllers: array<ref<AccessPointControllerPS>> = sharedPS.GetAccessPoints();
+    info.isStandaloneDevice = ArraySize(apControllers) == 0;
+  }
+
+  // DEBUG: Log device type for vehicle debugging
+  let isVehicle: Bool = IsDefined(this as VehicleComponentPS);
+  if isVehicle {
+    BNDebug("SetActionsInactiveUnbreached", "Vehicle detected - breachedBasic: " + ToString(BreachStatusUtils.IsBasicBreached(sharedPS)));
+  }
+
+  return info;
+}
+
+// Helper: Updates breach flags for standalone devices within radial breach radius
+@addMethod(ScriptableDeviceComponentPS)
+private final func UpdateStandaloneDeviceBreachState(deviceInfo: DeviceBreachInfo) -> Void {
+  // Only process standalone devices that are within radial breach radius
+  if !deviceInfo.isStandaloneDevice || !ShouldUnlockStandaloneDevice(this, this.GetGameInstance()) {
+    return;
+  }
+
+  // PERSISTENCE FIX: Mark device as permanently breached to survive save/load
+  // CRITICAL FIX (Problem ②): Only persist timestamps that were ALREADY SET by daemon unlock
+  // REASON: This ensures save/load compatibility while respecting daemon unlock restrictions
+  //
+  // OLD LOGIC (INCORRECT):
+  //   Set timestamp to current time for ALL standalone devices within radius (ignored daemon flags)
+  //
+  // NEW LOGIC (CORRECT):
+  //   Timestamps are already persistent and set by daemon unlock
+  //   Only ensures timestamps remain > 0.0 after save/load (daemon unlock is authoritative)
+  //
+  // EXAMPLE: NPC Subnet breach + vehicle within 50m
+  //   - Daemon unlock sets m_betterNetrunningUnlockTimestampNPCs = currentTime (NPCs only)
+  //   - This method does NOT set m_betterNetrunningUnlockTimestampBasic (vehicle stays locked)
+  //   - After save/load, vehicle remains correctly locked (timestamp = 0.0)
+
+  // No action needed - timestamps are already persistent (@persistent in SharedGameplayPS)
+  // This method now serves as documentation for the radial unlock discovery mechanism
+}
+
+// Helper: Calculates permissions based on breach state and player progression
+@addMethod(ScriptableDeviceComponentPS)
+private final func CalculateDevicePermissions(deviceInfo: DeviceBreachInfo) -> DevicePermissions {
+  let permissions: DevicePermissions;
+  let gameInstance: GameInstance = this.GetGameInstance();
+  let sharedPS: ref<SharedGameplayPS> = this;
+
+  // Device-type permissions: Breached OR progression requirements met
+  permissions.allowCameras = BreachStatusUtils.IsCamerasBreached(sharedPS) || ShouldUnlockHackDevice(gameInstance, BetterNetrunningSettings.AlwaysCameras(), BetterNetrunningSettings.ProgressionCyberdeckCameras(), BetterNetrunningSettings.ProgressionIntelligenceCameras());
+  permissions.allowTurrets = BreachStatusUtils.IsTurretsBreached(sharedPS) || ShouldUnlockHackDevice(gameInstance, BetterNetrunningSettings.AlwaysTurrets(), BetterNetrunningSettings.ProgressionCyberdeckTurrets(), BetterNetrunningSettings.ProgressionIntelligenceTurrets());
+  permissions.allowBasicDevices = BreachStatusUtils.IsBasicBreached(sharedPS) || ShouldUnlockHackDevice(gameInstance, BetterNetrunningSettings.AlwaysBasicDevices(), BetterNetrunningSettings.ProgressionCyberdeckBasicDevices(), BetterNetrunningSettings.ProgressionIntelligenceBasicDevices());
+
+  // Special always-allowed quickhacks
+  permissions.allowPing = BetterNetrunningSettings.AlwaysAllowPing();
+  permissions.allowDistraction = BetterNetrunningSettings.AlwaysAllowDistract();
+
+  return permissions;
+}
+
+// Helper: Applies calculated permissions to all actions
+@addMethod(ScriptableDeviceComponentPS)
+private final func ApplyPermissionsToActions(actions: script_ref<array<ref<DeviceAction>>>, deviceInfo: DeviceBreachInfo, permissions: DevicePermissions) -> Void {
+  // Check if RemoteBreach is locked due to breach failure
+  let isRemoteBreachLocked: Bool = false;
+  if BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
+    let deviceEntity: wref<GameObject> = this.GetOwnerEntityWeak() as GameObject;
+    if IsDefined(deviceEntity) {
+      let player: ref<PlayerPuppet> = GetPlayer(this.GetGameInstance());
+      if IsDefined(player) {
+        let devicePosition: Vector4 = deviceEntity.GetWorldPosition();
+        isRemoteBreachLocked = RemoteBreachLockUtils.IsRemoteBreachLockedForDevice(player, devicePosition, this.GetGameInstance());
+      }
+    }
+  }
+
+  let i: Int32 = 0;
+  while i < ArraySize(Deref(actions)) {
+    let sAction: ref<ScriptableDeviceAction> = (Deref(actions)[i] as ScriptableDeviceAction);
+
+    if IsDefined(sAction) && !this.ShouldAllowAction(sAction, deviceInfo.isCamera, deviceInfo.isTurret, permissions.allowCameras, permissions.allowTurrets, permissions.allowBasicDevices, permissions.allowPing, permissions.allowDistraction) {
+      sAction.SetInactive();
+
+      // Use vanilla lock message when RemoteBreach is locked (breach failure penalty)
+      // Otherwise use Better Netrunning's custom message
+      if isRemoteBreachLocked {
+        sAction.SetInactiveReason(BNConstants.LOCKEY_NO_NETWORK_ACCESS());  // "No network access rights"
+      } else {
+        sAction.SetInactiveReason(LocKeyToString(BNConstants.LOCKEY_QUICKHACKS_LOCKED()));
+      }
+    }
+
+    i += 1;
+  }
+}
+
+// Helper: Determines if an action should be allowed based on device type and progression
+@addMethod(ScriptableDeviceComponentPS)
+private final func ShouldAllowAction(action: ref<ScriptableDeviceAction>, isCamera: Bool, isTurret: Bool, allowCameras: Bool, allowTurrets: Bool, allowBasicDevices: Bool, allowPing: Bool, allowDistraction: Bool) -> Bool {
+  let className: CName = action.GetClassName();
+
+  // RemoteBreachAction must ALWAYS be allowed (CustomHackingSystem integration)
+  if IsCustomRemoteBreachAction(className) {
+    return true;
+  }
+
+  // Always-allowed quickhacks
+  if Equals(className, BNConstants.ACTION_PING_DEVICE()) && allowPing {
+    return true;
+  }
+  if Equals(className, BNConstants.ACTION_DISTRACTION()) && allowDistraction {
+    return true;
+  }
+
+  // Device-type-specific permissions
+  if isCamera && allowCameras {
+    return true;
+  }
+  if isTurret && allowTurrets {
+    return true;
+  }
+  if !isCamera && !isTurret && allowBasicDevices {
+    return true;
+  }
+
+  return false;
+}
+
+// ==================== Helper Methods: Device Lock State ====================
+
+/**
+ * IsDeviceLockedByBreachFailure - Check if device is locked by breach failure penalty
+ *
+ * PURPOSE: Extract complex nested condition from ReplaceVanillaRemoteBreachWithCustom()
+ * RETURNS: true if RemoteBreach should be blocked due to breach failure in 50m radius
+ */
+@addMethod(ScriptableDeviceComponentPS)
+private final func IsDeviceLockedByBreachFailure() -> Bool {
+  if !BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
+    return false;
+  }
+
+  let deviceEntity: wref<GameObject> = this.GetOwnerEntityWeak() as GameObject;
+  if !IsDefined(deviceEntity) {
+    return false;
+  }
+
+  let player: ref<PlayerPuppet> = GetPlayer(this.GetGameInstance());
+  if !IsDefined(player) {
+    return false;
+  }
+
+  let devicePosition: Vector4 = deviceEntity.GetWorldPosition();
+  return RemoteBreachLockUtils.IsRemoteBreachLockedForDevice(player, devicePosition, this.GetGameInstance());
+}
+
+/**
+ * RemoveVanillaRemoteBreachActions - Remove only vanilla RemoteBreach actions
+ *
+ * PURPOSE: Clean up vanilla RemoteBreach when device is already breached
+ * ARCHITECTURE: Extract Method pattern with clear single responsibility
+ */
+@addMethod(ScriptableDeviceComponentPS)
+private final func RemoveVanillaRemoteBreachActions(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
+  let i: Int32 = ArraySize(Deref(outActions)) - 1;
+
+  while i >= 0 {
+    let action: ref<DeviceAction> = Deref(outActions)[i];
+
+    if IsDefined(action as RemoteBreach) {
+      ArrayErase(Deref(outActions), i);
+      BNDebug("RemoveVanillaRemoteBreachActions", "Removed vanilla RemoteBreach (device already breached)");
+    }
+
+    i -= 1;
+  }
+}
+
+/**
+ * RemoveAllRemoteBreachActions - Remove all RemoteBreach actions (vanilla + custom)
+ *
+ * PURPOSE: Remove all RemoteBreach types when device is locked by breach failure
+ * ARCHITECTURE: Extract Method pattern, handles both vanilla and BetterNetrunning actions
+ */
+@addMethod(ScriptableDeviceComponentPS)
+private final func RemoveAllRemoteBreachActions(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
+  let i: Int32 = ArraySize(Deref(outActions)) - 1;
+
+  while i >= 0 {
+    let action: ref<DeviceAction> = Deref(outActions)[i];
+    let className: CName = action.GetClassName();
+
+    if IsCustomRemoteBreachAction(className) || IsDefined(action as RemoteBreach) {
+      ArrayErase(Deref(outActions), i);
+      BNDebug("RemoveAllRemoteBreachActions", "Removed " + ToString(className) + " (device locked by breach failure)");
+    }
+
+    i -= 1;
+  }
+}
+
+// ==================== Quickhack Finalization ====================
+
+/*
+ * Finalizes device quickhack actions before presenting to player
+ *
+ * BETTER NETRUNNING ENHANCEMENTS:
+ * - Replaces vanilla RemoteBreach with CustomAccessBreach (when HackingExtensions installed)
+ * - Removes RemoteBreach if device already unlocked (Progressive Unlock integration)
+ * - Preserves base game Ping and restrictions logic
+ *
+ * MOD COMPATIBILITY:
+ * - Uses @wrapMethod for better compatibility with other device quickhack mods
+ * - Base game processing happens first, then Better Netrunning applies post-processing filters
+ *
+ * ARCHITECTURE: Hybrid @wrapMethod with conditional post-processing
+ * - Base game execution via wrappedMethod() (RemoteBreach + Ping + Restrictions)
+ * - Post-processing: Replace base game RemoteBreach with CustomAccessBreach (if HackingExtensions)
+ * - Post-processing: Remove RemoteBreach if device already unlocked
+ */
+@wrapMethod(ScriptableDeviceComponentPS)
+protected final func FinalizeGetQuickHackActions(outActions: script_ref<array<ref<DeviceAction>>>, const context: script_ref<GetActionsContext>) -> Void {
+  // Pre-processing: Early exit checks (before base game processing)
+  if !this.ShouldProcessQuickHackActions(outActions) {
+    return;
+  }
+
+  BNDebug("DeviceQuickhacks", s"FinalizeGetQuickHackActions: Before wrappedMethod, actions=\(ArraySize(Deref(outActions)))");
+
+  // Base game processing: Generate RemoteBreach + Ping + Apply restrictions
+  wrappedMethod(outActions, context);
+
+  // Post-processing: Apply Better Netrunning enhancements
+  this.ApplyBetterNetrunningDeviceFilters(outActions);
+}
+
+// ==================== Post-Processing Filters ====================
+
+/*
+ * Applies Better Netrunning enhancements after base game processing
+ *
+ * FUNCTIONALITY:
+ * - Replaces vanilla RemoteBreach with CustomAccessBreach (if HackingExtensions installed)
+ * - Removes RemoteBreach if device already unlocked (Progressive Unlock integration)
+ *
+ * ARCHITECTURE:
+ * - Conditional compilation at method level (separate implementations)
+ * - Type-based action detection (RemoteBreach class check)
+ */
+@if(ModuleExists("HackingExtensions"))
+@addMethod(ScriptableDeviceComponentPS)
+private final func ApplyBetterNetrunningDeviceFilters(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
+  // Filter 1: Replace vanilla RemoteBreach with CustomAccessBreach
+  this.ReplaceVanillaRemoteBreachWithCustom(outActions);
+
+  // Filter 2: Remove RemoteBreach if device already unlocked
+  this.RemoveRemoteBreachIfUnlocked(outActions);
+}
+
+@if(!ModuleExists("HackingExtensions"))
+@addMethod(ScriptableDeviceComponentPS)
+private final func ApplyBetterNetrunningDeviceFilters(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
+  // Filter: Remove RemoteBreach if device already unlocked (fallback mode)
+  this.RemoveRemoteBreachIfUnlocked(outActions);
+}/*
+ * Replaces vanilla RemoteBreach with CustomAccessBreach
+ * Only compiled when HackingExtensions module exists
+ *
+ * ARCHITECTURE:
+ * - Type-based detection: IsDefined(action as RemoteBreach)
+ * - Removes vanilla RemoteBreach from actions array
+ * - Adds CustomAccessBreach via TryAddCustomRemoteBreach()
+ */
+@if(ModuleExists("HackingExtensions"))
+@addMethod(ScriptableDeviceComponentPS)
+private final func ReplaceVanillaRemoteBreachWithCustom(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
+  // Guard 1: Device already breached - remove vanilla RemoteBreach only
+  if this.IsBreached() {
+    this.RemoveVanillaRemoteBreachActions(outActions);
+    return;
+  }
+
+  // Guard 2: Device locked by breach failure - remove all RemoteBreach actions
+  if this.IsDeviceLockedByBreachFailure() {
+    this.RemoveAllRemoteBreachActions(outActions);
+    return;
+  }
+
+  // Step 1: Remove vanilla RemoteBreach (if present)
+  let i: Int32 = ArraySize(Deref(outActions)) - 1;
+  let vanillaRemoteBreachFound: Bool = false;
+
+  while i >= 0 {
+    let action: ref<DeviceAction> = Deref(outActions)[i];
+    // Type-based detection: Check if action is vanilla RemoteBreach
+    if IsDefined(action as RemoteBreach) {
+      ArrayErase(Deref(outActions), i);
+      vanillaRemoteBreachFound = true;
+      BNDebug("ReplaceVanillaRemoteBreachWithCustom", "Removed vanilla RemoteBreach");
+    }
+    i -= 1;
+  }
+
+  // Step 2: Add BetterNetrunning RemoteBreach action (if device is connected to backdoor network)
+  if vanillaRemoteBreachFound && this.IsConnectedToBackdoorDevice() {
+    let beforeSize: Int32 = ArraySize(Deref(outActions));
+    BNDebug("ReplaceVanillaRemoteBreachWithCustom", "Before TryAddCustomRemoteBreach: " + IntToString(beforeSize) + " actions");
+
+    this.TryAddCustomRemoteBreach(outActions);
+
+    let afterSize: Int32 = ArraySize(Deref(outActions));
+    BNDebug("ReplaceVanillaRemoteBreachWithCustom", "After TryAddCustomRemoteBreach: " + IntToString(afterSize) + " actions");
+
+    if afterSize > beforeSize {
+      BNDebug("ReplaceVanillaRemoteBreachWithCustom", "Added BetterNetrunning RemoteBreach (RemoteBreachAction/VehicleRemoteBreachAction/DeviceRemoteBreachAction)");
+    } else {
+      BNDebug("ReplaceVanillaRemoteBreachWithCustom", "BetterNetrunning RemoteBreach NOT added (locked or other reason)");
+    }
+  }
+}
+
+/*
+ * Removes RemoteBreach/CustomAccessBreach if device already unlocked
+ * Prevents redundant breach action when device quickhacks are already available
+ *
+ * ARCHITECTURE:
+ * - Type-based detection: Checks RemoteBreach (vanilla) and CustomAccessBreach (custom)
+ * - HackingExtensions version: Handles both types
+ */
+@if(ModuleExists("HackingExtensions"))
+@addMethod(ScriptableDeviceComponentPS)
+private final func RemoveRemoteBreachIfUnlocked(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
+  // Check if device is already unlocked (breached)
+  if !this.IsBreached() {
+    return; // Device not yet breached, keep RemoteBreach action
+  }
+
+  // Remove RemoteBreach/CustomAccessBreach from actions
+  let i: Int32 = ArraySize(Deref(outActions)) - 1;
+  while i >= 0 {
+    let action: ref<DeviceAction> = Deref(outActions)[i];
+
+    // Check vanilla RemoteBreach
+    if IsDefined(action as RemoteBreach) {
+      ArrayErase(Deref(outActions), i);
+      BNDebug("RemoveRemoteBreachIfUnlocked", "Removed vanilla RemoteBreach (device already breached)");
+    }
+
+    // Check CustomAccessBreach
+    let customBreachAction: ref<CustomAccessBreach> = action as CustomAccessBreach;
+    if IsDefined(customBreachAction) {
+      ArrayErase(Deref(outActions), i);
+      BNDebug("RemoveRemoteBreachIfUnlocked", "Removed CustomAccessBreach (device already breached)");
+    }
+
+    i -= 1;
+  }
+}
+
+/*
+ * Removes RemoteBreach if device already unlocked (Fallback version)
+ * Only handles vanilla RemoteBreach (no CustomAccessBreach)
+ */
+@if(!ModuleExists("HackingExtensions"))
+@addMethod(ScriptableDeviceComponentPS)
+private final func RemoveRemoteBreachIfUnlocked(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
+  // Check if device is already unlocked (breached)
+  if !this.IsBreached() {
+    return; // Device not yet breached, keep RemoteBreach action
+  }
+
+  // Remove vanilla RemoteBreach from actions
+  let i: Int32 = ArraySize(Deref(outActions)) - 1;
+  while i >= 0 {
+    let action: ref<DeviceAction> = Deref(outActions)[i];
+
+    // Check vanilla RemoteBreach
+    if IsDefined(action as RemoteBreach) {
+      ArrayErase(Deref(outActions), i);
+      BNDebug("RemoveRemoteBreachIfUnlocked", "Removed vanilla RemoteBreach (device already breached)");
+    }
+
+    i -= 1;
+  }
+}// ==================== Helper Methods (Shared Logic) ====================
+
+/*
+ * Wrapper for TryAddMissingCustomRemoteBreach (conditional compilation support)
+ * Only compiled when HackingExtensions module exists
+ */
+@if(ModuleExists("HackingExtensions"))
+@addMethod(ScriptableDeviceComponentPS)
+private final func TryAddMissingCustomRemoteBreachWrapper(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
+  this.TryAddMissingCustomRemoteBreach(outActions);
+}
+
+/*
+ * Stub wrapper when HackingExtensions module does not exist
+ */
+@if(!ModuleExists("HackingExtensions"))
+@addMethod(ScriptableDeviceComponentPS)
+private final func TryAddMissingCustomRemoteBreachWrapper(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
+  // No-op: CustomHackingSystem not installed
+}
+
+/*
+ * Common early exit checks for FinalizeGetQuickHackActions
+ * Returns true if processing should continue, false if should exit early
+ */
+@addMethod(ScriptableDeviceComponentPS)
+private final func ShouldProcessQuickHackActions(outActions: script_ref<array<ref<DeviceAction>>>) -> Bool {
+  // Early exit if device is not in nominal state
+  if NotEquals(this.GetDurabilityState(), EDeviceDurabilityState.NOMINAL) {
+    return false;
+  }
+  // Early exit if quickhacks are disabled
+  if this.m_disableQuickHacks {
+    if ArraySize(Deref(outActions)) > 0 {
+      ArrayClear(Deref(outActions));
+    }
+    return false;
+  }
+  return true;
+}
+
+/*
+ * Adds Ping action to backdoor device
+ * Common logic shared by both conditional compilation versions
+ */
+@addMethod(ScriptableDeviceComponentPS)
+private final func AddPingAction(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
+  let currentAction: ref<ScriptableDeviceAction> = this.ActionPing();
+  currentAction.SetInactiveWithReason(!this.GetNetworkSystem().HasActivePing(this.GetMyEntityID()), BNConstants.LOCKEY_ACTIVATE_NETWORK_DEVICE());
+  ArrayPush(Deref(outActions), currentAction);
+}
+
+/*
+ * Override MarkActionsAsQuickHacks to support CustomAccessBreach
+ * CRITICAL FIX: CustomAccessBreach extends PuppetAction, not ScriptableDeviceAction,
+ * so base game MarkActionsAsQuickHacks skips it. This causes RemoteBreach to not appear in UI.
+ *
+ * MOD COMPATIBILITY: Changed from @replaceMethod to @wrapMethod for better compatibility.
+ * Base game processing is preserved, CustomAccessBreach support is added as extension.
+ */
+@if(ModuleExists("HackingExtensions"))
+@wrapMethod(ScriptableDeviceComponentPS)
+protected final func MarkActionsAsQuickHacks(actionsToMark: script_ref<array<ref<DeviceAction>>>) -> Void {
+  // Execute base game logic first (handles all ScriptableDeviceAction)
+  wrappedMethod(actionsToMark);
+
+  // EXTENSION: Add CustomAccessBreach support (BetterNetrunning-specific)
+  let i: Int32 = 0;
+  while i < ArraySize(Deref(actionsToMark)) {
+    // CRITICAL: Also check for CustomAccessBreach (CustomHackingSystem actions)
+    // CustomAccessBreach extends PuppetAction, not ScriptableDeviceAction
+    let customBreachAction: ref<CustomAccessBreach> = Deref(actionsToMark)[i] as CustomAccessBreach;
+    if IsDefined(customBreachAction) {
+      // CustomAccessBreach extends PuppetAction, so we can directly use it
+      customBreachAction.SetAsQuickHack();
+    }
+
+    i += 1;
+  }
+}
+
+/*
+ * Applies common quickhack restrictions (power state, RPG checks, illegality)
+ * Common logic shared by both conditional compilation versions
+ */
+@addMethod(ScriptableDeviceComponentPS)
+private final func ApplyCommonQuickHackRestrictions(outActions: script_ref<array<ref<DeviceAction>>>, const context: script_ref<GetActionsContext>) -> Void {
+  // Disable all actions if device is unpowered
+  if this.IsUnpowered() {
+    ScriptableDeviceComponentPS.SetActionsInactiveAll(outActions, BNConstants.LOCKEY_NOT_POWERED());
+  }
+
+  // Apply RPG system restrictions (skill checks, illegality, equipment check, etc.)
+  this.EvaluateActionsRPGAvailabilty(outActions, context);
+  this.SetActionIllegality(outActions, this.m_illegalActions.quickHacks);
+  this.MarkActionsAsQuickHacks(outActions);
+  this.SetActionsQuickHacksExecutioner(outActions);
+
+  // NEW REQUIREMENT: Remove Custom RemoteBreach if device is already unlocked
+  // This must be called AFTER all actions are added to prevent re-adding
+  this.RemoveCustomRemoteBreachIfUnlocked(outActions);
+
+  // NOTE: MoveVehicleRemoteBreachToBottom is NOT called here
+  // It must be called AFTER TryAddCustomRemoteBreach in FinalizeGetQuickHackActions
+}
+
+// ==================== Remote Actions ====================
+
+/*
+ * Provides device quickhack actions based on breach status and player progression
+ *
+ * VANILLA DIFF: Replaces SetActionsInactiveAll() with SetActionsInactiveUnbreached() for progressive unlock
+ * FIXED: Always apply progressive unlock restrictions in Progressive Mode (don't rely on IsQuickHacksExposed)
+ * FIXED: Auto-unlock networks without access points when UnlockIfNoAccessPoint is false
+ *
+ * ARCHITECTURE:
+ * - Progressive unlock via SetActionsInactiveUnbreached() (checks Cyberdeck tier, Intelligence)
+ * - Standalone device support via radial breach system (50m radius)
+ * - Network centroid calculation for isolated NPC auto-unlock
+ */
+@replaceMethod(ScriptableDeviceComponentPS)
+public final func GetRemoteActions(out outActions: array<ref<DeviceAction>>, const context: script_ref<GetActionsContext>) -> Void {
+  // Early exit if quickhacks are disabled or device is not functional
+  if this.m_disableQuickHacks || this.IsDisabled() {
+    return;
+  }
+
+  // Get quickhack actions from device
+  this.GetQuickHackActions(outActions, context);
+
+  // CRITICAL FIX: Some devices (Jukebox, NetrunnerChair, DisposalDevice) override GetQuickHackActions()
+  // without calling wrappedMethod(), causing TweakDB RemoteBreach to not be removed.
+  // Remove ALL vanilla RemoteBreach actions here as a final cleanup step.
+  let i: Int32 = ArraySize(outActions) - 1;
+  let hasCustomRemoteBreach: Bool = false;
+
+  while i >= 0 {
+    let action: ref<DeviceAction> = outActions[i];
+    // Use constant instead of magic string
+    if IsDefined(action) && Equals(action.actionName, BNConstants.ACTION_REMOTE_BREACH()) {
+      let className: CName = action.GetClassName();
+
+      if IsCustomRemoteBreachAction(className) {
+        hasCustomRemoteBreach = true;
+      } else {
+        ArrayErase(outActions, i);
+      }
+    }
+    i -= 1;
+  }
+
+  // CRITICAL FIX: Add Custom RemoteBreach if not present (for devices that don't call wrappedMethod)
+  // This ensures NetrunnerChair, Jukebox, DisposalDevice, TV, etc. get Custom RemoteBreach
+  if !hasCustomRemoteBreach && !BetterNetrunningSettings.UnlockIfNoAccessPoint() {
+    this.TryAddMissingCustomRemoteBreachWrapper(outActions);
+  }
+
+  // NEW REQUIREMENT: Remove Custom RemoteBreach if device is already unlocked (except Vehicles)
+  // Vehicles always show RemoteBreach regardless of unlock state
+  this.RemoveCustomRemoteBreachIfUnlocked(outActions);
+
+  // Check if network has no access points (unsecured network)
+  let sharedPS: ref<SharedGameplayPS> = this;
+  let hasAccessPoint: Bool = true;
+  let apCount: Int32 = 0;
+  if IsDefined(sharedPS) {
+    let apControllers: array<ref<AccessPointControllerPS>> = sharedPS.GetAccessPoints();
+    apCount = ArraySize(apControllers);
+    hasAccessPoint = apCount > 0;
+  }
+
+  // CRITICAL FIX: Correct logic for unsecured network
+  // UnlockIfNoAccessPoint = true -> Devices without AP are always unlocked (no restrictions)
+  // UnlockIfNoAccessPoint = false -> Devices without AP require breach (restrictions apply)
+  let isUnsecuredNetwork: Bool = !hasAccessPoint && BetterNetrunningSettings.UnlockIfNoAccessPoint();
+
+  // Check if RemoteBreach is locked due to breach failure
+  let isRemoteBreachLocked: Bool = false;
+  if BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
+    let deviceEntity: wref<GameObject> = this.GetOwnerEntityWeak() as GameObject;
+    if IsDefined(deviceEntity) {
+      let player: ref<PlayerPuppet> = GetPlayer(this.GetGameInstance());
+      if IsDefined(player) {
+        let devicePosition: Vector4 = deviceEntity.GetWorldPosition();
+        isRemoteBreachLocked = RemoteBreachLockUtils.IsRemoteBreachLockedForDevice(player, devicePosition, this.GetGameInstance());
+      }
+    }
+  }
+
+  // Handle sequencer lock or breach state
+  if this.IsLockedViaSequencer() {
+    // Sequencer locked: only allow RemoteBreach action
+    // Use vanilla lock message when RemoteBreach is also locked (breach failure)
+    if isRemoteBreachLocked {
+      ScriptableDeviceComponentPS.SetActionsInactiveAll(outActions, BNConstants.LOCKEY_NO_NETWORK_ACCESS(), BNConstants.ACTION_REMOTE_BREACH());
+    } else {
+      ScriptableDeviceComponentPS.SetActionsInactiveAll(outActions, LocKeyToString(BNConstants.LOCKEY_QUICKHACKS_LOCKED()), BNConstants.ACTION_REMOTE_BREACH());
+    }
+  } else if !BetterNetrunningSettings.EnableClassicMode() && !isUnsecuredNetwork {
+    // Progressive Mode: apply device-type-specific unlock restrictions (unless unsecured network)
+    this.SetActionsInactiveUnbreached(outActions);
+  }
+
+  // CRITICAL FIX: Move Vehicle RemoteBreach to bottom AFTER all processing
+  // This must be the LAST operation to ensure RemoteBreach stays at bottom
+  this.MoveVehicleRemoteBreachToBottom(outActions);
+
+  // If isUnsecuredNetwork == true, all quickhacks remain active (no restrictions applied)
+}
+
+/*
+ * Allows quickhack menu to open when devices are not connected to an access point
+ * VANILLA DIFF: Simplified from branching logic - equivalent to vanilla when QuickHacksExposedByDefault() is true
+ * Removes the IsConnectedToBackdoorDevice() check that vanilla uses when QuickHacksExposedByDefault() is false
+ */
+@replaceMethod(Device)
+public const func CanRevealRemoteActionsWheel() -> Bool {
+  return this.ShouldRegisterToHUD() && !this.GetDevicePS().IsDisabled() && this.GetDevicePS().HasPlaystyle(EPlaystyle.NETRUNNER);
+}

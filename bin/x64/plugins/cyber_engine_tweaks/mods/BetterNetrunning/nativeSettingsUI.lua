@@ -13,6 +13,9 @@ local progressionOptionTables = {
     enemyRarity = {}
 }
 
+-- Debug option table storage
+local debugOptionTable = nil
+
 -- Localization helper
 local function GetLocKey(key)
     return "LocKey#" .. tostring(LocKey(key).hash):gsub("ULL$", "")
@@ -28,8 +31,8 @@ function NativeSettingsUI.Build(nativeSettings, SettingsManager, TweakDBSetup)
     nativeSettings.addSubcategory("/BetterNetrunning/Controls", GetLocKey("Category-Controls"))
     nativeSettings.addSubcategory("/BetterNetrunning/Breaching", GetLocKey("Category-Breaching"))
     nativeSettings.addSubcategory("/BetterNetrunning/RemoteBreach", GetLocKey("Category-RemoteBreach"))
+    nativeSettings.addSubcategory("/BetterNetrunning/BreachPenalty", GetLocKey("Category-BreachPenalty"))
     nativeSettings.addSubcategory("/BetterNetrunning/AccessPoints", GetLocKey("Category-AccessPoints"))
-    nativeSettings.addSubcategory("/BetterNetrunning/RemovedQuickhacks", GetLocKey("Category-RemovedQuickhacks"))
     nativeSettings.addSubcategory("/BetterNetrunning/UnlockedQuickhacks", GetLocKey("Category-UnlockedQuickhacks"))
     nativeSettings.addSubcategory("/BetterNetrunning/Progression", GetLocKey("Category-Progression"))
     nativeSettings.addSubcategory("/BetterNetrunning/ProgressionCyberdeck", GetLocKey("Category-BetterNetrunning-ProgressionCyberdeck"))
@@ -57,14 +60,29 @@ function NativeSettingsUI.Build(nativeSettings, SettingsManager, TweakDBSetup)
         SettingsManager.Set("AllowBreachUnconscious", state)
         SettingsManager.Save()
     end)
+    nativeSettings.addRangeInt("/BetterNetrunning/Breaching", GetLocKey("DisplayName-BetterNetrunning-QuickhackUnlockDurationHours"), GetLocKey("Description-BetterNetrunning-QuickhackUnlockDurationHours"), 0, 24, 1,
+        settings.QuickhackUnlockDurationHours, 6,
+        function(state)
+            SettingsManager.Set("QuickhackUnlockDurationHours", state)
+            SettingsManager.Save()
+        end
+    )
 
     -- RemoteBreach
+    nativeSettings.addSwitch("/BetterNetrunning/RemoteBreach", GetLocKey("DisplayName-BetterNetrunning-RemoteBreachEnabledDevice"), GetLocKey("Description-BetterNetrunning-RemoteBreachEnabledDevice"), settings.RemoteBreachEnabledDevice, true, function(state)
+        SettingsManager.Set("RemoteBreachEnabledDevice", state)
+        SettingsManager.Save()
+    end)
     nativeSettings.addSwitch("/BetterNetrunning/RemoteBreach", GetLocKey("DisplayName-BetterNetrunning-RemoteBreachEnabledComputer"), GetLocKey("Description-BetterNetrunning-RemoteBreachEnabledComputer"), settings.RemoteBreachEnabledComputer, true, function(state)
         SettingsManager.Set("RemoteBreachEnabledComputer", state)
         SettingsManager.Save()
     end)
-    nativeSettings.addSwitch("/BetterNetrunning/RemoteBreach", GetLocKey("DisplayName-BetterNetrunning-RemoteBreachEnabledDevice"), GetLocKey("Description-BetterNetrunning-RemoteBreachEnabledDevice"), settings.RemoteBreachEnabledDevice, true, function(state)
-        SettingsManager.Set("RemoteBreachEnabledDevice", state)
+    nativeSettings.addSwitch("/BetterNetrunning/RemoteBreach", GetLocKey("DisplayName-BetterNetrunning-RemoteBreachEnabledCamera"), GetLocKey("Description-BetterNetrunning-RemoteBreachEnabledCamera"), settings.RemoteBreachEnabledCamera, true, function(state)
+        SettingsManager.Set("RemoteBreachEnabledCamera", state)
+        SettingsManager.Save()
+    end)
+    nativeSettings.addSwitch("/BetterNetrunning/RemoteBreach", GetLocKey("DisplayName-BetterNetrunning-RemoteBreachEnabledTurret"), GetLocKey("Description-BetterNetrunning-RemoteBreachEnabledTurret"), settings.RemoteBreachEnabledTurret, true, function(state)
+        SettingsManager.Set("RemoteBreachEnabledTurret", state)
         SettingsManager.Save()
     end)
     nativeSettings.addSwitch("/BetterNetrunning/RemoteBreach", GetLocKey("DisplayName-BetterNetrunning-RemoteBreachEnabledVehicle"), GetLocKey("Description-BetterNetrunning-RemoteBreachEnabledVehicle"), settings.RemoteBreachEnabledVehicle, true, function(state)
@@ -75,6 +93,19 @@ function NativeSettingsUI.Build(nativeSettings, SettingsManager, TweakDBSetup)
         settings.RemoteBreachRAMCostPercent, 35,
         function(state)
             SettingsManager.Set("RemoteBreachRAMCostPercent", state)
+            SettingsManager.Save()
+        end
+    )
+
+    -- Breach Failure Penalty
+    nativeSettings.addSwitch("/BetterNetrunning/BreachPenalty", GetLocKey("DisplayName-BetterNetrunning-BreachFailurePenaltyEnabled"), GetLocKey("Description-BetterNetrunning-BreachFailurePenaltyEnabled"), settings.BreachFailurePenaltyEnabled, true, function(state)
+        SettingsManager.Set("BreachFailurePenaltyEnabled", state)
+        SettingsManager.Save()
+    end)
+    nativeSettings.addRangeInt("/BetterNetrunning/BreachPenalty", GetLocKey("DisplayName-BetterNetrunning-RemoteBreachLockDurationMinutes"), GetLocKey("Description-BetterNetrunning-RemoteBreachLockDurationMinutes"), 1, 60, 1,
+        settings.RemoteBreachLockDurationMinutes, 10,
+        function(state)
+            SettingsManager.Set("RemoteBreachLockDurationMinutes", state)
             SettingsManager.Save()
         end
     )
@@ -90,20 +121,6 @@ function NativeSettingsUI.Build(nativeSettings, SettingsManager, TweakDBSetup)
     end)
     nativeSettings.addSwitch("/BetterNetrunning/AccessPoints", GetLocKey("DisplayName-BetterNetrunning-AutoExecutePingOnSuccess"), GetLocKey("Description-BetterNetrunning-AutoExecutePingOnSuccess"), settings.AutoExecutePingOnSuccess, false, function(state)
         SettingsManager.Set("AutoExecutePingOnSuccess", state)
-        SettingsManager.Save()
-    end)
-    nativeSettings.addSwitch("/BetterNetrunning/AccessPoints", GetLocKey("DisplayName-BetterNetrunning-AllowAllDaemonsOnAccessPoints"), GetLocKey("Description-BetterNetrunning-AllowAllDaemonsOnAccessPoints"), settings.AllowAllDaemonsOnAccessPoints, false, function(state)
-        SettingsManager.Set("AllowAllDaemonsOnAccessPoints", state)
-        SettingsManager.Save()
-    end)
-
-    -- Removed Quickhacks
-    nativeSettings.addSwitch("/BetterNetrunning/RemovedQuickhacks", GetLocKey("DisplayName-BetterNetrunning-BlockCameraDisableQuickhack"), GetLocKey("Description-BetterNetrunning-BlockCameraDisableQuickhack"), settings.BlockCameraDisable, false, function(state)
-        SettingsManager.Set("BlockCameraDisable", state)
-        SettingsManager.Save()
-    end)
-    nativeSettings.addSwitch("/BetterNetrunning/RemovedQuickhacks", GetLocKey("DisplayName-BetterNetrunning-BlockTurretDisableQuickhack"), GetLocKey("Description-BetterNetrunning-BlockTurretDisableQuickhack"), settings.BlockTurretDisable, false, function(state)
-        SettingsManager.Set("BlockTurretDisable", state)
         SettingsManager.Save()
     end)
 
@@ -168,7 +185,12 @@ function NativeSettingsUI.Build(nativeSettings, SettingsManager, TweakDBSetup)
     nativeSettings.addSwitch("/BetterNetrunning/Debug", GetLocKey("DisplayName-BetterNetrunning-EnableDebugLog"), GetLocKey("Description-BetterNetrunning-EnableDebugLog"), settings.EnableDebugLog, false, function(state)
         SettingsManager.Set("EnableDebugLog", state)
         SettingsManager.Save()
+        NativeSettingsUI.RebuildDebugOptions(nativeSettings, SettingsManager)
+        nativeSettings.refresh()
     end)
+
+    -- Debug Log Level (conditional visibility - initial build)
+    NativeSettingsUI.CreateDebugOptions(nativeSettings, SettingsManager)
 
     print("[Better Netrunning] NativeSettings UI built successfully")
 end
@@ -406,6 +428,40 @@ end
 function NativeSettingsUI.RebuildEnemyRarityOptions(nativeSettings, SettingsManager)
     NativeSettingsUI.ClearEnemyRarityOptions(nativeSettings)
     NativeSettingsUI.CreateEnemyRarityOptions(nativeSettings, SettingsManager)
+end
+
+-- Debug Options (dynamic UI - shows DebugLogLevel only when EnableDebugLog = true)
+function NativeSettingsUI.RebuildDebugOptions(nativeSettings, SettingsManager)
+    NativeSettingsUI.ClearDebugOptions(nativeSettings)
+    NativeSettingsUI.CreateDebugOptions(nativeSettings, SettingsManager)
+end
+
+function NativeSettingsUI.ClearDebugOptions(nativeSettings)
+    -- Remove single DebugLogLevel option if it exists
+    if debugOptionTable ~= nil then
+        nativeSettings.removeOption(debugOptionTable)
+        debugOptionTable = nil
+    end
+end
+
+function NativeSettingsUI.CreateDebugOptions(nativeSettings, SettingsManager)
+    local settings = SettingsManager.GetAll()
+
+    -- Add DebugLogLevel only when EnableDebugLog is ON
+    if settings.EnableDebugLog then
+        local logLevelOptions = {
+            [0] = GetLocKey("DisplayValues-BetterNetrunning-LogLevel-ERROR"),
+            [1] = GetLocKey("DisplayValues-BetterNetrunning-LogLevel-WARNING"),
+            [2] = GetLocKey("DisplayValues-BetterNetrunning-LogLevel-INFO"),
+            [3] = GetLocKey("DisplayValues-BetterNetrunning-LogLevel-DEBUG"),
+            [4] = GetLocKey("DisplayValues-BetterNetrunning-LogLevel-TRACE")
+        }
+
+        debugOptionTable = nativeSettings.addSelectorString("/BetterNetrunning/Debug", GetLocKey("DisplayName-BetterNetrunning-DebugLogLevel"), GetLocKey("Description-BetterNetrunning-DebugLogLevel"), logLevelOptions, settings.DebugLogLevel, 2, function(value)
+            SettingsManager.Set("DebugLogLevel", value)
+            SettingsManager.Save()
+        end)
+    end
 end
 
 return NativeSettingsUI

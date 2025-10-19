@@ -13,14 +13,17 @@ local defaults = {
     -- Breaching
     EnableClassicMode = false,
     AllowBreachUnconscious = true,
+    QuickhackUnlockDurationHours = 6,
     -- RemoteBreach
-    RemoteBreachEnabledComputer = true,
     RemoteBreachEnabledDevice = true,
+    RemoteBreachEnabledComputer = true,
+    RemoteBreachEnabledCamera = true,
+    RemoteBreachEnabledTurret = true,
     RemoteBreachEnabledVehicle = true,
-    RemoteBreachRAMCostPercent = 35,
-    -- Removed Quickhacks
-    BlockCameraDisable = false,
-    BlockTurretDisable = false,
+    RemoteBreachRAMCostPercent = 50,
+    -- Breach Failure Penalty
+    BreachFailurePenaltyEnabled = true,
+    RemoteBreachLockDurationMinutes = 10,
     -- Unlocked Quickhacks
     AlwaysAllowPing = true,
     AlwaysAllowWhistle = false,
@@ -29,7 +32,6 @@ local defaults = {
     UnlockIfNoAccessPoint = false,
     AutoDatamineBySuccessCount = true,
     AutoExecutePingOnSuccess = true,
-    AllowAllDaemonsOnAccessPoints = false,
     -- Progression
     ProgressionRequireAll = true,
     ProgressionCyberdeckEnabled = false,
@@ -65,7 +67,8 @@ local defaults = {
     AlwaysNPCsControl = false,
     AlwaysNPCsUltimate = false,
     -- Debug
-    EnableDebugLog = false
+    EnableDebugLog = false,
+    DebugLogLevel = 2  -- 0=ERROR, 1=WARNING, 2=INFO (default), 3=DEBUG, 4=TRACE
 }
 
 -- Current settings
@@ -140,20 +143,21 @@ function SettingsManager.OverrideConfigFunctions()
         function() return current.EnableClassicMode end)
     Override("BetterNetrunningConfig.BetterNetrunningSettings", "AllowBreachingUnconsciousNPCs;",
         function() return current.AllowBreachUnconscious end)
+    Override("BetterNetrunningConfig.BetterNetrunningSettings", "QuickhackUnlockDurationHours;",
+        function() return current.QuickhackUnlockDurationHours end)
     -- RemoteBreach
-    Override("BetterNetrunningConfig.BetterNetrunningSettings", "RemoteBreachEnabledComputer;",
-        function() return current.RemoteBreachEnabledComputer end)
     Override("BetterNetrunningConfig.BetterNetrunningSettings", "RemoteBreachEnabledDevice;",
         function() return current.RemoteBreachEnabledDevice end)
+    Override("BetterNetrunningConfig.BetterNetrunningSettings", "RemoteBreachEnabledComputer;",
+        function() return current.RemoteBreachEnabledComputer end)
+    Override("BetterNetrunningConfig.BetterNetrunningSettings", "RemoteBreachEnabledCamera;",
+        function() return current.RemoteBreachEnabledCamera end)
+    Override("BetterNetrunningConfig.BetterNetrunningSettings", "RemoteBreachEnabledTurret;",
+        function() return current.RemoteBreachEnabledTurret end)
     Override("BetterNetrunningConfig.BetterNetrunningSettings", "RemoteBreachEnabledVehicle;",
         function() return current.RemoteBreachEnabledVehicle end)
     Override("BetterNetrunningConfig.BetterNetrunningSettings", "RemoteBreachRAMCostPercent;",
         function() return current.RemoteBreachRAMCostPercent end)
-    -- Removed Quickhacks
-    Override("BetterNetrunningConfig.BetterNetrunningSettings", "BlockCameraDisableQuickhack;",
-        function() return current.BlockCameraDisable end)
-    Override("BetterNetrunningConfig.BetterNetrunningSettings", "BlockTurretDisableQuickhack;",
-        function() return current.BlockTurretDisable end)
     -- Unlocked Quickhacks
     Override("BetterNetrunningConfig.BetterNetrunningSettings", "AlwaysAllowPing;",
         function() return current.AlwaysAllowPing end)
@@ -168,8 +172,6 @@ function SettingsManager.OverrideConfigFunctions()
         function() return current.AutoDatamineBySuccessCount end)
     Override("BetterNetrunningConfig.BetterNetrunningSettings", "AutoExecutePingOnSuccess;",
         function() return current.AutoExecutePingOnSuccess end)
-    Override("BetterNetrunningConfig.BetterNetrunningSettings", "AllowAllDaemonsOnAccessPoints;",
-        function() return current.AllowAllDaemonsOnAccessPoints end)
     -- Progression
     Override("BetterNetrunningConfig.BetterNetrunningSettings", "ProgressionRequireAll;",
         function() return current.ProgressionRequireAll end)
@@ -236,6 +238,8 @@ function SettingsManager.OverrideConfigFunctions()
     -- Debug
     Override("BetterNetrunningConfig.BetterNetrunningSettings", "EnableDebugLog;",
         function() return current.EnableDebugLog end)
+    Override("BetterNetrunningConfig.BetterNetrunningSettings", "DebugLogLevel;",
+        function() return current.DebugLogLevel end)
 
     print("[Better Netrunning] CET Override functions registered")
 end

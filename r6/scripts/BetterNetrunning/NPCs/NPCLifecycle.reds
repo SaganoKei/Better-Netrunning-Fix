@@ -1,7 +1,8 @@
 module BetterNetrunning.NPCs
 
 import BetterNetrunningConfig.*
-import BetterNetrunning.Common.*
+import BetterNetrunning.Core.*
+import BetterNetrunning.Utils.*
 
 /*
  * ============================================================================
@@ -111,4 +112,103 @@ public final const func GetValidChoices(const actions: script_ref<array<wref<Obj
     ArrayPush(Deref(actions), TweakDBInterface.GetObjectActionRecord(t"Takedown.BreachUnconsciousOfficer"));
   }
 	wrappedMethod(actions, context, objectActionsCallbackController, checkPlayerQuickHackList, choices);
+}
+
+// ==================== Custom Action Creation ====================
+
+/*
+ * Returns custom UnconsciousNPCBreach for BreachUnconsciousOfficer action
+ *
+ * FUNCTIONALITY:
+ * - Detects BreachUnconsciousOfficer action by name
+ * - Returns UnconsciousNPCBreach (custom AccessBreach with manual experience control)
+ * - Delegates all other actions to vanilla GetAction()
+ *
+ * ARCHITECTURE:
+ * - @replaceMethod for full control over action creation
+ * - UnconsciousNPCBreach: Custom class with StartUpload()/CompleteAction() overrides
+ *
+ * MOD COMPATIBILITY:
+ * - Uses @replaceMethod (necessary to intercept action creation)
+ * - Preserves vanilla logic for all non-BreachUnconsciousOfficer actions
+ */
+@replaceMethod(ScriptedPuppetPS)
+protected const func GetAction(actionRecord: wref<ObjectAction_Record>) -> ref<PuppetAction> {
+  let puppetAction: ref<PuppetAction>;
+  let breachAction: ref<AccessBreach>;
+  let isRemoteBreach: Bool;
+  let isPhysicalBreach: Bool;
+  let isSuicideBreach: Bool;
+  let isUnconsciousBreach: Bool;
+
+  if !IsDefined(actionRecord) {
+    return null;
+  }
+
+  // CRITICAL: Detect BreachUnconsciousOfficer and return UnconsciousNPCBreach
+  // This ensures manual experience control (experience only on minigame success)
+  isUnconsciousBreach = Equals(actionRecord.ActionName(), BNConstants.ACTION_UNCONSCIOUS_BREACH());
+
+  if isUnconsciousBreach {
+    let unconsciousBreachAction: ref<UnconsciousNPCBreach> = new UnconsciousNPCBreach();
+
+    if this.IsConnectedToAccessPoint() {
+      let networkName: String = ToString(this.GetNetworkName());
+      unconsciousBreachAction.SetProperties(
+        networkName,
+        ScriptedPuppetPS.GetNPCsConnectedToThisAPCount(),
+        this.GetAccessPoint().GetMinigameAttempt(),
+        false,  // isRemoteBreach = false
+        false   // isSuicideBreach = false
+      );
+    } else {
+      let squadNetwork: String = "SQUAD_NETWORK";
+      unconsciousBreachAction.SetProperties(
+        squadNetwork,
+        1,
+        1,
+        false,  // isRemoteBreach = false
+        false   // isSuicideBreach = false
+      );
+    }
+
+    return unconsciousBreachAction;
+  }
+
+  // VANILLA LOGIC: Handle all other breach types
+  isRemoteBreach = Equals(actionRecord.ActionName(), BNConstants.ACTION_REMOTE_BREACH());
+  isSuicideBreach = Equals(actionRecord.ActionName(), BNConstants.ACTION_SUICIDE_BREACH());
+  isPhysicalBreach = Equals(actionRecord.ActionName(), BNConstants.ACTION_PHYSICAL_BREACH());
+
+  if isPhysicalBreach || isRemoteBreach || isSuicideBreach {
+    breachAction = new AccessBreach();
+
+    if this.IsConnectedToAccessPoint() {
+      let networkName: String = ToString(this.GetNetworkName());
+      breachAction.SetProperties(
+        networkName,
+        ScriptedPuppetPS.GetNPCsConnectedToThisAPCount(),
+        this.GetAccessPoint().GetMinigameAttempt(),
+        isRemoteBreach,
+        isSuicideBreach
+      );
+    } else {
+      let squadNetwork: String = "SQUAD_NETWORK";
+      breachAction.SetProperties(
+        squadNetwork,
+        1,
+        1,
+        isRemoteBreach,
+        isSuicideBreach
+      );
+    }
+
+    puppetAction = breachAction;
+  } else if Equals(actionRecord.ActionName(), n"Ping") {
+    puppetAction = new PingSquad();
+  } else {
+    puppetAction = new PuppetAction();
+  }
+
+  return puppetAction;
 }
