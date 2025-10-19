@@ -103,15 +103,9 @@ Contributions are welcome! Please check [TODO.md](.docs/TODO.md) for current dev
 **Fix Project**: SaganoKei
 
 **Contributors**:
-- [@schizoabe](https://github.com/schizoabe) - Bug fix contributions
+- [@schizoabe](https://github.com/schizoabe) - Feature Additions and Bug Fix Contributions
 
 **Collaboration & Compatibility**:
 - **BiasNil** - Developer of [Daemon Netrunning (Revamp)](https://www.nexusmods.com/cyberpunk2077/mods/12523), compatibility integration
 - **lorddarkflare** - Developer of [Breach Takedown Improved](https://www.nexusmods.com/cyberpunk2077/mods/14171), technical collaboration
 - **rpierrecollado** - Integration features, CustomHackingSystem prototyping, and testing
-
----
-
-## 📄 License
-
-This project maintains the same license as the original Better Netrunning mod.
