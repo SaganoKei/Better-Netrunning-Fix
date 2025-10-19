@@ -1,6 +1,7 @@
 module BetterNetrunning.Integration
 
 import BetterNetrunningConfig.*
+import BetterNetrunning.Core.*
 
 // DNR (Daemon Netrunning Revamp) Compatibility Layer
 // This module provides integration with DNR mod's daemon system
