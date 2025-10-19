@@ -18,28 +18,25 @@
 //   When EnableDebugLog=false: Only ERROR logs are output
 //   When EnableDebugLog=true:  Log level controlled by DebugLogLevel setting
 //
-// NEW USAGE:
+// USAGE:
 //   BNError("Context", "Critical error message");   // Always output if EnableDebugLog=true or for critical errors
 //   BNWarn("Context", "Warning message");            // Requires DebugLogLevel >= 1 (WARNING)
 //   BNInfo("Context", "Information message");        // Requires DebugLogLevel >= 2 (INFO, default)
 //   BNDebug("Context", "Debug message");             // Requires DebugLogLevel >= 3 (DEBUG)
 //   BNTrace("Context", "Trace message");             // Requires DebugLogLevel >= 4 (TRACE)
 //
-// LEGACY USAGE (still supported):
-//   BNLog("[Context] Message"); // Treated as INFO level
-//
 // DUPLICATE SUPPRESSION:
 //   Identical messages within 5 seconds are automatically collapsed:
 //   "[DEBUG] Processing device 1"
-//   "[DEBUG] ↁEPrevious message repeated 19 times"
+//   "[DEBUG] → Previous message repeated 19 times"
 //
 // ARCHITECTURE:
 //   Application Layer (BreachProcessing, etc.)
-//        ↁE
+//        ↓
 //   Logging Layer (Logger.reds - level filtering + deduplication)
-//        ↁE
+//        ↓
 //   State Management (LoggerStateSystem - ScriptableSystem for duplicate tracking)
-//        ↁE
+//        ↓
 //   Framework Layer (RED4ext.ModLog)
 // ============================================================================
 
@@ -178,7 +175,7 @@ private static func LogWithLevel(level: LogLevel, context: String, message: Stri
   // Output duplicate summary if any
   if loggerState.GetDuplicateCount() > 0 {
     let levelPrefix: String = GetLevelPrefix(level);
-    let summaryMsg: String = levelPrefix + " [" + loggerState.GetLastContext() + "] ↁEPrevious message repeated " + ToString(loggerState.GetDuplicateCount()) + " times";
+    let summaryMsg: String = levelPrefix + " [" + loggerState.GetLastContext() + "] → Previous message repeated " + ToString(loggerState.GetDuplicateCount()) + " times";
     ModLog(n"BetterNetrunning", summaryMsg);
     loggerState.SetDuplicateCount(0);
   }
@@ -204,27 +201,4 @@ private static func GetLevelPrefix(level: LogLevel) -> String {
     case LogLevel.TRACE:   return "[TRACE]  ";
   }
   return "[UNKNOWN]";
-}
-
-// ============================================================================
-// LEGACY API: BACKWARD COMPATIBILITY
-// ============================================================================
-
-/// Legacy logging function - parses context from message, treats as INFO
-/// Format: "[Context] Message" or just "Message"
-/// @deprecated Use BNInfo/BNDebug/BNTrace instead
-public func BNLog(message: String) -> Void {
-  let contextEnd: Int32 = StrFindFirst(message, "]");
-  let context: String;
-  let actualMessage: String;
-
-  if contextEnd > 0 && StrBeginsWith(message, "[") {
-    context = StrMid(message, 1, contextEnd - 1);
-    actualMessage = StrMid(message, contextEnd + 2, StrLen(message) - contextEnd - 2);
-  } else {
-    context = "Legacy";
-    actualMessage = message;
-  }
-
-  BNInfo(context, actualMessage);
 }

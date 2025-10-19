@@ -114,6 +114,38 @@ public abstract class DaemonFilterUtils {
     }
 
     // ========================================================================
+    // UNLOCK FLAGS EXTRACTION
+    // ========================================================================
+
+    /// Extract unlock flags from minigame programs array
+    /// Parses daemon program IDs to determine which device types should be unlocked
+    /// Used by both AccessPoint breach and RemoteBreach for consistent flag parsing
+    /// @param minigamePrograms Array of TweakDB IDs for injected programs
+    /// @return BreachUnlockFlags struct with flags for Basic/NPC/Camera/Turret
+    public static func ExtractUnlockFlags(minigamePrograms: array<TweakDBID>) -> BreachUnlockFlags {
+        let flags: BreachUnlockFlags;
+
+        let i: Int32 = 0;
+        while i < ArraySize(minigamePrograms) {
+            let programID: TweakDBID = minigamePrograms[i];
+
+            if Equals(programID, BNConstants.PROGRAM_UNLOCK_QUICKHACKS()) {
+                flags.unlockBasic = true;
+            } else if Equals(programID, BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS()) {
+                flags.unlockNPCs = true;
+            } else if Equals(programID, BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS()) {
+                flags.unlockCameras = true;
+            } else if Equals(programID, BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS()) {
+                flags.unlockTurrets = true;
+            }
+
+            i += 1;
+        }
+
+        return flags;
+    }
+
+    // ========================================================================
     // DEVICE CAPABILITY CHECK (for daemon display logic)
     // ========================================================================
 
@@ -220,5 +252,5 @@ if DaemonFilterUtils.ShouldShowCameraDaemon(devicePS, data) {
 
 // Example 5: Logging with device type name
 let deviceType: String = DaemonFilterUtils.GetDeviceTypeName(devicePS);
-BNLog("Device type: " + deviceType);
+BNDebug("DaemonUtils", "Device type: " + deviceType);
 */

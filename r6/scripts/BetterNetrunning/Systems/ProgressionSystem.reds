@@ -22,7 +22,7 @@
 // - Integrates with BetterNetrunningSettings for user configuration
 // ============================================================================
 
-module BetterNetrunning.Progression
+module BetterNetrunning.Systems
 
 import BetterNetrunningConfig.*
 

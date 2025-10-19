@@ -33,7 +33,7 @@ import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.RemoteBreach.Actions.*
-import BetterNetrunning.Breach.Systems.*
+import BetterNetrunning.Breach.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.Breach.*
 
@@ -121,21 +121,11 @@ public abstract class CustomRemoteBreachActionFilter {
 
     // Removes ALL RemoteBreach-related actions (vanilla + custom)
     // Used when device is locked by breach failure penalty
+    // ARCHITECTURE: Delegate to RemoteBreachLockUtils.RemoveAllRemoteBreachActions (single source of truth)
     public static func RemoveAllRemoteBreachActions(
         outActions: script_ref<array<ref<DeviceAction>>>
     ) -> Void {
-        let i: Int32 = ArraySize(Deref(outActions)) - 1;
-
-        while i >= 0 {
-            let action: ref<DeviceAction> = Deref(outActions)[i];
-            let className: CName = action.GetClassName();
-
-            // Use Common/Events.reds implementation (single source of truth)
-            if IsCustomRemoteBreachAction(className) || IsDefined(action as RemoteBreach) {
-                ArrayErase(Deref(outActions), i);
-            }
-            i -= 1;
-        }
+        RemoteBreachLockUtils.RemoveAllRemoteBreachActions(outActions);
     }
 
     // Removes CustomAccessBreach if device already breached
@@ -193,7 +183,7 @@ public abstract class CustomRemoteBreachActionFilter {
     public static func RemoveAllRemoteBreachActions(
         outActions: script_ref<array<ref<DeviceAction>>>
     ) -> Void {
-        // No-op
+        // No-op (HackingExtensions not installed)
     }
 
     public static func RemoveCustomAccessBreachIfUnlocked(

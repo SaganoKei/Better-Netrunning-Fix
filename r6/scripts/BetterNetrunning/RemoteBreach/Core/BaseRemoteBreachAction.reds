@@ -35,7 +35,7 @@ import BetterNetrunning.*
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
-import BetterNetrunning.RadialUnlock.Core.*
+import BetterNetrunning.RadialUnlock.*
 
 @if(ModuleExists("HackingExtensions"))
 import HackingExtensions.*

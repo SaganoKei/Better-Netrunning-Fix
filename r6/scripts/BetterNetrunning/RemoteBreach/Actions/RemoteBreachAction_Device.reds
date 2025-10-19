@@ -12,7 +12,7 @@ import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.Utils.*
-import BetterNetrunning.Breach.Systems.*
+import BetterNetrunning.Breach.*
 
 @if(ModuleExists("HackingExtensions"))
 import HackingExtensions.*
@@ -93,8 +93,8 @@ private final func ActionCustomDeviceRemoteBreach() -> ref<DeviceRemoteBreachAct
     RemoteBreachActionHelper.SetMinigameDefinition(action, MinigameTargetType.Device, difficulty, this);
 
     // Check executability with vanilla-compatible LocKeys:
-    // - LocKey#27398: "RAM不足" (RAM insufficient)
-    // - LocKey#7021: "ネットワークのブリーチ失敁E (Network breach failure)
+    // - LocKey#27398: "RAM insufficient"
+    // - LocKey#7021: "Network breach failure"
     let player: ref<PlayerPuppet> = GetPlayer(this.GetGameInstance());
     let canExecute: Bool;
     let inactiveReason: String = RemoteBreachLockUtils.GetRemoteBreachInactiveReason(action, this, player, canExecute);
@@ -120,26 +120,39 @@ private final func ActionCustomDeviceRemoteBreach() -> ref<DeviceRemoteBreachAct
     return action;
 }
 
+/*
+ * Adds Device RemoteBreach action to QuickHack menu if conditions are met
+ *
+ * RATIONALE: Enables remote breaching of devices (Camera, Turret, Terminal, AccessPoint, etc.) without physical proximity
+ * ARCHITECTURE: Guard Clause pattern (max 2-level nesting for device type branching)
+ *
+ * CONDITIONS CHECKED:
+ * - Device is not Computer or Vehicle (handled by separate wrappers)
+ * - RadialUnlock mode active (UnlockIfNoAccessPoint disabled)
+ * - Device-specific RemoteBreach feature enabled (Camera/Turret/Other)
+ * - RemoteBreach not locked due to breach failure penalty
+ * - Device not already breached via RemoteBreach
+ */
 @if(ModuleExists("HackingExtensions"))
 @wrapMethod(ScriptableDeviceComponentPS)
 protected func GetQuickHackActions(out actions: array<ref<DeviceAction>>, const context: script_ref<GetActionsContext>) -> Void {
     wrappedMethod(actions, context);
     RemoteBreachActionHelper.RemoveTweakDBRemoteBreach(actions, n"DeviceRemoteBreachAction");
 
+    // Guard 1: Exclude Computer and Vehicle (handled by dedicated wrappers)
     if DaemonFilterUtils.IsComputer(this) || IsDefined(this as VehicleComponentPS) {
         return;
     }
 
-    // Check Device RemoteBreach settings based on device type
-    let isCamera: Bool = DeviceTypeUtils.IsCameraDevice(this);
-    let isTurret: Bool = DeviceTypeUtils.IsTurretDevice(this);
-
-    // Early return if UnlockIfNoAccessPoint is enabled (RadialUnlock Mode disabled)
+    // Guard 2: Check if RadialUnlock mode is active
     if BetterNetrunningSettings.UnlockIfNoAccessPoint() {
         return;
     }
 
-    // Check device-specific RemoteBreach settings
+    // Guard 3: Check device-specific RemoteBreach settings
+    let isCamera: Bool = DeviceTypeUtils.IsCameraDevice(this);
+    let isTurret: Bool = DeviceTypeUtils.IsTurretDevice(this);
+
     if isCamera {
         if !BetterNetrunningSettings.RemoteBreachEnabledCamera() {
             return;
@@ -149,17 +162,23 @@ protected func GetQuickHackActions(out actions: array<ref<DeviceAction>>, const 
             return;
         }
     } else {
-        // Other devices (Terminal, Door, etc.)
         if !BetterNetrunningSettings.RemoteBreachEnabledDevice() {
             return;
         }
     }
 
+    // Guard 4: Check if RemoteBreach is locked due to breach failure
+    if BreachLockUtils.IsDeviceLockedByBreachFailure(this) {
+        return;
+    }
+
+    // Guard 5: Validate device entity
     let deviceEntity: wref<GameObject> = this.GetOwnerEntityWeak() as GameObject;
     if !IsDefined(deviceEntity) {
         return;
     }
 
+    // Guard 6: Check if device is already breached
     let deviceID: EntityID = deviceEntity.GetEntityID();
     let stateSystem: ref<DeviceRemoteBreachStateSystem> = StateSystemUtils.GetDeviceStateSystem(this.GetGameInstance());
 

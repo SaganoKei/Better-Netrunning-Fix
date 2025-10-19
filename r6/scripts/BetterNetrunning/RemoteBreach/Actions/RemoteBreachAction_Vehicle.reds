@@ -12,7 +12,7 @@ import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.Utils.*
-import BetterNetrunning.Breach.Systems.*
+import BetterNetrunning.Breach.*
 
 @if(ModuleExists("HackingExtensions"))
 import HackingExtensions.*
@@ -73,8 +73,8 @@ private final func ActionCustomVehicleRemoteBreach() -> ref<VehicleRemoteBreachA
     RemoteBreachActionHelper.SetMinigameDefinition(action, MinigameTargetType.Vehicle, difficulty, this);
 
     // Check executability with vanilla-compatible LocKeys:
-    // - LocKey#27398: "RAM不足" (RAM insufficient)
-    // - LocKey#7021: "ネットワークのブリーチ失敁E (Network breach failure)
+    // - LocKey#27398: "RAM insufficient"
+    // - LocKey#7021: "Network breach failure"
     let player: ref<PlayerPuppet> = GetPlayer(this.GetGameInstance());
     let canExecute: Bool;
     let inactiveReason: String = RemoteBreachLockUtils.GetRemoteBreachInactiveReason(action, this, player, canExecute);
@@ -100,22 +100,41 @@ private final func ActionCustomVehicleRemoteBreach() -> ref<VehicleRemoteBreachA
     return action;
 }
 
+/*
+ * Adds Vehicle RemoteBreach action to QuickHack menu if conditions are met
+ *
+ * RATIONALE: Enables remote breaching of vehicles without physical proximity
+ * ARCHITECTURE: Guard Clause pattern (max 1-level nesting)
+ *
+ * CONDITIONS CHECKED:
+ * - Vehicle RemoteBreach feature enabled (settings)
+ * - RadialUnlock mode active (UnlockIfNoAccessPoint disabled)
+ * - RemoteBreach not locked due to breach failure penalty
+ * - Vehicle not already breached via RemoteBreach
+ */
 @if(ModuleExists("HackingExtensions"))
 @wrapMethod(VehicleComponentPS)
 protected func GetQuickHackActions(out actions: array<ref<DeviceAction>>, const context: script_ref<GetActionsContext>) -> Void {
     wrappedMethod(actions, context);
     RemoteBreachActionHelper.RemoveTweakDBRemoteBreach(actions, n"VehicleRemoteBreachAction");
 
-    // Check if Vehicle RemoteBreach is enabled AND UnlockIfNoAccessPoint is disabled
+    // Guard 1: Check if Vehicle RemoteBreach is enabled AND UnlockIfNoAccessPoint is disabled
     if !BetterNetrunningSettings.RemoteBreachEnabledVehicle() || BetterNetrunningSettings.UnlockIfNoAccessPoint() {
         return;
     }
 
+    // Guard 2: Check if RemoteBreach is locked due to breach failure
+    if BreachLockUtils.IsDeviceLockedByBreachFailure(this) {
+        return;
+    }
+
+    // Guard 3: Validate vehicle entity
     let vehicleEntity: wref<GameObject> = this.GetOwnerEntityWeak() as GameObject;
     if !IsDefined(vehicleEntity) {
         return;
     }
 
+    // Guard 4: Check if vehicle is already breached
     let vehicleID: EntityID = vehicleEntity.GetEntityID();
     let stateSystem: ref<VehicleRemoteBreachStateSystem> = StateSystemUtils.GetVehicleStateSystem(this.GetGameInstance());
 

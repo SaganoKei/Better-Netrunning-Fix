@@ -3,8 +3,8 @@ module BetterNetrunning.NPCs
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
-import BetterNetrunning.Progression.*
-import BetterNetrunning.Breach.Systems.*
+import BetterNetrunning.Systems.*
+import BetterNetrunning.Breach.*
 
 /*
  * ============================================================================
@@ -79,7 +79,7 @@ public func OnSetExposeQuickHacks(evt: ref<SetExposeQuickHacks>) -> EntityNotifi
  * - Base Game Processing: Generate all quickhacks with base game logic (76-line black box)
  * - Post-processing: Remove AccessBreach + Apply Progressive Unlock filter
  *
- * ARCHITECTURE: 3-step workflow (Pre ↁEBase Game ↁEPost) with Extract Method pattern
+ * ARCHITECTURE: 3-step workflow (Pre → Base Game → Post) with Extract Method pattern
  * - Preserves base game behavior for better mod compatibility
  * - Better Netrunning logic applied as post-processing filter
  */
@@ -208,24 +208,14 @@ private final func ShouldQuickhackBeInactive(puppetAction: ref<PuppetAction>, pe
 @addMethod(ScriptedPuppetPS)
 private final func SetQuickhackInactiveReason(puppetAction: ref<PuppetAction>, attiudeTowardsPlayer: EAIAttitude) -> Void {
   // Check if RemoteBreach is locked due to breach failure
-  let isRemoteBreachLocked: Bool = false;
-  if BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
-    let puppet: wref<ScriptedPuppet> = this.GetOwnerEntity() as ScriptedPuppet;
-    if IsDefined(puppet) {
-      let player: ref<PlayerPuppet> = GetPlayer(this.GetGameInstance());
-      if IsDefined(player) {
-        let npcPosition: Vector4 = puppet.GetWorldPosition();
-        isRemoteBreachLocked = RemoteBreachLockUtils.IsRemoteBreachLockedForDevice(player, npcPosition, this.GetGameInstance());
-      }
-    }
-  }
+  let isRemoteBreachLocked: Bool = BreachLockUtils.IsNPCLockedByBreachFailure(this);
 
   // Use vanilla lock message when RemoteBreach is locked (breach failure penalty)
   // Otherwise use Better Netrunning's custom message
   if isRemoteBreachLocked {
     puppetAction.SetInactiveWithReason(false, BNConstants.LOCKEY_NO_NETWORK_ACCESS());  // "No network access rights"
   } else {
-    puppetAction.SetInactiveWithReason(false, "LocKey#" + NameToString(BNConstants.LOCKEY_QUICKHACKS_LOCKED()));
+    puppetAction.SetInactiveWithReason(false, LocKeyToString(BNConstants.LOCKEY_QUICKHACKS_LOCKED()));
   }
 }
 

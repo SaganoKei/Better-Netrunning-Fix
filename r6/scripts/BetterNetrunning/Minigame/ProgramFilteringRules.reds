@@ -47,7 +47,6 @@ import BetterNetrunning.Integration.*
  * ============================================================================
  */
 
-
 // ==================== Already-Breached Program Filtering ====================
 
 /*
@@ -493,5 +492,187 @@ private func ClassifyDeviceByType(
  */
 private func GetRadialBreachRange(gameInstance: GameInstance) -> Float {
   return DeviceTypeUtils.GetRadialBreachRange(gameInstance);
+}
+
+// ==================== NETWORK CONNECTIVITY FILTERING (VANILLA RULE 5) ====================
+
+/*
+ * Check if program is Better Netrunning subnet daemon
+ *
+ * PURPOSE:
+ * Identifies BetterNetrunning's custom subnet unlock daemons to apply
+ * proper network connectivity filtering (vanilla Rule 5 logic).
+ *
+ * FUNCTIONALITY:
+ * Checks if actionID matches any of the 4 BN subnet daemon TweakDBIDs:
+ * - UnlockQuickhacks (Basic devices)
+ * - UnlockCameraQuickhacks (Cameras)
+ * - UnlockTurretQuickhacks (Turrets)
+ * - UnlockNPCQuickhacks (NPCs)
+ *
+ * @param actionID - TweakDBID of the program to check
+ * @return True if program is a BN subnet daemon
+ */
+public static func IsBetterNetrunningSubnetDaemon(actionID: TweakDBID) -> Bool {
+  if Equals(actionID, BNConstants.PROGRAM_UNLOCK_QUICKHACKS()) { return true; }
+  if Equals(actionID, BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS()) { return true; }
+  if Equals(actionID, BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS()) { return true; }
+  if Equals(actionID, BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS()) { return true; }
+  return false;
+}
+
+/*
+ * Apply vanilla Rule 5 (network connectivity) to BN subnet daemons
+ *
+ * PURPOSE:
+ * Replicates vanilla FilterPlayerPrograms() Rule 5 logic to ensure BN subnet
+ * daemons only appear when corresponding device types exist in the network.
+ *
+ * RATIONALE:
+ * BN subnet daemons have type="MinigameAction.Both" (not AccessPoint), which
+ * bypasses vanilla Rule 3/4 but also skips Rule 5 (network connectivity check).
+ * This function manually applies Rule 5 to extracted BN daemons before restoration.
+ *
+ * VANILLA RULE 5 LOGIC (hackingMinigameUtils.script Line 910-923):
+ * - CameraAccess: Keep if surveillanceCamera exists in network
+ * - TurretAccess: Keep if securityTurret exists in network
+ * - NPC: Keep if puppet exists AND is Active (not unconscious)
+ * - Other categories: Always keep
+ *
+ * ARCHITECTURE:
+ * - Uses CheckConnectedClassTypes() to get network topology
+ * - Applies category-specific filtering rules
+ * - Removes programs from array if conditions not met
+ *
+ * @param entity - Target entity (Access Point, Device, or NPC)
+ * @param programs - Array of BN subnet daemons to filter (modified in-place)
+ */
+public static func ApplyNetworkConnectivityFilter(
+  entity: wref<Entity>,
+  programs: script_ref<array<MinigameProgramData>>
+) -> Void {
+  // Step 1: Get network topology
+  let networkInfo: ConnectedClassTypes = GetNetworkTopology(entity);
+
+  BNDebug("ApplyNetworkConnectivityFilter",
+    "Network topology - Camera: " + ToString(networkInfo.surveillanceCamera) +
+    ", Turret: " + ToString(networkInfo.securityTurret) +
+    ", NPC: " + ToString(networkInfo.puppet));
+
+  // Step 2: Apply Rule 5 filtering (reverse iteration for safe removal)
+  let i: Int32 = ArraySize(Deref(programs)) - 1;
+  while i >= 0 {
+    let program: MinigameProgramData = Deref(programs)[i];
+    let shouldRemove: Bool = ShouldRemoveByNetworkConnectivity(program, networkInfo);
+
+    if shouldRemove {
+      BNDebug("ApplyNetworkConnectivityFilter",
+        "Removing daemon (no network connectivity): " + TDBID.ToStringDEBUG(program.actionID));
+      ArrayErase(Deref(programs), i);
+    }
+
+    i -= 1;
+  }
+}
+
+/*
+ * Get network topology for connectivity filtering
+ *
+ * PURPOSE:
+ * Retrieves ConnectedClassTypes struct containing network device composition.
+ *
+ * FUNCTIONALITY:
+ * - Uses vanilla pattern from hackingMinigameUtils.script:875-887
+ * - Puppets: Cast to ScriptedPuppet → GetMasterConnectedClassTypes()
+ * - Devices: Cast to Device → GetDevicePS().CheckMasterConnectedClassTypes()
+ * - Returns struct with camera/turret/puppet flags
+ *
+ * @param entity - Target entity (Device or ScriptedPuppet)
+ * @return ConnectedClassTypes struct (all false if invalid entity)
+ */
+private static func GetNetworkTopology(entity: wref<Entity>) -> ConnectedClassTypes {
+  let result: ConnectedClassTypes;
+
+  let gameObject: ref<GameObject> = entity as GameObject;
+  if !IsDefined(gameObject) {
+    BNWarn("GetNetworkTopology", "Entity is not GameObject");
+    return result;
+  }
+
+  // Puppets use GetMasterConnectedClassTypes()
+  if gameObject.IsPuppet() {
+    let puppet: ref<ScriptedPuppet> = entity as ScriptedPuppet;
+    if IsDefined(puppet) {
+      result = puppet.GetMasterConnectedClassTypes();
+    }
+  } else {
+    // Devices use GetDevicePS().CheckMasterConnectedClassTypes()
+    let device: ref<Device> = entity as Device;
+    if IsDefined(device) {
+      result = device.GetDevicePS().CheckMasterConnectedClassTypes();
+    }
+  }
+
+  return result;
+}
+
+/*
+ * Check if program should be removed based on network connectivity (Rule 5)
+ *
+ * PURPOSE:
+ * Applies vanilla Rule 5 category checks to a single program.
+ *
+ * VANILLA CATEGORIES (minigame_actions.tweak):
+ * - MinigameAction.CameraAccess: NetworkCameraShutdown (Line 89)
+ * - MinigameAction.TurretAccess: NetworkTurretShutdown (Line 122)
+ * - MinigameAction.DataAccess: NetworkDataMineLootAll/Advanced/Master (Line 220-253)
+ * - MinigameAction.NPC: (No vanilla examples, BN uses for UnlockNPCQuickhacks)
+ *
+ * BN SUBNET DAEMON MAPPING:
+ * - UnlockCameraQuickhacks → category="MinigameAction.CameraAccess"
+ * - UnlockTurretQuickhacks → category="MinigameAction.TurretAccess"
+ * - UnlockNPCQuickhacks → category="MinigameAction.NPC"
+ * - UnlockQuickhacks → category="MinigameAction.DataAccess" (Basic devices)
+ *
+ * @param program - Program to check
+ * @param networkInfo - Network topology from CheckConnectedClassTypes()
+ * @return True if program should be removed
+ */
+private static func ShouldRemoveByNetworkConnectivity(
+  program: MinigameProgramData,
+  networkInfo: ConnectedClassTypes
+) -> Bool {
+  let category: CName = TweakDBInterface.GetCName(program.actionID + t".category", n"");
+
+  // CameraAccess: Remove if no cameras in network
+  if Equals(category, n"MinigameAction.CameraAccess") {
+    if !networkInfo.surveillanceCamera {
+      BNTrace("ShouldRemoveByNetworkConnectivity",
+        "Removing CameraAccess daemon (no cameras): " + TDBID.ToStringDEBUG(program.actionID));
+      return true;
+    }
+  }
+
+  // TurretAccess: Remove if no turrets in network
+  if Equals(category, n"MinigameAction.TurretAccess") {
+    if !networkInfo.securityTurret {
+      BNTrace("ShouldRemoveByNetworkConnectivity",
+        "Removing TurretAccess daemon (no turrets): " + TDBID.ToStringDEBUG(program.actionID));
+      return true;
+    }
+  }
+
+  // NPC: Remove if no NPCs in network (puppet flag)
+  // NOTE: Vanilla checks Active state, but CheckConnectedClassTypes() already excludes unconscious NPCs
+  if Equals(category, n"MinigameAction.NPC") {
+    if !networkInfo.puppet {
+      BNTrace("ShouldRemoveByNetworkConnectivity",
+        "Removing NPC daemon (no active NPCs): " + TDBID.ToStringDEBUG(program.actionID));
+      return true;
+    }
+  }
+
+  // DataAccess and other categories: Always keep
+  return false;
 }
 

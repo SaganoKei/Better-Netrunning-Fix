@@ -33,7 +33,7 @@
 // - Common/DeviceTypeUtils.reds: GetRadialBreachRange() for alert radius
 // ============================================================================
 
-module BetterNetrunning.Breach.Systems
+module BetterNetrunning.Breach
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
@@ -53,9 +53,9 @@ import BetterNetrunning.Integration.*
 // 4. Call wrappedMethod() for base game processing
 //
 // STATE HANDLING:
-// - HackingMinigameState.Succeeded ↁEEarly return, no penalty (wrappedMethod only)
-// - HackingMinigameState.Failed ↁEFull penalty applied (skip and timeout both)
-// - HackingMinigameState.Unknown/InProgress ↁEEarly return (should not occur)
+// - HackingMinigameState.Succeeded → Early return, no penalty (wrappedMethod only)
+// - HackingMinigameState.Failed → Full penalty applied (skip and timeout both)
+// - HackingMinigameState.Unknown/InProgress → Early return (should not occur)
 //
 // PENALTIES (All Failed States):
 // - Red VFX (2-3 seconds)
@@ -182,7 +182,7 @@ public func OnNPCBreachEvent(evt: ref<NPCBreachEvent>) -> EntityNotificationType
     // Increment attempt counter (vanilla behavior)
     this.m_minigameAttempt += 1;
 
-    // SKIP: SendMinigameFailedToAllNPCs() - prevents MinigameFailEvent ↁEAlertPuppet()
+    // SKIP: SendMinigameFailedToAllNPCs() - prevents MinigameFailEvent → AlertPuppet()
     BNInfo("BreachPenalty", "Unconscious NPC breach failed - NPC alert suppressed (SendMinigameFailedToAllNPCs skipped)");
     return EntityNotificationType.DoNotNotifyEntity;
   }
@@ -306,7 +306,7 @@ private static func RecordRemoteBreachFailure(
 // Helper: TriggerTraceAttempt() - Trigger Position Reveal Trace
 // ============================================================================
 //
-// Triggers position reveal trace attempt (送E��知) after breach failure.
+// Triggers position reveal trace attempt (notification sent) after breach failure.
 // Uses vanilla NPCPuppet.RevealPlayerPositionIfNeeded() API.
 //
 // TRACE MECHANISM:
@@ -316,8 +316,8 @@ private static func RecordRemoteBreachFailure(
 // - Interruptible: NPC death/defeat, combat state change, HackInterrupt StatusEffect
 //
 // HARD DEPENDENCY: TracePositionOverhaul MOD
-//   WITH: FindNearestNetrunner() searches for real NPCs ↁERevealPlayerPositionIfNeeded()
-//   WITHOUT: FindNearestNetrunner() returns null ↁENo trace penalty
+//   WITH: FindNearestNetrunner() searches for real NPCs → RevealPlayerPositionIfNeeded()
+//   WITHOUT: FindNearestNetrunner() returns null → No trace penalty
 //
 // ADVANTAGES OVER INSTANT ALERT:
 // - 60s delay (player can escape or interrupt)

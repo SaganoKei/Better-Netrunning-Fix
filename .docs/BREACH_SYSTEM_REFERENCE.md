@@ -1,11 +1,9 @@
 # Better Netrunning - Breach System Technical Reference
 
-**Last Updated:** 2025-10-18 (Post-Phase 4A/4B/4C/5A Restructuring)
+**Last Updated:** 2025-10-19
 **Purpose:** Technical reference for Breach System implementation
 
 **IMPORTANT DEPENDENCY:** Remote Breach functionality requires CustomHackingSystem (HackingExtensions mod). All RemoteBreach-related code is wrapped with `@if(ModuleExists("HackingExtensions"))`.
-
-**Major Changes:** Module hierarchies (RemoteBreach/, Breach/, RadialUnlock/), 47 files total
 
 ---
 
@@ -57,6 +55,7 @@ Better Netrunning includes network access relaxation features that enhance playe
 | **Blackboard Flags** | `RemoteBreach = false`<br>`OfficerBreach = false` | `RemoteBreach = false`<br>`OfficerBreach = true` | `RemoteBreach = true`<br>`OfficerBreach = false` |
 | **Target Entity** | AccessPoint | ScriptedPuppet (unconscious state) | Device, Computer, Camera, Turret, Vehicle, ScriptedPuppet |
 | **Network Connection Requirement** | ❌ Not required (AP itself is hub) | ✅ Required via `IsConnectedToBackdoorDevice()` | ⚠️ Relaxed via `DeviceNetworkAccess.reds`<br>(Always returns true for standalone devices) |
+| **Breach Failure Penalty** | ✅ Applied (all penalties) | ✅ Applied (all penalties) | ✅ Applied (all penalties) |
 | **Statistics Collection** | ✅ Implemented | ✅ Implemented | ✅ Implemented |
 
 ### Detailed Activation Conditions
@@ -94,6 +93,17 @@ Better Netrunning includes network access relaxation features that enhance playe
 ```
 
 **Implementation:** `RemoteBreachAction_*.reds`, `DeviceNetworkAccess.reds`
+
+#### Breach Failure Penalty
+```
+✅ BreachFailurePenaltyEnabled = true
+✅ Breach minigame failed (HackingMinigameState.Failed)
+   Includes:
+   - Timeout (timer expires)
+   - ESC skip (player aborts)
+```
+
+**Implementation:** `Breach/Systems/BreachPenaltySystem.reds`, `Breach/Systems/RemoteBreachLock.reds`
 
 ---
 
@@ -504,6 +514,81 @@ AutoDatamineBySuccessCount = false:
   - Player manually selects Datamine during minigame
 ```
 
+### Breach Failure Penalties
+
+**Implementation:** `Breach/Systems/BreachPenaltySystem.reds` `ApplyFailurePenalty()`
+
+```
+Condition: BreachFailurePenaltyEnabled = true AND state == HackingMinigameState.Failed
+Operation:
+  - Breach minigame fails (timeout or ESC skip)
+  - Both treated as "Failed" (no differentiation)
+  → Apply full failure penalty
+```
+
+**Penalties Applied (All "Failed" States):**
+
+1. **Red VFX (Visual Feedback)**
+   - Effect: Red glitch screen effect (`disabling_connectivity_glitch_red`)
+   - Duration: 2-3 seconds
+   - Purpose: Clear failure feedback to player
+
+2. **RemoteBreach Lock Recording**
+   - Range: 50m radius around failure position
+   - Duration: 10 minutes (default, configurable via `RemoteBreachLockDurationMinutes`)
+   - Scope: Only affects RemoteBreach actions (no effect on AP Breach, Unconscious NPC Breach)
+   - Persistence: Saved to PlayerPuppet persistent fields
+
+   **Lock Logic (RemoteBreachLock.reds):**
+   ```
+   Device RemoteBreach attempt
+     ↓
+   Check failure position array (PlayerPuppet.m_betterNetrunning_remoteBreachFailedPositions)
+     ├─ Calculate distance to each failure position (Vector4.DistanceSquared2D)
+     ├─ Within 50m AND within 10 minutes of failure position exists
+     └─ → Remove RemoteBreach actions from QuickHack menu
+   ```
+
+3. **Position Reveal Trace (Optional, TracePositionOverhaul Integration)**
+   - Effect: Nearest netrunner NPC initiates 60-second upload trace
+   - Condition: TracePositionOverhaul MOD installed
+   - Range: Within 100m of failure position, real netrunner NPC exists
+   - Purpose: Failure detected by enemy netrunner
+
+**Coverage:**
+- **AP Breach:** Covered via `FinalizeNetrunnerDive()` wrapper
+- **Unconscious NPC Breach:** Covered via `AccessBreach.CompleteAction()` → `FinalizeNetrunnerDive()`
+- **Remote Breach:** Covered via `RemoteBreachProgram` → `FinalizeNetrunnerDive()`
+
+**Skip vs Failure:**
+- Currently: Both ESC skip and timeout treated as `HackingMinigameState.Failed`
+- No differentiation: All Failed states receive full penalty
+- Rationale: HackingMinigameState enum has no "Skipped" state, TimerLeftPercent unreliable
+
+**Debug Logging:**
+When `EnableDebugLog = true`, the following logs are output:
+- `ApplyFailurePenalty called - Failed at position: X Y Z`
+- `Recording failure position for RemoteBreach lock (50m, 10min)`
+- `Red VFX applied (2-3 seconds)`
+- `Trace triggered at nearest netrunner: NPC_ID` (if TracePositionOverhaul)
+
+**Persistent Fields:**
+```redscript
+@addField(PlayerPuppet)
+public persistent let m_betterNetrunning_remoteBreachFailedPositions: array<Vector4>;
+
+@addField(PlayerPuppet)
+public persistent let m_betterNetrunning_remoteBreachFailedTimestamps: array<Float>;
+```
+
+**Related Utilities:**
+- `Utils/BreachLockUtils.reds` (140 lines) - Entity/Player/Position retrieval aggregation (DRY principle)
+  - `IsDeviceLockedByBreachFailure()` - Device context check
+  - `IsNPCLockedByBreachFailure()` - NPC context check
+  - Called from 8 files (RemoteBreachAction_*, DeviceProgressiveUnlock, DeviceRemoteActions, RemoteBreachVisibility, NPCQuickhacks)
+
+---
+
 ### Network Unlock
 
 | Item | AP Breach | Unconscious NPC Breach | Remote Breach |
@@ -565,20 +650,21 @@ REDscript Game Logic
 - `bin/x64/plugins/cyber_engine_tweaks/mods/BetterNetrunning/nativeSettingsUI.lua` - UI builder
 - `r6/scripts/BetterNetrunning/config.reds` - Default values (overridden by Lua)
 
-**Settings Categories (11 total):**
+**Settings Categories (12 total):**
 1. Controls - Breaching hotkey configuration
 2. Breaching - Classic mode, Unconscious NPC breach toggle
 3. RemoteBreach - Device-specific toggles, RAM cost
-4. AccessPoints - Auto-datamine, Auto-ping, Daemon visibility
-5. RemovedQuickhacks - Block camera/turret disable quickhacks
-6. UnlockedQuickhacks - Always-available quickhacks (Ping, Whistle, Distract)
-7. Progression - Requirement toggles (Cyberdeck, Intelligence, Rarity)
-8. ProgressionCyberdeck - Cyberdeck tier requirements per subnet
-9. ProgressionIntelligence - Intelligence level requirements per subnet
-10. ProgressionEnemyRarity - Enemy rarity requirements per subnet
-11. Debug - Debug logging toggle
+4. BreachPenalty - Failure penalties, RemoteBreach lock duration
+5. AccessPoints - Auto-datamine, Auto-ping, Daemon visibility
+6. RemovedQuickhacks - Block camera/turret disable quickhacks
+7. UnlockedQuickhacks - Always-available quickhacks (Ping, Whistle, Distract)
+8. Progression - Requirement toggles (Cyberdeck, Intelligence, Rarity)
+9. ProgressionCyberdeck - Cyberdeck tier requirements per subnet
+10. ProgressionIntelligence - Intelligence level requirements per subnet
+11. ProgressionEnemyRarity - Enemy rarity requirements per subnet
+12. Debug - Debug logging toggle
 
-**Total Settings:** 69 configuration options
+**Total Settings:** 73 configuration options
 
 ### Settings Affecting Each Breach Type
 
@@ -594,7 +680,9 @@ REDscript Game Logic
 | **RemoteBreachEnabledTurret** | ❌ | ❌ | ✅ Control Turret Device RemoteBreach | `true` |
 | **RemoteBreachEnabledDevice** | ❌ | ❌ | ✅ Control non-Computer/Camera/Turret Device RemoteBreach | `true` |
 | **RemoteBreachEnabledVehicle** | ❌ | ❌ | ✅ Control Vehicle RemoteBreach | `true` |
-| **RemoteBreachRAMCostPercent** | ❌ | ❌ | ✅ Control RAM cost | `35` |
+| **RemoteBreachRAMCostPercent** | ❌ | ❌ | ✅ Control RAM cost | `50` |
+| **BreachFailurePenaltyEnabled** | ✅ Apply penalties on failure | ✅ Same | ✅ Same | `true` |
+| **RemoteBreachLockDurationMinutes** | ✅ RemoteBreach lock duration | ✅ Same | ✅ Same | `10` |
 
 ### Detailed Settings Explanation
 
@@ -1088,27 +1176,60 @@ public class BreachSessionStats {
 
 ### Output Format Example
 
+**Emoji Icon Set:**
 ```
-╔══════════════════════════════════════════════════════════════════════════════╗
-║ BREACH SESSION: AccessPoint - "corp_server_01" (2025-10-15 22:15:30)        ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║ ┌─ MINIGAME PHASE ───────────────────────────────────────────────────────┐  ║
-║ │ Programs Injected: 2 (PING, Datamine V2)                               │  ║
-║ │ Minigame Result: ✓ SUCCESS                                             │  ║
-║ └────────────────────────────────────────────────────────────────────────┘  ║
-║ ┌─ NETWORK RESULTS ──────────────────────────────────────────────────────┐  ║
-║ │ Total Devices: 15                                                       │  ║
-║ │ Unlocked: 12 (80.0%)                                                    │  ║
-║ │ Skipped: 3 (20.0%)                                                      │  ║
-║ └────────────────────────────────────────────────────────────────────────┘  ║
-║ ┌─ DEVICE BREAKDOWN ─────────────────────────────────────────────────────┐  ║
-║ │ Cameras: 4 | Turrets: 2 | NPCs: 5 | Doors: 2 | Terminals: 1 | Other: 1│  ║
-║ └────────────────────────────────────────────────────────────────────────┘  ║
-║ ┌─ UNLOCK FLAGS ─────────────────────────────────────────────────────────┐  ║
-║ │ Basic: ✓ | Cameras: ✓ | Turrets: ✓ | NPCs: ✗                          │  ║
-║ └────────────────────────────────────────────────────────────────────────┘  ║
-║ Processing Time: 23.5ms                                                      ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+Device Types:
+  🔧 Basic     - General devices (doors, terminals, etc.)
+  📷 Cameras   - Surveillance cameras
+  🔫 Turrets   - Security turrets
+  👤 NPCs      - Network-connected NPCs
+
+RadialUnlock:
+  🔌 Devices   - Standalone devices
+  🚗 Vehicles  - Unlocked vehicles
+  🚶 NPCs      - Standalone NPCs
+
+Unlock Status:
+  ✅ UNLOCKED  - Successfully unlocked
+  🔒 Locked    - Locked state
+```
+
+**Output Format:**
+```
+╔═══════════════════════════════════════════════════════════╗
+║             BREACH SESSION SUMMARY                        ║
+╠═══════════════════════════════════════════════════════════╣
+║ Breach Method: Access Point Breach                       ║
+║ Target Device: corp_server_01                            ║
+║ Timestamp: 2025-10-19 22:15:30                           ║
+║                                                           ║
+║ ┌─ MINIGAME PHASE ────────────────────────────────────┐  ║
+║ │ Programs Injected: 2 (PING, Datamine V2)            │  ║
+║ │ Minigame Result: ✓ SUCCESS                          │  ║
+║ └─────────────────────────────────────────────────────┘  ║
+║                                                           ║
+║ ┌─ DEVICE TYPE BREAKDOWN ──────────────────────────────┐  ║
+║ │ 🔧 Basic     : 5                                     │  ║
+║ │ 📷 Cameras   : 3                                     │  ║
+║ │ 🔫 Turrets   : 2                                     │  ║
+║ │ 👤 NPCs      : 4                                     │  ║
+║ └─────────────────────────────────────────────────────┘  ║
+║                                                           ║
+║ ┌─ RADIAL UNLOCK (50m) ────────────────────────────────┐  ║
+║ │ 🔌 Devices   : 2                                     │  ║
+║ │ 🚗 Vehicles  : 1                                     │  ║
+║ │ 🚶 NPCs      : 3                                     │  ║
+║ └─────────────────────────────────────────────────────┘  ║
+║                                                           ║
+║ ┌─ UNLOCK FLAGS ───────────────────────────────────────┐  ║
+║ │ Basic Subnet   : ✅ UNLOCKED                         │  ║
+║ │ Camera Subnet  : ✅ UNLOCKED                         │  ║
+║ │ Turret Subnet  : 🔒 Locked                           │  ║
+║ │ NPC Subnet     : 🔒 Locked                           │  ║
+║ └─────────────────────────────────────────────────────┘  ║
+║                                                           ║
+║ Processing Time: 23.5ms                                   ║
+╚═══════════════════════════════════════════════════════════╝
 ```
 
 **Box-Drawing Characters Used:**
@@ -1120,22 +1241,42 @@ public class BreachSessionStats {
 - `└ ─ ┘` - Section footers
 - `╚ ═ ╝` - Bottom border
 
-### Log Reduction Impact
+### Log Optimization Results
 
-**Phase 2 Progress (as of 2025-10-15):**
+**Optimization Metrics:**
 
-| File | Before (BNLog calls) | After (Summaries) | Reduction |
-|------|---------------------|-------------------|-----------|
-| **BreachProcessing.reds** | 17 | 1 | ✅ 94% |
-| **RemoteBreachNetworkUnlock.reds** | 20+ | 2 (planned) | ⏸️ Pending |
-| **NPCBreachExperience.reds** | 8 | 1 (planned) | ⏸️ Pending |
-| **Total** | 45+ | 4 | 🎯 91% (target) |
+| Metric | Value | Description |
+|--------|-------|-------------|
+| **Total optimizations** | 66 | Completed improvements |
+| **Deletions** | 9 | Redundant logs removed |
+| **TRACE conversions** | 22 | Internal details moved to Level 4 |
+| **SRP fixes** | 16 | Redundant level checks removed |
+| **Style fixes** | 19 | Redundant comments eliminated |
+| **DEBUG noise reduction** | 75% | Reduced noise in default log level |
+
+**Optimized Files:**
+1. `betterNetrunning.reds` - 6 deletions + 3 TRACE conversions
+2. `Utils/BonusDaemonUtils.reds` - 3 deletions + 4 TRACE conversions
+3. `Breach/Processing/BreachProcessing.reds` - 3 TRACE conversions
+4. `Minigame/ProgramInjection.reds` - 4 TRACE conversions
+5. `Devices/DeviceQuickhackFilters.reds` - 8 TRACE conversions
+6. `Utils/BreachSessionLogger.reds` - Emoji icons + DTO pattern
+
+**Implementation Details:**
+1. **SRP Compliance:** Logger.reds handles all level filtering internally
+2. **TRACE Level:** Internal processing details moved to Level 4
+3. **Visual Enhancement:** Emoji icons for device types and status
+4. **Code Clarity:** Redundant comments eliminated (standard pattern applied)
+5. **Maintainability:** Consistent annotation pattern across all logs
 
 **Benefits:**
-1. **Readability:** Structured output vs. scattered logs
-2. **Performance:** Single format call vs. 17 string operations
-3. **Maintainability:** Statistics logic isolated in BreachSessionStats.reds
-4. **Debugging:** Comprehensive view of entire breach session
+1. **Readability:** Structured output with visual icons vs. scattered text logs
+2. **Performance:** Reduced string operations, internal filtering optimization
+3. **Maintainability:** Statistics logic isolated in BreachSessionLogger.reds
+4. **Debugging:**
+   - INFO (default): Comprehensive summaries only
+   - DEBUG: Major state changes
+   - TRACE: Complete internal processing flow
 
 ### Integration Guidelines
 
@@ -1181,12 +1322,12 @@ public class BreachSessionStats {
   - `NPCs/NPCLifecycle.reds` - Unconscious NPC breach
   - `Minigame/ProgramInjection.reds` - Daemon injection logic
   - `Minigame/ProgramFiltering*.reds` - Daemon filtering logic (Core/Rules)
-  - `Debug/BreachSessionStats.reds` - Statistics collection
+  - `Utils/BreachSessionLogger.reds` - Statistics collection with emoji icons
   - `Core/Logger.reds` - Debug logging system (5-level logging, duplicate suppression)
   - `Core/TimeUtils.reds` - Timestamp management utilities
   - `Core/Events.reds` - Persistent field definitions (unlock timestamps, breach state)
 
 ---
 
-**Last Updated:** 2025-10-18 (Post-Phase 4A/4B/4C/5A Restructuring)
+**Last Updated:** 2025-10-19
 

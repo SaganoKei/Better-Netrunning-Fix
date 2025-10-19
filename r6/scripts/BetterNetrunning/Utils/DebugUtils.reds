@@ -5,7 +5,7 @@
 //
 // PURPOSE:
 //   Provides structured debug information logging for breach operations
-//   Built on top of Logger.reds (BNLog function)
+//   Built on top of Logger.reds (BNInfo/BNDebug/BNWarn functions)
 //
 // ARCHITECTURE:
 //   DebugUtils (this file) -> Logger.reds -> RED4ext.ModLog
@@ -23,12 +23,14 @@
 //   - Call LogRemoteBreachTarget() for RemoteBreach operations
 //   - Call LogUnconsciousNPCBreachTarget() for Unconscious NPC breaches
 //   - Enable via EnableDebugLog setting in config
+//   - Control detail level via DebugLogLevel setting (2=INFO, 3=DEBUG)
 //
 // DESIGN NOTES:
 //   - All functions check EnableDebugLog setting before output
-//   - Uses BNLog() from Logger.reds (never calls ModLog directly)
+//   - Uses BNInfo/BNDebug/BNWarn from Logger.reds (never calls ModLog directly)
 //   - Provides human-readable structured output with clear section headers
 //   - Includes location information (X/Y/Z coordinates) for all targets
+//   - Section headers output at INFO level, detailed data at DEBUG level
 // ============================================================================
 
 module BetterNetrunning.Utils
@@ -64,56 +66,56 @@ public func LogDeviceQuickhackState(devicePS: ref<ScriptableDeviceComponentPS>, 
   let sharedPS: ref<SharedGameplayPS> = devicePS;
 
   if !IsDefined(sharedPS) {
-    BNLog(context + " Device is not SharedGameplayPS, skipping quickhack state logging");
+    BNWarn(context, "Device is not SharedGameplayPS, skipping quickhack state logging");
     return;
   }
 
-  BNLog(context + " ===== DEVICE QUICKHACK STATE =====");
-  BNLog(context + " Device: " + CleanDeviceName(devicePS.GetDeviceName()));
+  BNInfo(context, "===== DEVICE QUICKHACK STATE =====");
+  BNInfo(context, "Device: " + CleanDeviceName(devicePS.GetDeviceName()));
 
   // Location information
   let deviceEntity: ref<GameObject> = devicePS.GetOwnerEntityWeak() as GameObject;
   if IsDefined(deviceEntity) {
     let position: Vector4 = deviceEntity.GetWorldPosition();
-    BNLog(context + " --- Location ---");
-    BNLog(context + " x = " + ToString(position.X) + ", y = " + ToString(position.Y) + ", z = " + ToString(position.Z));
+    BNDebug(context, "--- Location ---");
+    BNDebug(context, "x = " + ToString(position.X) + ", y = " + ToString(position.Y) + ", z = " + ToString(position.Z));
   }
 
   // Breach state (timestamp-based)
-  BNLog(context + " --- Breach State (Timestamp) ---");
-  BNLog(context + " Basic Subnet Breached: " + ToString(BreachStatusUtils.IsBasicBreached(sharedPS)) + " (ts: " + ToString(sharedPS.m_betterNetrunningUnlockTimestampBasic) + ")");
-  BNLog(context + " Camera Subnet Breached: " + ToString(BreachStatusUtils.IsCamerasBreached(sharedPS)) + " (ts: " + ToString(sharedPS.m_betterNetrunningUnlockTimestampCameras) + ")");
-  BNLog(context + " Turret Subnet Breached: " + ToString(BreachStatusUtils.IsTurretsBreached(sharedPS)) + " (ts: " + ToString(sharedPS.m_betterNetrunningUnlockTimestampTurrets) + ")");
-  BNLog(context + " NPC Subnet Breached: " + ToString(BreachStatusUtils.IsNPCsBreached(sharedPS)) + " (ts: " + ToString(sharedPS.m_betterNetrunningUnlockTimestampNPCs) + ")");
+  BNDebug(context, "--- Breach State (Timestamp) ---");
+  BNDebug(context, "Basic Subnet Breached: " + ToString(BreachStatusUtils.IsBasicBreached(sharedPS)) + " (ts: " + ToString(sharedPS.m_betterNetrunningUnlockTimestampBasic) + ")");
+  BNDebug(context, "Camera Subnet Breached: " + ToString(BreachStatusUtils.IsCamerasBreached(sharedPS)) + " (ts: " + ToString(sharedPS.m_betterNetrunningUnlockTimestampCameras) + ")");
+  BNDebug(context, "Turret Subnet Breached: " + ToString(BreachStatusUtils.IsTurretsBreached(sharedPS)) + " (ts: " + ToString(sharedPS.m_betterNetrunningUnlockTimestampTurrets) + ")");
+  BNDebug(context, "NPC Subnet Breached: " + ToString(BreachStatusUtils.IsNPCsBreached(sharedPS)) + " (ts: " + ToString(sharedPS.m_betterNetrunningUnlockTimestampNPCs) + ")");
 
   // Network connectivity
-  BNLog(context + " --- Network State ---");
-  BNLog(context + " Connected to Network: " + ToString(sharedPS.IsConnectedToPhysicalAccessPoint()));
-  BNLog(context + " Has Network Backdoor: " + ToString(sharedPS.HasNetworkBackdoor()));
+  BNDebug(context, "--- Network State ---");
+  BNDebug(context, "Connected to Network: " + ToString(sharedPS.IsConnectedToPhysicalAccessPoint()));
+  BNDebug(context, "Has Network Backdoor: " + ToString(sharedPS.HasNetworkBackdoor()));
 
   // Explicit standalone computation for clarity in logs
   let isStandaloneDevice: Bool = !sharedPS.IsConnectedToPhysicalAccessPoint() && !sharedPS.HasNetworkBackdoor();
-  BNLog(context + " Is Standalone: " + ToString(isStandaloneDevice));
+  BNDebug(context, "Is Standalone: " + ToString(isStandaloneDevice));
 
   // Quickhack availability (basic examples)
-  BNLog(context + " --- Quickhack Availability ---");
+  BNDebug(context, "--- Quickhack Availability ---");
 
   // Camera-specific quickhacks
   if DaemonFilterUtils.IsCamera(devicePS) {
-    BNLog(context + " [Camera] Remote Disable: Available");
-    BNLog(context + " [Camera] Friendly Turret: " + ToString(BreachStatusUtils.IsCamerasBreached(sharedPS)));
+    BNDebug(context, "[Camera] Remote Disable: Available");
+    BNDebug(context, "[Camera] Friendly Turret: " + ToString(BreachStatusUtils.IsCamerasBreached(sharedPS)));
   }
 
   // Turret-specific quickhacks
   if DaemonFilterUtils.IsTurret(devicePS) {
-    BNLog(context + " [Turret] Remote Disable: Available");
-    BNLog(context + " [Turret] Friendly Turret: " + ToString(BreachStatusUtils.IsTurretsBreached(sharedPS)));
+    BNDebug(context, "[Turret] Remote Disable: Available");
+    BNDebug(context, "[Turret] Friendly Turret: " + ToString(BreachStatusUtils.IsTurretsBreached(sharedPS)));
   }
 
   // Basic device quickhacks
-  BNLog(context + " [Basic] Distract: " + ToString(BreachStatusUtils.IsBasicBreached(sharedPS)));
+  BNDebug(context, "[Basic] Distract: " + ToString(BreachStatusUtils.IsBasicBreached(sharedPS)));
 
-  BNLog(context + " ==================================");
+  BNInfo(context, "==================================");
 }
 
 // ============================================================================
@@ -130,42 +132,42 @@ public func LogNPCQuickhackState(npcPS: ref<ScriptedPuppetPS>, opt logContext: S
   let deviceLinkPS: ref<SharedGameplayPS> = npcPS.GetDeviceLink();
 
   if !IsDefined(deviceLinkPS) {
-    BNLog(context + " NPC has no device link, skipping quickhack state logging");
+    BNWarn(context, "NPC has no device link, skipping quickhack state logging");
     return;
   }
 
-  BNLog(context + " ===== NPC QUICKHACK STATE =====");
+  BNInfo(context, "===== NPC QUICKHACK STATE =====");
 
   // Location information
   let npcEntity: ref<GameObject> = npcPS.GetOwnerEntityWeak() as GameObject;
   if IsDefined(npcEntity) {
     let position: Vector4 = npcEntity.GetWorldPosition();
-    BNLog(context + " --- Location ---");
-    BNLog(context + " x = " + ToString(position.X) + ", y = " + ToString(position.Y) + ", z = " + ToString(position.Z));
+    BNDebug(context, "--- Location ---");
+    BNDebug(context, "x = " + ToString(position.X) + ", y = " + ToString(position.Y) + ", z = " + ToString(position.Z));
   }
 
   // Breach state (timestamp-based)
-  BNLog(context + " --- Breach State (Timestamp) ---");
-  BNLog(context + " NPC Subnet Breached: " + ToString(BreachStatusUtils.IsNPCsBreached(deviceLinkPS)) + " (ts: " + ToString(deviceLinkPS.m_betterNetrunningUnlockTimestampNPCs) + ")");
+  BNDebug(context, "--- Breach State (Timestamp) ---");
+  BNDebug(context, "NPC Subnet Breached: " + ToString(BreachStatusUtils.IsNPCsBreached(deviceLinkPS)) + " (ts: " + ToString(deviceLinkPS.m_betterNetrunningUnlockTimestampNPCs) + ")");
 
   // Network connectivity
-  BNLog(context + " --- Network State ---");
-  BNLog(context + " Connected to Network: " + ToString(npcPS.IsConnectedToAccessPoint()));
-  BNLog(context + " Connected to AP: " + ToString(deviceLinkPS.IsConnectedToPhysicalAccessPoint()));
+  BNDebug(context, "--- Network State ---");
+  BNDebug(context, "Connected to Network: " + ToString(npcPS.IsConnectedToAccessPoint()));
+  BNDebug(context, "Connected to AP: " + ToString(deviceLinkPS.IsConnectedToPhysicalAccessPoint()));
 
   // Explicit standalone computation for NPCs (not connected to any AP/backdoor)
   let isStandaloneNPC: Bool = !npcPS.IsConnectedToAccessPoint() && !deviceLinkPS.IsConnectedToPhysicalAccessPoint() && !deviceLinkPS.HasNetworkBackdoor();
-  BNLog(context + " Is Standalone: " + ToString(isStandaloneNPC));
+  BNDebug(context, "Is Standalone: " + ToString(isStandaloneNPC));
 
   // Quickhack availability categories
   let npcBreached: Bool = BreachStatusUtils.IsNPCsBreached(deviceLinkPS);
-  BNLog(context + " --- Quickhack Availability ---");
-  BNLog(context + " [Covert] Memory Wipe, Reboot Optics: " + ToString(npcBreached));
-  BNLog(context + " [Combat] Short Circuit, Overheat: " + ToString(npcBreached));
-  BNLog(context + " [Control] Cyberware Malfunction, Weapon Glitch: " + ToString(npcBreached));
-  BNLog(context + " [Ultimate] Cyberpsychosis, Suicide: " + ToString(npcBreached));
+  BNDebug(context, "--- Quickhack Availability ---");
+  BNDebug(context, "[Covert] Memory Wipe, Reboot Optics: " + ToString(npcBreached));
+  BNDebug(context, "[Combat] Short Circuit, Overheat: " + ToString(npcBreached));
+  BNDebug(context, "[Control] Cyberware Malfunction, Weapon Glitch: " + ToString(npcBreached));
+  BNDebug(context, "[Ultimate] Cyberpsychosis, Suicide: " + ToString(npcBreached));
 
-  BNLog(context + " ===============================");
+  BNInfo(context, "===============================");
 }
 
 // ============================================================================
@@ -188,11 +190,11 @@ public func LogNetworkDeviceTypes(devicePS: ref<ScriptableDeviceComponentPS>, op
 
   let data: ConnectedClassTypes = sharedPS.CheckMasterConnectedClassTypes();
 
-  BNLog(context + " ===== NETWORK DEVICE TYPES =====");
-  BNLog(context + " Cameras Connected: " + ToString(data.surveillanceCamera));
-  BNLog(context + " Turrets Connected: " + ToString(data.securityTurret));
-  BNLog(context + " NPCs Connected: " + ToString(data.puppet));
-  BNLog(context + " ================================");
+  BNInfo(context, "===== NETWORK DEVICE TYPES =====");
+  BNDebug(context, "Cameras Connected: " + ToString(data.surveillanceCamera));
+  BNDebug(context, "Turrets Connected: " + ToString(data.securityTurret));
+  BNDebug(context, "NPCs Connected: " + ToString(data.puppet));
+  BNInfo(context, "================================");
 }
 
 // ============================================================================
@@ -207,19 +209,19 @@ public func LogAccessPointBreachTarget(apPS: ref<AccessPointControllerPS>, opt l
 
   let context: String = NotEquals(logContext, "") ? logContext : "[AccessPoint]";
 
-  BNLog(context + " ===== BREACH TARGET INFORMATION =====");
-  BNLog(context + " Breach Method: Access Point Breach");
-  BNLog(context + " Target Device: " + CleanDeviceName(apPS.GetDeviceName()));
-  BNLog(context + " Device Type: Access Point");
+  BNInfo(context, "===== BREACH TARGET INFORMATION =====");
+  BNInfo(context, "Breach Method: Access Point Breach");
+  BNInfo(context, "Target Device: " + CleanDeviceName(apPS.GetDeviceName()));
+  BNInfo(context, "Device Type: Access Point");
 
   let apEntity: ref<GameObject> = apPS.GetOwnerEntityWeak() as GameObject;
   if IsDefined(apEntity) {
     let apPosition: Vector4 = apEntity.GetWorldPosition();
-    BNLog(context + " x = " + ToString(apPosition.X) + ", y = " + ToString(apPosition.Y) + ", z = " + ToString(apPosition.Z));
+    BNDebug(context, "x = " + ToString(apPosition.X) + ", y = " + ToString(apPosition.Y) + ", z = " + ToString(apPosition.Z));
   }
 
-  BNLog(context + " Network Name: " + apPS.GetNetworkName());
-  BNLog(context + " =====================================");
+  BNInfo(context, "Network Name: " + apPS.GetNetworkName());
+  BNInfo(context, "=====================================");
 }
 
 // Log Remote Breach target information
@@ -230,24 +232,24 @@ public func LogRemoteBreachTarget(devicePS: ref<ScriptableDeviceComponentPS>, op
 
   let context: String = NotEquals(logContext, "") ? logContext : "[RemoteBreach]";
 
-  BNLog(context + " ===== BREACH TARGET INFORMATION =====");
-  BNLog(context + " Breach Method: Remote Breach (CustomHackingSystem)");
-  BNLog(context + " Target Device: " + CleanDeviceName(devicePS.GetDeviceName()));
-  BNLog(context + " Device Type: " + DaemonFilterUtils.GetDeviceTypeName(devicePS));
+  BNInfo(context, "===== BREACH TARGET INFORMATION =====");
+  BNInfo(context, "Breach Method: Remote Breach (CustomHackingSystem)");
+  BNInfo(context, "Target Device: " + CleanDeviceName(devicePS.GetDeviceName()));
+  BNInfo(context, "Device Type: " + DaemonFilterUtils.GetDeviceTypeName(devicePS));
 
   let deviceEntity: ref<GameObject> = devicePS.GetOwnerEntityWeak() as GameObject;
   if IsDefined(deviceEntity) {
     let devicePosition: Vector4 = deviceEntity.GetWorldPosition();
-    BNLog(context + " x = " + ToString(devicePosition.X) + ", y = " + ToString(devicePosition.Y) + ", z = " + ToString(devicePosition.Z));
+    BNDebug(context, "x = " + ToString(devicePosition.X) + ", y = " + ToString(devicePosition.Y) + ", z = " + ToString(devicePosition.Z));
   }
 
   // ScriptableDeviceComponentPS already extends SharedGameplayPS
   let sharedPS: ref<SharedGameplayPS> = devicePS;
   if IsDefined(sharedPS) {
-    BNLog(context + " Network Name: " + sharedPS.GetNetworkName());
-    BNLog(context + " Connected to AP: " + ToString(sharedPS.IsConnectedToPhysicalAccessPoint()));
+    BNDebug(context, "Network Name: " + sharedPS.GetNetworkName());
+    BNDebug(context, "Connected to AP: " + ToString(sharedPS.IsConnectedToPhysicalAccessPoint()));
   }
-  BNLog(context + " =====================================");
+  BNInfo(context, "=====================================");
 }
 
 // Log Unconscious NPC Breach target information
@@ -258,27 +260,27 @@ public func LogUnconsciousNPCBreachTarget(npc: ref<ScriptedPuppet>, npcPS: ref<S
 
   let context: String = NotEquals(logContext, "") ? logContext : "[UnconsciousNPC]";
 
-  BNLog(context + " ===== BREACH TARGET INFORMATION =====");
-  BNLog(context + " Breach Method: Unconscious NPC Breach");
+  BNInfo(context, "===== BREACH TARGET INFORMATION =====");
+  BNInfo(context, "Breach Method: Unconscious NPC Breach");
 
   let npcDisplayName: String = npc.GetDisplayName();
   if NotEquals(npcDisplayName, "") {
-    BNLog(context + " Target NPC: " + npcDisplayName);
+    BNInfo(context, "Target NPC: " + npcDisplayName);
   } else {
-    BNLog(context + " Target NPC: [Unknown]");
+    BNWarn(context, "Target NPC: [Unknown]");
   }
 
   let npcPosition: Vector4 = npc.GetWorldPosition();
-  BNLog(context + " x = " + ToString(npcPosition.X) + ", y = " + ToString(npcPosition.Y) + ", z = " + ToString(npcPosition.Z));
+  BNDebug(context, "x = " + ToString(npcPosition.X) + ", y = " + ToString(npcPosition.Y) + ", z = " + ToString(npcPosition.Z));
 
   let deviceLinkPS: ref<SharedGameplayPS> = npcPS.GetDeviceLink();
   if IsDefined(deviceLinkPS) {
-    BNLog(context + " Connected to Network: " + ToString(npcPS.IsConnectedToAccessPoint()));
+    BNDebug(context, "Connected to Network: " + ToString(npcPS.IsConnectedToAccessPoint()));
     if npcPS.IsConnectedToAccessPoint() {
-      BNLog(context + " Network Name: " + deviceLinkPS.GetNetworkName());
+      BNDebug(context, "Network Name: " + deviceLinkPS.GetNetworkName());
     }
   }
-  BNLog(context + " =====================================");
+  BNInfo(context, "=====================================");
 }
 
 // ============================================================================
@@ -301,8 +303,8 @@ public func LogProgramFilteringStep(
 
   if programsBefore != programsAfter {
     let programName: String = GetDaemonDisplayName(removedProgram);
-    BNLog(context + " " + filterName + ": Removed " + programName +
-          " (" + ToString(programsBefore) + " ↁE" + ToString(programsAfter) + " programs)");
+    BNDebug(context, filterName + ": Removed " + programName +
+          " (" + ToString(programsBefore) + " → " + ToString(programsAfter) + " programs)");
   }
 }
 
@@ -320,23 +322,23 @@ public func LogFilteringSummary(
   let context: String = NotEquals(logContext, "") ? logContext : "[Filter]";
   let removedCount: Int32 = initialCount - finalCount;
 
-  BNLog(context + " ===== FILTERING SUMMARY =====");
-  BNLog(context + " Initial programs: " + ToString(initialCount));
-  BNLog(context + " Final programs: " + ToString(finalCount));
-  BNLog(context + " Removed programs: " + ToString(removedCount));
+  BNInfo(context, "===== FILTERING SUMMARY =====");
+  BNInfo(context, "Initial programs: " + ToString(initialCount));
+  BNInfo(context, "Final programs: " + ToString(finalCount));
+  BNInfo(context, "Removed programs: " + ToString(removedCount));
 
   if removedCount > 0 {
-    BNLog(context + " --- Removed Program List ---");
+    BNDebug(context, "--- Removed Program List ---");
     let i: Int32 = 0;
     while i < ArraySize(removedPrograms) {
       let programName: String = GetDaemonDisplayName(removedPrograms[i]);
-      BNLog(context + " " + ToString(i + 1) + ". " + programName +
+      BNDebug(context, ToString(i + 1) + ". " + programName +
             " (" + TDBID.ToStringDEBUG(removedPrograms[i]) + ")");
       i += 1;
     }
   }
 
-  BNLog(context + " =============================");
+  BNInfo(context, "=============================");
 }
 
 // ============================================================================
@@ -356,11 +358,11 @@ public func LogLootRewards(
 
   let context: String = NotEquals(logContext, "") ? logContext : "[Loot]";
 
-  BNLog(context + " ===== LOOT REWARDS =====");
-  BNLog(context + " Money Multiplier: " + ToString(baseMoney) + "x");
-  BNLog(context + " Crafting Material: " + ToString(hasCraftingMaterial));
-  BNLog(context + " Shard Drop Chance: +" + ToString(baseShardDropChance * 100.0) + "%");
-  BNLog(context + " ========================");
+  BNInfo(context, "===== LOOT REWARDS =====");
+  BNInfo(context, "Money Multiplier: " + ToString(baseMoney) + "x");
+  BNInfo(context, "Crafting Material: " + ToString(hasCraftingMaterial));
+  BNInfo(context, "Shard Drop Chance: +" + ToString(baseShardDropChance * 100.0) + "%");
+  BNInfo(context, "========================");
 }
 
 // ============================================================================
@@ -375,13 +377,13 @@ public func LogBetterNetrunningSettings(opt logContext: String) -> Void {
 
   let context: String = NotEquals(logContext, "") ? logContext : "[Settings]";
 
-  BNLog(context + " ===== BETTER NETRUNNING SETTINGS =====");
-  BNLog(context + " EnableDebugLog: " + ToString(BetterNetrunningSettings.EnableDebugLog()));
-  BNLog(context + " AutoExecutePingOnSuccess: " + ToString(BetterNetrunningSettings.AutoExecutePingOnSuccess()));
-  BNLog(context + " AutoDatamineBySuccessCount: " + ToString(BetterNetrunningSettings.AutoDatamineBySuccessCount()));
-  BNLog(context + " UnlockIfNoAccessPoint: " + ToString(BetterNetrunningSettings.UnlockIfNoAccessPoint()));
-  BNLog(context + " AllowBreachingUnconsciousNPCs: " + ToString(BetterNetrunningSettings.AllowBreachingUnconsciousNPCs()));
-  BNLog(context + " ======================================");
+  BNInfo(context, "===== BETTER NETRUNNING SETTINGS =====");
+  BNDebug(context, "EnableDebugLog: " + ToString(BetterNetrunningSettings.EnableDebugLog()));
+  BNDebug(context, "AutoExecutePingOnSuccess: " + ToString(BetterNetrunningSettings.AutoExecutePingOnSuccess()));
+  BNDebug(context, "AutoDatamineBySuccessCount: " + ToString(BetterNetrunningSettings.AutoDatamineBySuccessCount()));
+  BNDebug(context, "UnlockIfNoAccessPoint: " + ToString(BetterNetrunningSettings.UnlockIfNoAccessPoint()));
+  BNDebug(context, "AllowBreachingUnconsciousNPCs: " + ToString(BetterNetrunningSettings.AllowBreachingUnconsciousNPCs()));
+  BNInfo(context, "======================================");
 }
 
 // ============================================================================
@@ -410,9 +412,9 @@ public func LogMinigameCompletionState(
     stateName = "InProgress";
   }
 
-  BNLog(context + " ===== MINIGAME COMPLETION =====");
-  BNLog(context + " State: " + stateName);
-  BNLog(context + " Successful Programs: " + ToString(successfulPrograms) + " / " + ToString(totalPrograms));
-  BNLog(context + " Success Rate: " + ToString((Cast<Float>(successfulPrograms) / Cast<Float>(totalPrograms)) * 100.0) + "%");
-  BNLog(context + " ===============================");
+  BNInfo(context, "===== MINIGAME COMPLETION =====");
+  BNInfo(context, "State: " + stateName);
+  BNInfo(context, "Successful Programs: " + ToString(successfulPrograms) + " / " + ToString(totalPrograms));
+  BNInfo(context, "Success Rate: " + ToString((Cast<Float>(successfulPrograms) / Cast<Float>(totalPrograms)) * 100.0) + "%");
+  BNInfo(context, "===============================");
 }

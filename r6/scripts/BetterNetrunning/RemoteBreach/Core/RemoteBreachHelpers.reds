@@ -8,13 +8,14 @@
 // - ComputerRemoteBreachUtils: Computer-specific network unlock
 // - MinigameIDHelper: Minigame definition selection
 // - RemoteBreachActionHelper: Action initialization helpers
-// - OnRemoteBreachSucceeded: Success callback
+// - OnRemoteBreachSucceeded: Success callback with statistics collection
 // - OnRemoteBreachFailed: Failure callback
 // - JackIn interaction control functions
 //
-// NOTE (2025-10-19):
-// Common device/vehicle/NPC unlock logic moved to Core/DeviceUnlockUtils.reds
-// for sharing between AP Breach and RemoteBreach implementations.
+// ARCHITECTURE:
+// - OnRemoteBreachSucceeded.Execute() collects statistics and outputs via LogBreachSummary()
+// - Statistics include: device counts, unlock flags, network size, breach target
+// - Common device/vehicle/NPC unlock logic shared with AccessPoint breach via DeviceUnlockUtils.reds
 // -----------------------------------------------------------------------------
 
 module BetterNetrunning.RemoteBreach.Core
@@ -23,7 +24,7 @@ import BetterNetrunning.*
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
-import BetterNetrunning.RadialUnlock.Core.*
+import BetterNetrunning.RadialUnlock.*
 
 @if(ModuleExists("HackingExtensions"))
 import HackingExtensions.*
@@ -597,7 +598,7 @@ public class OnRemoteBreachSucceeded extends OnCustomHackingSucceeded {
             return;
         }
 
-        this.ExecuteProgramsAndRewards(activePrograms, device);
+        this.ExecuteProgramsAndRewardsWithStats(activePrograms, device);
     }
 
     // ============================================================================
@@ -676,16 +677,50 @@ public class OnRemoteBreachSucceeded extends OnCustomHackingSucceeded {
     }
 
     // ============================================================================
-    // Helper: Execute programs and grant rewards (2-level nesting max)
+    // Helper: Execute programs and grant rewards with statistics collection
     // ============================================================================
-    private func ExecuteProgramsAndRewards(activePrograms: array<TweakDBID>, device: wref<ScriptableDeviceComponentPS>) -> Void {
+    private func ExecuteProgramsAndRewardsWithStats(activePrograms: array<TweakDBID>, device: wref<ScriptableDeviceComponentPS>) -> Void {
+        // Initialize statistics
+        let stats: ref<BreachSessionStats> = BreachSessionStats.Create("RemoteBreach", device.GetDeviceName());
+        stats.minigameSuccess = true;
+        stats.programsInjected = ArraySize(activePrograms);
+
+        // Parse unlock flags from active programs
+        let unlockFlags: BreachUnlockFlags = DaemonFilterUtils.ExtractUnlockFlags(activePrograms);
+        stats.unlockBasic = unlockFlags.unlockBasic;
+        stats.unlockCameras = unlockFlags.unlockCameras;
+        stats.unlockTurrets = unlockFlags.unlockTurrets;
+        stats.unlockNPCs = unlockFlags.unlockNPCs;
+
+        // Get network devices for statistics (MasterControllerPS and its subclasses have GetChildren)
+        let networkDevices: array<ref<DeviceComponentPS>>;
+        let masterPS: ref<MasterControllerPS> = device as MasterControllerPS;
+        if IsDefined(masterPS) {
+            masterPS.GetChildren(networkDevices);
+        }
+        stats.networkDeviceCount = ArraySize(networkDevices);
+
+        // Count device types
+        let i: Int32 = 0;
+        while i < ArraySize(networkDevices) {
+            let netDevice: ref<DeviceComponentPS> = networkDevices[i];
+            if IsDefined(netDevice) {
+                if DeviceTypeUtils.IsCameraDevice(netDevice) {
+                    stats.cameraCount += 1;
+                } else if DeviceTypeUtils.IsTurretDevice(netDevice) {
+                    stats.turretCount += 1;
+                } else if DeviceTypeUtils.IsNPCDevice(netDevice) {
+                    stats.npcNetworkCount += 1;
+                } else {
+                    stats.basicCount += 1;
+                }
+            }
+            i += 1;
+        }
+
         let deviceEntity: ref<Device> = GameInstance.FindEntityByID(GetGameInstance(), PersistentID.ExtractEntityID(device.GetID())) as Device;
 
-        // PING execution removed - feature disabled
-        // Check for PING daemon (for logging only)
-        let hasPing: Bool = ArrayContains(activePrograms, BNConstants.PROGRAM_NETWORK_PING_HACK());
-
-        // Execute other programs (Datamine, etc.)
+        // Execute programs (Datamine, etc.)
         ProcessMinigamePrograms(activePrograms, device, GetGameInstance(), "[RemoteBreach]");
 
         // Grant vanilla hacking rewards
@@ -693,6 +728,10 @@ public class OnRemoteBreachSucceeded extends OnCustomHackingSucceeded {
 
         // Disable JackIn interaction
         DisableJackInInteractionForAccessPoint(device);
+
+        // Output statistics summary
+        stats.Finalize();
+        LogBreachSummary(stats);
     }
 
     // ============================================================================

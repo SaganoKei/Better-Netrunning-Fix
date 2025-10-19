@@ -74,8 +74,6 @@ public func ApplyBonusDaemons(
   let successCount: Int32 = ArraySize(Deref(activePrograms));
 
   if NotEquals(logContext, "") {
-    BNDebug(logContext, "ApplyBonusDaemons called - Success count: " + ToString(successCount));
-
     // Log all programs BEFORE bonus daemon processing with readable names
     let i: Int32 = 0;
     while i < successCount {
@@ -93,9 +91,6 @@ public func ApplyBonusDaemons(
   // IMPLEMENTATION: Uses vanilla QuickHack system (single-device PING)
   // RATIONALE: Avoids PingDevice daemon's network-wide propagation
   let pingEnabled: Bool = BetterNetrunningSettings.AutoExecutePingOnSuccess();
-  if NotEquals(logContext, "") {
-    BNDebug(logContext, "AutoExecutePingOnSuccess setting: " + ToString(pingEnabled));
-  }
 
   if pingEnabled {
     // Get target entity from Blackboard
@@ -129,16 +124,13 @@ public func ApplyBonusDaemons(
 
   // Feature 2: Auto-apply Datamine based on success count
   let datamineEnabled: Bool = BetterNetrunningSettings.AutoDatamineBySuccessCount();
-  if NotEquals(logContext, "") {
-    BNDebug(logContext, "AutoDatamineBySuccessCount setting: " + ToString(datamineEnabled));
-  }
 
   if datamineEnabled {
     let nonDatamineCount: Int32 = CountNonDataminePrograms(Deref(activePrograms));
     let hasDatamine: Bool = HasAnyDatamineProgram(Deref(activePrograms));
 
     if NotEquals(logContext, "") {
-      BNDebug(logContext, "Non-Datamine daemon count: " + ToString(nonDatamineCount) + ", Has Datamine: " + ToString(hasDatamine));
+      BNTrace(logContext, "Non-Datamine daemon count: " + ToString(nonDatamineCount) + ", Has Datamine: " + ToString(hasDatamine));
     }
 
     if nonDatamineCount > 0 && !hasDatamine {
@@ -167,7 +159,7 @@ public func ApplyBonusDaemons(
   // Log all programs AFTER bonus daemon processing
   if NotEquals(logContext, "") {
     let finalCount: Int32 = ArraySize(Deref(activePrograms));
-    BNDebug(logContext, "Final program count: " + ToString(finalCount));
+    BNTrace(logContext, "Final program count: " + ToString(finalCount));
 
     let i: Int32 = 0;
     while i < finalCount {
@@ -320,7 +312,7 @@ private func ExecutePingQuickHackOnDevice(targetDevice: ref<Device>, player: ref
   pingAction.SetCanSkipPayCost(true);
 
   // Execute via ProcessRPGAction (complete Vanilla flow)
-  // For Devices, this should trigger OnActionPing() 遶翫・PulseNetwork() 遶翫・RevealNetworkGridOnPulse
+  // For Devices, this should trigger OnActionPing() → PulseNetwork() → RevealNetworkGridOnPulse
   // Therefore, manual RevealNetworkGridOnPulse is likely redundant for Devices (but harmless)
   // NOTE: Device does not have GetGameplayRoleComponent(), so we call ProcessRPGAction without it
   pingAction.ProcessRPGAction(gi);

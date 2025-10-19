@@ -1,12 +1,13 @@
 // ============================================================================
-// FILE: Debug/BreachSessionStats.reds
-// PURPOSE: Breach統計情報めEつのサマリーに雁E��E
+// FILE: Utils/BreachSessionLogger.reds
+// PURPOSE: Breach session statistics aggregation and logging
 // ============================================================================
-// BREACH STATISTICS AGGREGATION
+// BREACH SESSION STATISTICS LOGGER
 //
 // PURPOSE:
-//   Collects all breach processing statistics into a single summary object,
-//   replacing 50+ detailed log statements with clean statistical output
+//   Collects all breach processing statistics into a single summary object
+//   and outputs formatted log summary, replacing 50+ detailed log statements
+//   with clean statistical output
 //
 // USAGE:
 //   let stats: ref<BreachSessionStats> = BreachSessionStats.Create("AccessPoint", "Device Name");
@@ -16,25 +17,24 @@
 //   LogBreachSummary(stats); // Output formatted summary
 //
 // OUTPUT EXAMPLE:
-//   [INFO] ╔═══════════════════════════════════════╁E
-//   [INFO] ╁E   BREACH SESSION SUMMARY             ╁E
-//   [INFO] ╚═══════════════════════════════════════╁E
+//   [INFO] ╔═══════════════════════════════════════╗
+//   [INFO] ║   BREACH SESSION SUMMARY             ║
+//   [INFO] ╚═══════════════════════════════════════╝
 //   [INFO] Type: AccessPoint | Target: H10 Access Point
 //   [INFO] Result: SUCCESS | Processing: 234.5 ms
 //   [INFO] Total: 23 | Unlocked: 18 (78%)
-//   [INFO] 📷 Cameras: 8 | 🔫 Turrets: 4 | 👤 NPCs: 6
+//   [INFO] � Basic: 5 | �📷 Cameras: 8 | 🔫 Turrets: 4 | 👤 NPCs: 6
 //
 // DESIGN RATIONALE:
-//   - Reduces log noise by 70% (50+ logs ↁE1 summary)
+//   - Reduces log noise by 70% (50+ logs → 1 summary)
 //   - Improves readability (structured tables vs scattered messages)
 //   - Preserves debugging value (all critical metrics included)
 //   - Performance neutral (stats collection is negligible overhead)
 // ============================================================================
 
-module BetterNetrunning.Debug
+module BetterNetrunning.Utils
 
 import BetterNetrunning.Core.*
-import BetterNetrunning.Utils.*
 
 // ============================================================================
 // STATISTICS DATA CLASS
@@ -58,11 +58,16 @@ public class BreachSessionStats {
   public let devicesFailed: Int32;         // Failed to unlock
   public let devicesSkipped: Int32;        // Skipped (flag check)
 
-  // Device type breakdown (統吁E Doors/Terminals/Other ↁEBasic)
+  // Device type breakdown (consolidated: Doors/Terminals/Other → Basic)
+  public let basicCount: Int32;            // Basic devices (doors, terminals, etc.)
   public let cameraCount: Int32;           // Surveillance cameras
   public let turretCount: Int32;           // Security turrets
-  public let npcCount: Int32;              // NPCs
-  public let basicCount: Int32;            // Basic devices (doors, terminals, etc.)
+  public let npcNetworkCount: Int32;       // Network-connected NPCs (via device link)
+
+  // Radial unlock statistics
+  public let standaloneDeviceCount: Int32; // Standalone devices unlocked (radial)
+  public let vehicleCount: Int32;          // Vehicles unlocked (radial)
+  public let npcStandaloneCount: Int32;    // Standalone NPCs (radial unlock, no network)
 
   // Unlock flags
   public let unlockBasic: Bool;            // Basic Subnet unlocked
@@ -133,20 +138,37 @@ public static func LogBreachSummary(stats: ref<BreachSessionStats>) -> Void {
   }
 
   // Device type breakdown (only if any devices)
-  let hasDevices: Bool = stats.cameraCount > 0 || stats.turretCount > 0 || stats.npcCount > 0 || stats.basicCount > 0;
+  let hasDevices: Bool = stats.basicCount > 0 || stats.cameraCount > 0 || stats.turretCount > 0 || stats.npcNetworkCount > 0;
   if hasDevices {
     BNInfo("BreachStats", "┌─ DEVICE TYPE BREAKDOWN ───────────────────────────────────┐");
+    if stats.basicCount > 0 {
+      BNInfo("BreachStats", "│ 🔌 Basic     : " + ToString(stats.basicCount));
+    }
     if stats.cameraCount > 0 {
       BNInfo("BreachStats", "│ 📷 Cameras   : " + ToString(stats.cameraCount));
     }
     if stats.turretCount > 0 {
       BNInfo("BreachStats", "│ 🔫 Turrets   : " + ToString(stats.turretCount));
     }
-    if stats.npcCount > 0 {
-      BNInfo("BreachStats", "│ 👤 NPCs      : " + ToString(stats.npcCount));
+    if stats.npcNetworkCount > 0 {
+      BNInfo("BreachStats", "│ 👤 NPCs      : " + ToString(stats.npcNetworkCount));
     }
-    if stats.basicCount > 0 {
-      BNInfo("BreachStats", "│ 🔧 Basic     : " + ToString(stats.basicCount));
+    BNInfo("BreachStats", "└───────────────────────────────────────────────────────────┘");
+    BNInfo("BreachStats", "");
+  }
+
+  // Radial unlock breakdown (only if any radial unlocks)
+  let hasRadialUnlocks: Bool = stats.standaloneDeviceCount > 0 || stats.vehicleCount > 0 || stats.npcStandaloneCount > 0;
+  if hasRadialUnlocks {
+    BNInfo("BreachStats", "┌─ RADIAL UNLOCK (50m) ─────────────────────────────────────┐");
+    if stats.standaloneDeviceCount > 0 {
+      BNInfo("BreachStats", "│ 🔌 Devices   : " + ToString(stats.standaloneDeviceCount));
+    }
+    if stats.vehicleCount > 0 {
+      BNInfo("BreachStats", "│ 🚗 Vehicles  : " + ToString(stats.vehicleCount));
+    }
+    if stats.npcStandaloneCount > 0 {
+      BNInfo("BreachStats", "│ 👤 NPCs      : " + ToString(stats.npcStandaloneCount));
     }
     BNInfo("BreachStats", "└───────────────────────────────────────────────────────────┘");
     BNInfo("BreachStats", "");
@@ -154,10 +176,10 @@ public static func LogBreachSummary(stats: ref<BreachSessionStats>) -> Void {
 
   // Unlock flags
   BNInfo("BreachStats", "┌─ UNLOCK FLAGS ────────────────────────────────────────────┐");
-  BNInfo("BreachStats", "│ Basic Subnet   : " + (stats.unlockBasic ? "✓ UNLOCKED" : "✗ Locked"));
-  BNInfo("BreachStats", "│ Camera Subnet  : " + (stats.unlockCameras ? "✓ UNLOCKED" : "✗ Locked"));
-  BNInfo("BreachStats", "│ Turret Subnet  : " + (stats.unlockTurrets ? "✓ UNLOCKED" : "✗ Locked"));
-  BNInfo("BreachStats", "│ NPC Subnet     : " + (stats.unlockNPCs ? "✓ UNLOCKED" : "✗ Locked"));
+  BNInfo("BreachStats", "│ Basic Subnet   : " + (stats.unlockBasic ? "✅ UNLOCKED" : "🔒 Locked"));
+  BNInfo("BreachStats", "│ Camera Subnet  : " + (stats.unlockCameras ? "✅ UNLOCKED" : "🔒 Locked"));
+  BNInfo("BreachStats", "│ Turret Subnet  : " + (stats.unlockTurrets ? "✅ UNLOCKED" : "🔒 Locked"));
+  BNInfo("BreachStats", "│ NPC Subnet     : " + (stats.unlockNPCs ? "✅ UNLOCKED" : "🔒 Locked"));
   BNInfo("BreachStats", "└───────────────────────────────────────────────────────────┘");
   BNInfo("BreachStats", "");
 

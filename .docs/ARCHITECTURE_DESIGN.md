@@ -1,8 +1,7 @@
 # Better Netrunning - Architecture Design Document
 
-**Version:** 2.2
+**Version:** 2.3
 **Last Updated:** 2025-10-19
-**Major Changes:** モジュール階層化、外部依存100%一元化 (Integration/)、バグ修正とコード統合
 
 ---
 
@@ -137,14 +136,15 @@ r6/scripts/BetterNetrunning/
 │   ├── MinigameProgramUtils.reds      (195 lines) - Program manipulation utilities
 │   └── TimeUtils.reds                 (52 lines)  - Timestamp management
 │
-├── Utils/                             ✅ (3 files, 895 lines) - Business logic utilities
+├── Utils/                             ✅ (4 files, 1,035 lines) - Business logic utilities
 │   ├── BonusDaemonUtils.reds          (356 lines) - Auto PING/Datamine execution
 │   ├── DaemonUtils.reds               (195 lines) - Daemon type identification
-│   └── DebugUtils.reds                (344 lines) - Diagnostic tools & formatted output
+│   ├── DebugUtils.reds                (344 lines) - Diagnostic tools & formatted output
+│   └── BreachLockUtils.reds           (140 lines) - Entity/Player/Position retrieval (DRY principle)
 │
 ├── Integration/                       ✅ (3 files, 602 lines) - External MOD dependencies (100% centralization)
 │   ├── DNRGating.reds                 (87 lines)  - Daemon Netrunning Revamp integration
-│   ├── TracePositionOverhaulGating.reds (199 lines) - Trace MOD integration
+│   ├── TracePositionOverhaulGating.reds (199 lines) - Trace MOD integration (breach failure trace)
 │   └── RadialBreachGating.reds        (316 lines) - RadialBreach MOD integration
 │   Note: All external MOD dependencies centralized in Integration/
 │
@@ -154,8 +154,8 @@ r6/scripts/BetterNetrunning/
 │   ├── Processing/
 │   │   └── BreachProcessing.reds      (528 lines) - Breach completion, RefreshSlaves wrapper, Radius unlock
 │   └── Systems/
-│       ├── BreachPenaltySystem.reds   (341 lines) - Skip/Failure detection, Trace initiation
-│       └── RemoteBreachLock.reds      (216 lines) - Position-based breach lock
+│       ├── BreachPenaltySystem.reds   (341 lines) - Failure detection, VFX, RemoteBreach lock, Trace
+│       └── RemoteBreachLock.reds      (216 lines) - Position-based RemoteBreach locking (50m, 10min)
 │
 ├── RemoteBreach/                      ✅ (3-tier, 12 files, 3,085 lines)
 │   ├── Core/ (6 files, 2,154 lines)
@@ -180,10 +180,10 @@ r6/scripts/BetterNetrunning/
 │       └── RemoteBreachNetworkUnlock.reds (651 lines) - Network unlock + Nearby device 🟡
 │   Note: RadialBreachGating.reds in Integration/ - External MOD dependencies
 │
-├── Devices/                           ✅ (4 files, 733 lines)
+├── Devices/                           ✅ (4 files, 966 lines)
 │   ├── DeviceNetworkAccess.reds       (83 lines)  - Network access relaxation
 │   ├── DeviceProgressiveUnlock.reds   (308 lines) - Progressive unlock logic
-│   ├── DeviceQuickhackFilters.reds    (233 lines) - Quickhack filtering
+│   ├── DeviceQuickhackFilters.reds    (268 lines) - HackingExtensions integration, RemoteBreach replacement
 │   └── DeviceRemoteActions.reds       (109 lines) - Remote action execution
 │
 ├── Minigame/                          ✅ (3 files, 712 lines)
@@ -204,10 +204,12 @@ r6/scripts/BetterNetrunning/
 │   ├── Japanese.reds                  (194 lines) - Japanese localization (142 entries)
 │   └── LocalizationProvider.reds      (42 lines)  - Localization provider
 │
-└── Debug/                             ✅ (1 file, 153 lines)
-    └── BreachSessionStats.reds        (153 lines) - Breach statistics collection
+TOTAL: 49 files, 12,540 lines (10 directories, 18 modules)
 
-TOTAL: 47 files, 11,319 lines (11 directories, 18 modules)
+**File Structure Notes:**
+- BreachSessionStats.reds renamed to BreachSessionLogger.reds (moved to Utils/ directory)
+- File name describes functionality (logging), class name describes data structure (statistics)
+- DTO (Data Transfer Object) pattern with separated logger functions
 ```
 
 **Architecture Notes:**
@@ -404,11 +406,12 @@ CustomHackingSystem.API
 | **MinigameProgramUtils.reds** | 195 | Program manipulation utilities |
 | **TimeUtils.reds** | 52 | Timestamp management for unlock duration |
 
-**Utils/ (3 files, 895 lines):**
+**Utils/ (4 files, 1,092 lines):**
 
 | File | Lines | Purpose |
 |------|-------|---------|
 | **BonusDaemonUtils.reds** | 356 | Auto PING/Datamine execution POST-breach |
+| **BreachSessionLogger.reds** | 197 | Breach statistics aggregation with emoji icons (🔧📷🔫👤) |
 | **DaemonUtils.reds** | 195 | Daemon type identification (Basic/Camera/Turret/NPC) |
 | **DebugUtils.reds** | 344 | Diagnostic tools & formatted output |
 
@@ -705,7 +708,126 @@ Enemy Rarity Requirements:
   NPC Subnet     → Epic+
 ```
 
-### 8. Debug Logging System (Core/Logger.reds + Debug/BreachSessionStats.reds)
+### 8. Breach Penalty System (Breach/Systems/)
+
+**Purpose:** Apply meaningful penalties when players fail breach protocol minigames to maintain game balance and prevent risk-free RemoteBreach gameplay.
+
+**Components:**
+
+#### A. BreachPenaltySystem.reds (341 lines)
+
+**Failure Detection & Penalty Application:**
+
+```redscript
+@wrapMethod(ScriptableDeviceComponentPS)
+public func FinalizeNetrunnerDive(state: HackingMinigameState) -> Void {
+  // Early Return: Success or penalty disabled
+  if NotEquals(state, HackingMinigameState.Failed) ||
+     !BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
+    wrappedMethod(state);
+    return;
+  }
+
+  // Apply full failure penalty
+  ApplyFailurePenalty(player, this, gameInstance);
+  wrappedMethod(state);
+}
+```
+
+**Penalties Applied (Failure Only):**
+1. **Red VFX** (2-3 seconds, `disabling_connectivity_glitch_red`)
+2. **RemoteBreach Lock** (10 minutes default, 50m radius)
+3. **Position Reveal Trace** (60s upload, requires real netrunner NPC via TracePositionOverhaul)
+
+**State Handling:**
+- `HackingMinigameState.Succeeded` → No penalty (early return)
+- `HackingMinigameState.Failed` → Full penalty (both ESC skip and timeout)
+- No differentiation between skip and timeout (HackingMinigameState has no "Skipped" state)
+
+**Coverage:**
+- AP Breach: Covered via `FinalizeNetrunnerDive()` wrapper
+- Unconscious NPC Breach: Covered via `AccessBreach.CompleteAction()` → `FinalizeNetrunnerDive()`
+- Remote Breach: Covered via `RemoteBreachProgram` → `FinalizeNetrunnerDive()`
+
+**Architecture:**
+- Single `@wrapMethod` covers all breach types (maintainability)
+- Early Return pattern for clean control flow
+- Max nesting depth: 2 levels
+
+#### B. RemoteBreachLock.reds (216 lines)
+
+**Position-Based RemoteBreach Locking:**
+
+```redscript
+@addField(PlayerPuppet)
+public persistent let m_betterNetrunning_remoteBreachFailedPositions: array<Vector4>;
+
+@addField(PlayerPuppet)
+public persistent let m_betterNetrunning_remoteBreachFailedTimestamps: array<Float>;
+```
+
+**Lock Logic:**
+- **Range Check:** 50m radius around failure positions (`Vector4.DistanceSquared2D()`)
+- **Duration:** Configurable (default 10 minutes)
+- **Expiration:** Auto-cleanup of expired locks during checks
+- **Scope:** Only affects RemoteBreach actions (no effect on AP Breach, Unconscious NPC Breach)
+
+**QuickHack Filtering:**
+
+```redscript
+@wrapMethod(ScriptableDeviceComponentPS)
+protected func GetQuickHackActions(out actions: array<ref<DeviceAction>>,
+                                   context: GetActionsContext) {
+  wrappedMethod(actions, context);
+
+  // Remove RemoteBreach if device is locked by breach failure
+  if IsRemoteBreachLockedForDevice(...) {
+    RemoveAllRemoteBreachActions(actions);
+  }
+}
+```
+
+**Performance Optimization:**
+- Squared distance calculation avoids `sqrtf()` (50m radius = 2500.0 squared)
+- Reverse loop for safe array deletion (`i = ArraySize(arr) - 1; while i >= 0`)
+- Early expiration cleanup during lock checks
+
+#### C. BreachLockUtils.reds (140 lines, Utils/)
+
+**DRY Principle Application:**
+
+Aggregates duplicate Entity/Player/Position retrieval patterns across 9 locations (~100 lines total) into 2 static methods:
+
+```redscript
+public static func IsDeviceLockedByBreachFailure(
+  devicePS: ref<ScriptableDeviceComponentPS>
+) -> Bool
+
+public static func IsNPCLockedByBreachFailure(
+  npcPS: ref<ScriptedPuppetPS>
+) -> Bool
+```
+
+**Called From (8 files):**
+- RemoteBreachAction_Computer.reds
+- RemoteBreachAction_Device.reds
+- RemoteBreachAction_Vehicle.reds
+- DeviceProgressiveUnlock.reds (2 occurrences)
+- DeviceRemoteActions.reds
+- RemoteBreachVisibility.reds (2 occurrences)
+- NPCQuickhacks.reds
+
+**Dependencies:**
+- BetterNetrunningConfig: `BreachFailurePenaltyEnabled()`, `RemoteBreachLockDurationMinutes()`
+- Core/Logger.reds: Debug logging
+- Integration/TracePositionOverhaulGating.reds: Optional trace integration
+
+**Design Patterns:**
+- Early Return pattern for clean control flow
+- Max nesting depth: 2 levels
+- DRY principle: Single source of truth for lock checking logic
+
+### 9. Debug Logging System (Core/Logger.reds + Utils/BreachSessionLogger.reds)
 
 **Purpose:** Centralized logging infrastructure with level-based filtering, duplicate suppression, and statistics collection
 
@@ -717,14 +839,28 @@ ERROR   (0) → Errors only (critical failures, null checks)
 WARNING (1) → Warnings + Errors (deprecated paths, fallback logic)
 INFO    (2) → Info + Warning + Error (breach summaries, major events) [DEFAULT]
 DEBUG   (3) → Debug + all above (intermediate calculations, state changes)
-TRACE   (4) → Trace + all above (every function call, all variable values)
+TRACE   (4) → Trace + all above (internal processing details)
 
 // Public API
 BNError(context: String, message: String)   // Always outputs (level 0)
 BNWarn(context: String, message: String)    // Outputs when level ≥ 1
 BNInfo(context: String, message: String)    // Outputs when level ≥ 2
 BNDebug(context: String, message: String)   // Outputs when level ≥ 3
-BNTrace(context: String, message: String)   // Outputs when level ≥ 4
+BNTrace(context: String, message: String)   // Outputs when level ≥ 4 (internal details)
+```
+
+**Internal Level Filtering:**
+
+```redscript
+// Logger.reds handles all level filtering (SRP compliance)
+public static func BNTrace(context: String, message: String) -> Void {
+  if EnumInt(GetCurrentLogLevel()) >= EnumInt(LogLevel.TRACE) {
+    LogWithLevel(LogLevel.TRACE, context, message);
+  }
+}
+
+// Callers provide content only (no level checks required)
+BNTrace("Context", "Internal processing detail");
 ```
 
 **Duplicate Suppression:**
@@ -737,25 +873,54 @@ BNInfo("MyContext", "Same message");  // Suppressed (< 5s)
 BNInfo("MyContext", "Same message");  // Outputs again
 ```
 
-**Breach Statistics Collection (Debug/BreachSessionStats.reds):**
+**Breach Statistics Collection (Utils/BreachSessionLogger.reds):**
+
+**Design Pattern:** Data Transfer Object (DTO) with Logger function separation
+- **File name:** `BreachSessionLogger.reds` (describes functionality: logging)
+- **Class name:** `BreachSessionStats` (describes data structure: statistics)
+- **Function name:** `LogBreachSummary()` (describes operation: output formatting)
 
 ```
-Collected Data:
+Collected Data (20+ fields):
   - Breach type (AccessPoint/UnconsciousNPC/RemoteBreach)
   - Target device type
   - Success count (uploaded daemons)
   - Applied bonuses (Auto PING, Auto Datamine)
   - Unlocked subnets (Basic/Camera/Turret/NPC)
+  - Device breakdown with emoji icons:
+    🔧 Basic     - General devices
+    📷 Cameras   - Surveillance cameras
+    🔫 Turrets   - Security turrets
+    👤 NPCs      - Network-connected NPCs
+  - RadialUnlock details:
+    🔌 Devices   - Standalone devices
+    🚗 Vehicles  - Unlocked vehicles
+    🚶 NPCs      - Standalone NPCs
+  - Unlock status:
+    ✅ UNLOCKED  - Successfully unlocked
+    🔒 Locked    - Locked state
 
-Output Format:
-  ═══════════════════════════════════════════════════════════
-   Breach Session Statistics
-  ═══════════════════════════════════════════════════════════
-   Target:      AccessPoint (Computer)
-   Success:     3 daemons uploaded
-   Bonuses:     Auto PING, Auto Datamine V2
-   Unlocked:    Basic, Camera, Turret
-  ═══════════════════════════════════════════════════════════
+Output Format (with emoji icons):
+  ╔═══════════════════════════════════════════════════════════╗
+  ║             BREACH SESSION SUMMARY                        ║
+  ╠═══════════════════════════════════════════════════════════╣
+  ║ Target:      AccessPoint (Computer)                       ║
+  ║ Success:     3 daemons uploaded                           ║
+  ║ Device Type Breakdown:                                    ║
+  ║ │ 🔧 Basic     : 5                                        ║
+  ║ │ 📷 Cameras   : 3                                        ║
+  ║ │ 🔫 Turrets   : 2                                        ║
+  ║ │ 👤 NPCs      : 4                                        ║
+  ║ Radial Unlock:                                            ║
+  ║ │ 🔌 Devices   : 2                                        ║
+  ║ │ 🚗 Vehicles  : 1                                        ║
+  ║ │ 🚶 NPCs      : 3                                        ║
+  ║ Unlock Flags:                                             ║
+  ║ │ Basic Subnet   : ✅ UNLOCKED                            ║
+  ║ │ Camera Subnet  : ✅ UNLOCKED                            ║
+  ║ │ Turret Subnet  : 🔒 Locked                              ║
+  ║ │ NPC Subnet     : 🔒 Locked                              ║
+  ╚═══════════════════════════════════════════════════════════╝
 ```
 
 ### 9. Localization System (Localization/)

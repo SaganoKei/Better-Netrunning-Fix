@@ -15,7 +15,7 @@
 // - Configurable breach radius
 // ============================================================================
 
-module BetterNetrunning.RadialUnlock.Core
+module BetterNetrunning.RadialUnlock
 
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
@@ -237,7 +237,7 @@ private func GetCurrentTimestamp(gameInstance: GameInstance) -> Uint64 {
 public func GetLastBreachPosition(apPosition: Vector4, gameInstance: GameInstance) -> Vector4 {
   let player: ref<PlayerPuppet> = GetPlayer(gameInstance);
   if !IsDefined(player) {
-    BNLog("GetLastBreachPosition: Player not found");
+    BNWarn("RadialUnlock", "GetLastBreachPosition: Player not found");
     return Vector4(0.0, 0.0, 0.0, 1.0);
   }
 

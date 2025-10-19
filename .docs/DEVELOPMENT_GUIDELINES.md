@@ -88,6 +88,113 @@ let range2: Float = 50.0; // In RadialUnlockSystem.reds
 let range3: Float = 50.0; // In DaemonUnlockStrategy.reds
 ```
 
+---
+
+#### **⚠️ CRITICAL: DRY Compliance Checklist (Before Adding New Logic)**
+
+**Before implementing new functionality, ALWAYS verify:**
+
+1. **Similar Logic Exists?**
+   - Search codebase for related keywords (semantic_search, grep_search)
+   - Check Common/, Utils/, and module-specific utility files
+   - Review ARCHITECTURE_DESIGN.md for existing patterns
+
+2. **Can Existing Logic Be Reused?**
+   - ✅ **Exact Match**: Call existing function directly
+   - ✅ **Similar Logic**: Extract common parts to shared utility
+   - ✅ **Parameterize**: Add parameters to existing function for new use case
+   - ❌ **Copy-Paste**: Never duplicate logic - refactor first
+
+3. **Type Compatibility Check** (CRITICAL)
+   - **Inheritance Hierarchy**: Can I cast to parent class?
+     ```redscript
+     // Example: AccessPointControllerPS vs MasterControllerPS
+     let masterPS: ref<MasterControllerPS> = device as MasterControllerPS;
+     if IsDefined(masterPS) {
+         masterPS.GetChildren(networkDevices); // ✅ Works for all subclasses
+     }
+     ```
+   - **Field Name Differences**: Check exact field names in class definitions
+     ```redscript
+     // ❌ WRONG: Assumed field name
+     stats.npcCount += 1;  // Field doesn't exist!
+
+     // ✅ CORRECT: Verified field name
+     stats.npcNetworkCount += 1;  // Actual field name
+     ```
+   - **Method Availability**: Verify method exists on target class
+     ```redscript
+     // ❌ WRONG: Method doesn't exist on ScriptableDeviceComponentPS
+     device.GetDevicesInNetwork(networkDevices);
+
+     // ✅ CORRECT: Method exists on MasterControllerPS
+     let masterPS: ref<MasterControllerPS> = device as MasterControllerPS;
+     if IsDefined(masterPS) {
+         masterPS.GetChildren(networkDevices);
+     }
+     ```
+
+4. **Common Pitfalls to Avoid**
+   - **Naming Variations**: `npcCount` vs `npcNetworkCount` vs `npcStandaloneCount`
+   - **Type Casting**: Always check `IsDefined()` after casting
+   - **Array Types**: `array<ref<DeviceComponentPS>>` vs `array<ref<ScriptableDeviceComponentPS>>`
+   - **Parent Class Methods**: Check if method exists on parent class, not just specific subclass
+
+---
+
+#### **✅ DRY Implementation Workflow**
+
+```
+New Feature Request
+  ↓
+1. Search for similar logic (grep_search/semantic_search)
+  ↓
+2. Found existing logic?
+  ├─ YES → Check type compatibility
+  │   ├─ Compatible? → Reuse directly ✅
+  │   └─ Incompatible? → Refactor to generic version ✅
+  └─ NO → Check if can extract common pattern
+      ├─ Pattern exists? → Create shared utility ✅
+      └─ Truly unique? → Implement new (document why) ✅
+  ↓
+3. Verify field/method names in class definitions (read_file/grep_search)
+  ↓
+4. Test with correct types (compile + in-game test)
+  ↓
+5. Update documentation (ARCHITECTURE_DESIGN.md if new pattern)
+```
+
+---
+
+#### **Case Study: RemoteBreach Statistics Implementation (2025-10-19)**
+
+**Problem**: RemoteBreach needs statistics output like AccessPoint breach
+
+**❌ Anti-pattern (Avoided)**:
+```redscript
+// Copy-paste AccessPoint statistics code into RemoteBreachHelpers.reds
+// Duplicate field counting logic
+// Duplicate parsing logic for unlock flags
+```
+
+**✅ Correct Approach (DRY Compliance)**:
+
+1. **Search**: Found existing `BreachSessionStats` class and `LogBreachSummary()` function
+2. **Reuse**: Used same statistics infrastructure
+3. **Type Check**:
+   - ❌ Initially used `stats.npcCount` (doesn't exist)
+   - ✅ Corrected to `stats.npcNetworkCount` (actual field)
+   - ❌ Initially used `device.GetDevicesInNetwork()` (method doesn't exist)
+   - ✅ Corrected to cast to `MasterControllerPS` and use `GetChildren()`
+4. **Refactor**: Extracted `DaemonFilterUtils.ExtractUnlockFlags()` (shared by 3 breach types)
+5. **Result**: 52 lines of duplicate code removed, consistent behavior across all breach types
+
+**Key Lessons**:
+- Always verify field names in class definitions before using
+- Check method availability on parent classes, not just specific subclasses
+- Type casting requires `IsDefined()` checks
+- Shared utilities reduce maintenance burden (single point of change)
+
 ### 3. Composed Method Pattern
 
 **Rule:** Break large functions into small, focused helpers (max 30 lines per function)

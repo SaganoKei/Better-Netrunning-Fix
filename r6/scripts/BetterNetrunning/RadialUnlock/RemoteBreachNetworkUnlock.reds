@@ -13,7 +13,7 @@
 // - RadialBreach integration: Physical distance filtering (50m default)
 //
 // ARCHITECTURE:
-// - Blackboard listener on HackingMinigame.State for completion detection
+// - OnRemoteBreachSucceeded callback (RemoteBreachHelpers.reds) handles breach success with statistics
 // - RemoteBreachStateSystem integration for target device retrieval
 // - DeviceTypeUtils for unified device unlock logic
 // - RadialUnlockSystem for position recording
@@ -22,18 +22,17 @@
 //
 // DEPENDENCIES:
 // - BetterNetrunning.Common.* (DeviceTypeUtils, BNLog)
-// - BetterNetrunning.CustomHacking.* (RemoteBreachStateSystem variants)
+// - BetterNetrunning.RemoteBreach.Core.* (RemoteBreachStateSystem variants, RemoteBreachHelpers)
 // - BetterNetrunning.RadialUnlock.* (RecordAccessPointBreachByPosition, RadialBreachGating)
 // ============================================================================
 
-module BetterNetrunning.RadialUnlock.Core
+module BetterNetrunning.RadialUnlock
 
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.RemoteBreach.Actions.*
 import BetterNetrunning.RemoteBreach.UI.*
-import BetterNetrunning.Debug.*
 import BetterNetrunningConfig.*
 
 // NOTE: RadialBreach integration is handled by RadialBreachGating.reds
@@ -53,218 +52,8 @@ public struct RemoteBreachLootData {
 // No need for conditional import here - RadialBreachGating manages it
 
 // ============================================================================
-// PLAYER PUPPET EXTENSIONS - REMOTEBREACH LISTENER
-// ============================================================================
-// NOTE: Listener registration moved to RemoteBreachListenerSystem.reds (ScriptableSystem)
-// for persistent lifecycle. PlayerPuppet-based listeners were not receiving callbacks.
-
-// ============================================================================
-// MAIN PROCESSING LOGIC
-// ============================================================================
-
-// Process RemoteBreach completion and apply network unlock + rewards
-// Functionality:
-//   - Target device unlock + Radial Unlock position recording
-//   - Network-wide device unlock (full parity with AP breach)
-//   - NPC duplicate prevention + Loot reward system
-@addMethod(PlayerPuppet)
-private func ProcessRemoteBreachCompletion() -> Void {
-  let gameInstance: GameInstance = this.GetGame();
-
-  // 1. Check if this is a RemoteBreach minigame (not AccessPoint or Quickhack)
-  if !this.IsRemoteBreachMinigame() {
-    return;
-  }
-
-  // Initialize statistics
-  let stats: ref<BreachSessionStats> = BreachSessionStats.Create("RemoteBreach", "Unknown Target");
-
-  // 2. Get active programs from blackboard
-  let minigameBB: ref<IBlackboard> = GameInstance.GetBlackboardSystem(gameInstance).Get(GetAllBlackboardDefs().HackingMinigame);
-  let activePrograms: array<TweakDBID> = FromVariant<array<TweakDBID>>(minigameBB.GetVariant(GetAllBlackboardDefs().HackingMinigame.ActivePrograms));
-
-  stats.minigameSuccess = true;
-  stats.programsInjected = ArraySize(activePrograms);
-
-  // 2.1. Get target device (used for all subsequent operations)
-  let targetDevice: ref<ScriptableDeviceComponentPS> = this.GetRemoteBreachTargetDevice();
-
-  // Update stats with target device name
-  if IsDefined(targetDevice) {
-    stats.breachTarget = targetDevice.GetDeviceName();
-  }
-
-  // 2.5. Apply bonus daemons - using shared utility
-  ApplyBonusDaemons(activePrograms, gameInstance, "[RemoteBreach]");
-
-  // 2.5.1. Write bonus daemons back to blackboard
-  minigameBB.SetVariant(
-    GetAllBlackboardDefs().HackingMinigame.ActivePrograms,
-    ToVariant(activePrograms)
-  );
-
-  // Update stats with bonus daemon count
-  stats.programsInjected = ArraySize(activePrograms);
-
-  // 2.6. Execute minigame programs (PING, Datamine, Quest programs) - P0 FIX
-  // CRITICAL: This was missing in RemoteBreach, causing bonus daemons not to execute
-  // Uses shared utility from MinigameProgramUtils.reds (same as AccessPoint breach)
-  ProcessMinigamePrograms(activePrograms, targetDevice, gameInstance, "[RemoteBreach]");
-
-  // 3. Parse unlock flags from active programs
-  let unlockFlags: BreachUnlockFlags = this.ParseRemoteBreachUnlockFlags(activePrograms);
-
-  stats.unlockBasic = unlockFlags.unlockBasic;
-  stats.unlockCameras = unlockFlags.unlockCameras;
-  stats.unlockTurrets = unlockFlags.unlockTurrets;
-  stats.unlockNPCs = unlockFlags.unlockNPCs;
-
-  // 4. Verify target device is defined
-  if !IsDefined(targetDevice) {
-    BNError("[RemoteBreach]", "Target device not found");
-    stats.Finalize();
-    LogBreachSummary(stats);
-    return;
-  }
-
-  // 5. Apply unlock to target device
-  this.ApplyRemoteBreachDeviceUnlockWithStats(targetDevice, unlockFlags, stats);
-
-  // 6. Get network devices
-  let networkDevices: array<ref<DeviceComponentPS>> = this.GetRemoteBreachNetworkDevices(targetDevice);
-
-  stats.networkDeviceCount = ArraySize(networkDevices);
-
-  // 7. Apply unlock to network devices (with RadialBreach filtering)
-  if ArraySize(networkDevices) > 0 {
-    this.ApplyRemoteBreachNetworkUnlockWithStats(targetDevice, networkDevices, unlockFlags, stats);
-  }
-
-  // 8. Record breach position for Radial Unlock system
-  this.RecordRemoteBreachPosition(targetDevice);
-
-  // 9. Unlock nearby standalone devices (PR #5 feature)
-  let deviceEntity: wref<GameObject> = targetDevice.GetOwnerEntityWeak() as GameObject;
-  if IsDefined(deviceEntity) {
-    this.UnlockNearbyStandaloneDevices(deviceEntity.GetWorldPosition(), unlockFlags);
-  }
-
-  stats.Finalize();
-  LogBreachSummary(stats);
-}
-
-// ============================================================================
 // UNCONSCIOUS NPC BREACH PROCESSING
 // ============================================================================
-
-// Process Unconscious NPC Breach completion and apply network unlock
-@addMethod(PlayerPuppet)
-private func ProcessUnconsciousNPCBreachCompletion() -> Void {
-  let gameInstance: GameInstance = this.GetGame();
-  let minigameBB: ref<IBlackboard> = GameInstance.GetBlackboardSystem(gameInstance).Get(GetAllBlackboardDefs().HackingMinigame);
-
-  // Initialize statistics
-  let stats: ref<BreachSessionStats> = BreachSessionStats.Create("UnconsciousNPC", "Unknown NPC");
-
-  // 1. Get target NPC from minigame blackboard
-  let entity: wref<Entity> = FromVariant<wref<Entity>>(minigameBB.GetVariant(GetAllBlackboardDefs().HackingMinigame.Entity));
-  let targetNPC: ref<ScriptedPuppet> = entity as ScriptedPuppet;
-
-  if !IsDefined(targetNPC) {
-    BNError("[UnconsciousNPC]", "Target NPC not found");
-    stats.Finalize();
-    LogBreachSummary(stats);
-    return;
-  }
-
-  let targetNPCPS: ref<ScriptedPuppetPS> = targetNPC.GetPS();
-  if !IsDefined(targetNPCPS) {
-    BNError("[UnconsciousNPC]", "Target NPC PS not found");
-    stats.Finalize();
-    LogBreachSummary(stats);
-    return;
-  }
-
-  // Update stats with NPC name
-  stats.breachTarget = targetNPC.GetDisplayName();
-
-  // 2. Get active programs from blackboard
-  let activePrograms: array<TweakDBID> = FromVariant<array<TweakDBID>>(minigameBB.GetVariant(GetAllBlackboardDefs().HackingMinigame.ActivePrograms));
-
-  stats.minigameSuccess = true;
-  stats.programsInjected = ArraySize(activePrograms);
-
-  // 3. Apply bonus daemons (Auto-PING and Auto-Datamine)
-  ApplyBonusDaemons(activePrograms, gameInstance, "[UnconsciousNPC]");
-
-  // 3.1. Write bonus daemons back to blackboard
-  minigameBB.SetVariant(
-    GetAllBlackboardDefs().HackingMinigame.ActivePrograms,
-    ToVariant(activePrograms)
-  );
-
-  // Update stats with bonus daemon count
-  stats.programsInjected = ArraySize(activePrograms);
-
-  // 4. Parse unlock flags from active programs
-  let unlockFlags: BreachUnlockFlags = this.ParseRemoteBreachUnlockFlags(activePrograms);
-
-  stats.unlockBasic = unlockFlags.unlockBasic;
-  stats.unlockCameras = unlockFlags.unlockCameras;
-  stats.unlockTurrets = unlockFlags.unlockTurrets;
-  stats.unlockNPCs = unlockFlags.unlockNPCs;
-
-  // 5. Mark NPC as breached
-  targetNPCPS.m_betterNetrunningWasDirectlyBreached = true;
-
-  // Get DeviceLink for network operations
-  let deviceLinkPS: ref<SharedGameplayPS> = targetNPCPS.GetDeviceLink();
-
-  // Apply NPC unlock timestamp if flag is set
-  if unlockFlags.unlockNPCs && IsDefined(deviceLinkPS) {
-    let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
-    deviceLinkPS.m_betterNetrunningUnlockTimestampNPCs = currentTime;
-  }
-
-  // 6. Get network devices for network-wide unlock
-  let networkDevices: array<ref<DeviceComponentPS>>;
-  if IsDefined(deviceLinkPS) && targetNPCPS.IsConnectedToAccessPoint() {
-    let apControllers: array<ref<AccessPointControllerPS>> = deviceLinkPS.GetAccessPoints();
-
-    let i: Int32 = 0;
-    while i < ArraySize(apControllers) {
-      let apPS: ref<AccessPointControllerPS> = apControllers[i];
-      if IsDefined(apPS) {
-        let apDevices: array<ref<DeviceComponentPS>>;
-        apPS.GetChildren(apDevices);
-
-        let j: Int32 = 0;
-        while j < ArraySize(apDevices) {
-          ArrayPush(networkDevices, apDevices[j]);
-          j += 1;
-        }
-      }
-      i += 1;
-    }
-  }
-
-  stats.networkDeviceCount = ArraySize(networkDevices);
-
-  // 7. Apply unlock to network devices
-  if ArraySize(networkDevices) > 0 {
-    this.ApplyUnconsciousNPCNetworkUnlockWithStats(networkDevices, unlockFlags, stats);
-  }
-
-  // 8. Record breach position for Radial Unlock system
-  this.RecordUnconsciousNPCBreachPosition(targetNPC);
-
-  // 9. Unlock nearby standalone devices
-  let npcPosition: Vector4 = targetNPC.GetWorldPosition();
-  this.UnlockNearbyStandaloneDevices(npcPosition, unlockFlags);
-
-  stats.Finalize();
-  LogBreachSummary(stats);
-}
 
 // Apply network unlock to devices after Unconscious NPC Breach
 @addMethod(PlayerPuppet)
@@ -300,7 +89,7 @@ private func ApplyUnconsciousNPCNetworkUnlockWithStats(
           } else if Equals(deviceType, DeviceType.Turret) {
             stats.turretCount += 1;
           } else if Equals(deviceType, DeviceType.NPC) {
-            stats.npcCount += 1;
+            stats.npcNetworkCount += 1;
           } else {
             stats.basicCount += 1;
           }
@@ -434,7 +223,7 @@ private func ApplyRemoteBreachNetworkUnlockWithStats(
             } else if Equals(deviceType, DeviceType.Turret) {
               stats.turretCount += 1;
             } else if Equals(deviceType, DeviceType.NPC) {
-              stats.npcCount += 1;
+              stats.npcNetworkCount += 1;
             } else {
               stats.basicCount += 1;
             }
@@ -629,7 +418,7 @@ private func ApplyRemoteBreachDeviceUnlockWithStats(
   } else if Equals(deviceType, DeviceType.Turret) {
     stats.turretCount += 1;
   } else if Equals(deviceType, DeviceType.NPC) {
-    stats.npcCount += 1;
+    stats.npcNetworkCount += 1;
   } else {
     stats.basicCount += 1;
   }

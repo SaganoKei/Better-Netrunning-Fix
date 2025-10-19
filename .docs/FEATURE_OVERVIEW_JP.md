@@ -1,8 +1,9 @@
 ﻿# Better Netrunning - 機能概要ドキュメント
 
-**最終更新日:** 2025年10月18日
-**バージョン:** 2.0
+**最終更新日:** 2025年10月19日
+**バージョン:** 2.1
 **対象:** ユーザー・開発者向け総合ガイド
+**主要変更:** ログ最適化完了 (75% DEBUG削減)、統計ロガー改善 (絵文字アイコン実装)
 
 ---
 
@@ -79,7 +80,10 @@ Better Netrunningは、Cyberpunk 2077のネットランニング体験を大幅�
 ドアのクイックハックメニュー表示制限を解除。スタンドアロンデバイスでもリモートブリーチが可能。
 
 ### 8. デバッグロギングシステム
-5段階のログレベル、重複抑制、統計収集による効率的なデバッグ環境を提供。詳細は[デバッグロギングシステム](#デバッグロギングシステム)を参照。
+5段階のログレベル、重複抑制、統計収集、絵文字アイコンによる視覚的識別を提供。75%のDEBUGレベルノイズ削減を達成。詳細は[デバッグロギングシステム](#デバッグロギングシステム)を参照。
+
+### 9. RemoteBreach失敗ペナルティシステム
+ブリーチ失敗時に50m半径・10分間のRemoteBreach使用制限を適用。リスクフリーなRemoteBreachプレイを防止し、ゲームバランスを維持します。
 
 ---
 
@@ -529,6 +533,146 @@ ScriptedPuppetPSに`m_betterNetrunningWasDirectlyBreached`フラグ (Bool型) �
 
 ---
 
+## RemoteBreach失敗ペナルティシステム
+
+### 概要
+
+ブリーチプロトコルミニゲームに失敗した際、**意味のあるペナルティ**を適用してゲームバランスを維持し、リスクフリーなRemoteBreachプレイを防止する機能です。
+
+### ペナルティ内容
+
+ブリーチ失敗時（タイムアウト・ESCキースキップ両方）、以下の3つのペナルティが適用されます：
+
+#### 1. 赤色VFX (視覚フィードバック)
+
+- **効果:** 画面全体に赤色のグリッチエフェクト (`disabling_connectivity_glitch_red`)
+- **持続時間:** 2-3秒
+- **目的:** プレイヤーに失敗を明確にフィードバック
+
+#### 2. RemoteBreach使用制限 (主要ペナルティ)
+
+- **制限範囲:** 失敗位置から **50m半径**
+- **制限時間:** **10分間** (デフォルト、設定で変更可能)
+- **対象:** RemoteBreachアクション**のみ** (APブリーチ、意識不明NPCブリーチは影響なし)
+- **永続化:** セーブデータに保存され、ロード後も有効
+
+**制限判定ロジック:**
+```
+デバイスへのRemoteBreach試行
+  ↓
+失敗位置配列をチェック (PlayerPuppet.m_betterNetrunning_remoteBreachFailedPositions)
+  ├─ 各失敗位置との距離を計算 (Vector4.DistanceSquared2D)
+  ├─ 50m以内 かつ 10分以内 の失敗位置が存在
+  └─ → RemoteBreachアクションをQuickHackメニューから削除
+```
+
+#### 3. 位置露出トレース (オプション、TracePositionOverhaul MOD連携)
+
+- **効果:** 最寄りのネットランナーNPCが60秒間のアップロードトレースを開始
+- **条件:** TracePositionOverhaul MODがインストールされている
+- **範囲:** 失敗位置から100m以内の実在ネットランナーNPC
+- **目的:** ブリーチ失敗を敵ネットランナーに検知させる
+
+### 適用条件
+
+**ペナルティが適用されるケース:**
+- ✅ ブリーチミニゲームのタイムアウト (`HackingMinigameState.Failed`)
+- ✅ ESCキーでのスキップ (`HackingMinigameState.Failed`)
+
+**ペナルティが適用されないケース:**
+- ❌ ブリーチ成功 (`HackingMinigameState.Succeeded`)
+- ❌ 設定で無効化 (`BreachFailurePenaltyEnabled = false`)
+
+**重要:** 現在の実装では、**スキップと失敗を区別していません**。どちらも `HackingMinigameState.Failed` として扱われ、全ペナルティが適用されます。
+
+### カバレッジ
+
+RemoteBreach失敗ペナルティシステムは、**全ブリーチタイプ**をカバーします：
+
+| ブリーチタイプ | カバー状況 | 実装方法 |
+|--------------|----------|---------|
+| **APブリーチ** | ✅ カバー | `FinalizeNetrunnerDive()` ラップ |
+| **意識不明NPCブリーチ** | ✅ カバー | `AccessBreach.CompleteAction()` → `FinalizeNetrunnerDive()` |
+| **RemoteBreach** | ✅ カバー | `RemoteBreachProgram` → `FinalizeNetrunnerDive()` |
+
+**実装の利点:**
+- 単一の `@wrapMethod` で全ブリーチタイプをカバー (保守性が高い)
+- 漏れがない (新規ブリーチタイプも自動カバー)
+
+### 設定項目
+
+| 設定項目 | デフォルト値 | 説明 |
+|---------|------------|------|
+| `BreachFailurePenaltyEnabled` | `true` | ペナルティシステムの有効/無効 |
+| `RemoteBreachLockDurationMinutes` | `10` | RemoteBreach制限時間（分） |
+
+**Native Settings UI:**
+```
+Settings
+  └─ Mods
+      └─ Better Netrunning
+          └─ Breach Penalty
+              ├─ Enable Breach Failure Penalty (ON/OFF)
+              └─ RemoteBreach Lock Duration (5-30分)
+```
+
+### 永続フィールド
+
+RemoteBreach使用制限を実現するため、PlayerPuppetに2つの永続フィールドが追加されています：
+
+```redscript
+@addField(PlayerPuppet)
+public persistent let m_betterNetrunning_remoteBreachFailedPositions: array<Vector4>;
+
+@addField(PlayerPuppet)
+public persistent let m_betterNetrunning_remoteBreachFailedTimestamps: array<Float>;
+```
+
+**管理方法:**
+- **追加:** `BreachPenaltySystem.reds` の `ApplyFailurePenalty()` が失敗位置を記録
+- **チェック:** `RemoteBreachLock.reds` の `IsRemoteBreachLockedForDevice()` が判定
+- **クリーンアップ:** 期限切れエントリは判定時に自動削除
+
+### 技術詳細
+
+#### パフォーマンス最適化
+
+- **距離計算:** `Vector4.DistanceSquared2D()` を使用（平方根計算なし）
+- **期限判定:** `GameTime.GetGameTime()` でゲーム内時間を取得
+- **配列走査:** 逆順ループで安全な削除 (`i = ArraySize(arr) - 1; while i >= 0`)
+
+#### 依存関係
+
+```
+BreachPenaltySystem.reds (ペナルティ適用)
+  ├─ depends on Core/Logger.reds (ログ出力)
+  ├─ depends on Core/DeviceTypeUtils.reds (範囲取得)
+  └─ depends on Integration/TracePositionOverhaulGating.reds (トレース起動)
+
+RemoteBreachLock.reds (RemoteBreach制限)
+  ├─ depends on BetterNetrunningConfig (設定読み取り)
+  └─ depends on Core/Logger.reds (ログ出力)
+
+Utils/BreachLockUtils.reds (共通ロジック)
+  ├─ Entity/Player/Position取得パターンの集約
+  └─ 8ファイルから呼び出し (DRY原則)
+```
+
+#### コード品質
+
+- **Early Return パターン:** ネスト深度最大2レベル
+- **Single Responsibility:** ペナルティ適用とロック判定を分離
+- **DRY原則:** `BreachLockUtils.reds` で重複コード削減
+
+### 実装ファイル
+
+- `Breach/Systems/BreachPenaltySystem.reds` (341行) - ペナルティ適用ロジック
+- `Breach/Systems/RemoteBreachLock.reds` (216行) - RemoteBreach制限ロジック
+- `Utils/BreachLockUtils.reds` (140行) - 共通ユーティリティ
+- `Integration/TracePositionOverhaulGating.reds` (199行) - トレースMOD連携
+
+---
+
 ## デバイス種別制御
 
 ### 概要
@@ -641,7 +785,14 @@ public func CanRevealDevicesGrid() -> Bool {
 
 ### 概要
 
-Better Netrunning 1.1では、開発者向けに**5段階ログレベルシステム**を導入しました。効率的なデバッグとパフォーマンス最適化を実現します。
+Better Netrunningは、開発者向けに**5段階ログレベルシステム**を提供します。効率的なデバッグとパフォーマンス最適化を実現します。
+
+**最新の最適化 (2025-10-19):**
+- ✅ 66箇所のログ最適化 (9削除 + 22 TRACE変換 + 16 SRP修正 + 19スタイル修正)
+- ✅ 75% DEBUG レベルノイズ削減
+- ✅ Logger.reds が全てのレベルフィルタリングを内部処理 (SRP準拠)
+- ✅ 冗長なコメント削除 (25+ ログが標準アノテーションパターンに準拠)
+- ✅ 絵文字アイコンによる視覚的識別 (統計ログ出力)
 
 ### 主要機能
 
@@ -653,14 +804,28 @@ Better Netrunning 1.1では、開発者向けに**5段階ログレベルシス�
 | **WARNING** | 1 | 警告 + エラー | 非推奨パス、フォールバックロジック |
 | **INFO** | 2 | 情報 + 上記 | ブリーチサマリー、主要イベント（**デフォルト**） |
 | **DEBUG** | 3 | デバッグ + 上記 | 中間計算、状態変更 |
-| **TRACE** | 4 | トレース + 上記 | 全関数呼び出し、全変数値 |
+| **TRACE** | 4 | トレース + 上記 | 内部処理詳細（プログラム抽出、復元、注入） |
 
 **API関数:**
 - BNError(): エラーメッセージ（レベル0、常に出力）
 - BNWarn(): 警告メッセージ（レベル1以上）
 - BNInfo(): 情報メッセージ（レベル2以上、デフォルト）
 - BNDebug(): デバッグメッセージ（レベル3以上）
-- BNTrace(): トレースメッセージ（レベル4）
+- BNTrace(): トレースメッセージ（レベル4、内部処理詳細）
+
+**内部レベルフィルタリング (SRP準拠):**
+
+```redscript
+// Logger.reds が全てのレベルフィルタリングを所有
+public static func BNTrace(context: String, message: String) -> Void {
+  if EnumInt(GetCurrentLogLevel()) >= EnumInt(LogLevel.TRACE) {
+    LogWithLevel(LogLevel.TRACE, context, message);
+  }
+}
+
+// 呼び出し元はコンテンツのみ提供（レベルチェック不要）
+BNTrace("Context", "Internal processing detail");  // クリーン、ラッパー不要
+```
 
 #### 2. 完全なON/OFF制御
 
@@ -703,7 +868,12 @@ Better Netrunning 1.1では、開発者向けに**5段階ログレベルシス�
 
 #### 4. 統計収集システム
 
-**目的:** 散在したログ呼び出しを包括的なサマリーに統合（50+ logs → 4 summaries）
+**目的:** 散在したログ呼び出しを包括的なサマリーに統合（50+ logs → 1 comprehensive summary）
+
+**ファイル構造:**
+- **ファイル名:** `BreachSessionLogger.reds` (機能: ログ出力機能)
+- **クラス名:** `BreachSessionStats` (データ構造: 統計コンテナ)
+- **デザインパターン:** Data Transfer Object (DTO) + Logger関数分離
 
 **BreachSessionStats - 収集データ (20+ フィールド):**
 
@@ -724,15 +894,39 @@ Better Netrunning 1.1では、開発者向けに**5段階ログレベルシス�
 - devicesUnlocked: 解除成功数
 - devicesSkipped: スキップ数（条件不一致）
 
-**デバイス内訳:**
-- cameraCount/turretCount/npcCount/doorCount/terminalCount/otherCount: 各デバイス種別数
+**デバイス内訳 (絵文字アイコン付き):**
+- 🔧 basicCount: 基本デバイス数（ドア、エレベータ、自販機等）
+- 📷 cameraCount: カメラ数
+- 🔫 turretCount: タレット数
+- 👤 npcNetworkCount: ネットワーク接続NPC数
 
 **RadialBreach（該当時）:**
 - radialBreachUsed: RadialBreach MOD使用有無
-- radialBreachDistance: ブリーチ点からの距離
+- 🔌 standaloneDeviceCount: スタンドアロンデバイス数
+- 🚗 vehicleCount: 車両数
+- 🚶 npcStandaloneCount: スタンドアロンNPC数
 
 **パフォーマンス:**
 - processingTimeMs: 処理時間（自動計算）
+
+**絵文字アイコンセット:**
+
+```
+デバイスタイプ:
+  🔧 Basic     - 基本デバイス（ドア、ターミナル等）
+  📷 Cameras   - 監視カメラ
+  🔫 Turrets   - セキュリティタレット
+  👤 NPCs      - ネットワーク接続NPC
+
+RadialUnlock:
+  🔌 Devices   - スタンドアロンデバイス
+  🚗 Vehicles  - 解除された車両
+  🚶 NPCs      - スタンドアロンNPC
+
+解除状態:
+  ✅ UNLOCKED  - 解除成功
+  🔒 Locked    - ロック状態
+```
 
 **収集フロー:**
 1. **CREATE**: ブリーチ開始時に統計オブジェクト作成
@@ -740,33 +934,76 @@ Better Netrunning 1.1では、開発者向けに**5段階ログレベルシス�
 3. **FINALIZE**: 処理時間を計算
 4. **OUTPUT**: ボックス描画フォーマットで1回出力
 
-**出力形式:**
+**出力形式 (絵文字アイコン付き):**
 ```
-╔══════════════════════════════════════════════════════════════════════════════╗
-║ BREACH SESSION: AccessPoint - "corp_server_01" (2025-10-15 22:15:30)        ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║ ┌─ ミニゲームフェーズ ────────────────────────────────────────────────────┐  ║
-║ │ 注入プログラム: 2 (PING, Datamine V2)                                  │  ║
-║ │ ミニゲーム結果: ✓ 成功                                                 │  ║
-║ └────────────────────────────────────────────────────────────────────────┘  ║
-║ ┌─ ネットワーク結果 ──────────────────────────────────────────────────────┐  ║
-║ │ 総デバイス数: 15                                                        │  ║
-║ │ 解除成功: 12 (80.0%)                                                    │  ║
-║ │ スキップ: 3 (20.0%)                                                     │  ║
-║ └────────────────────────────────────────────────────────────────────────┘  ║
-║ ┌─ デバイス内訳 ──────────────────────────────────────────────────────────┐  ║
-║ │ カメラ: 4 | タレット: 2 | NPC: 5 | ドア: 2 | ターミナル: 1 | その他: 1 │  ║
-║ └────────────────────────────────────────────────────────────────────────┘  ║
-║ ┌─ 解除フラグ ────────────────────────────────────────────────────────────┐  ║
-║ │ Basic: ✓ | Cameras: ✓ | Turrets: ✓ | NPCs: ✗                          │  ║
-║ └────────────────────────────────────────────────────────────────────────┘  ║
-║ 処理時間: 23.5ms                                                             ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════════════════╗
+║             BREACH SESSION SUMMARY                        ║
+╠═══════════════════════════════════════════════════════════╣
+║ Breach Method: Access Point Breach                       ║
+║ Target Device: corp_server_01                            ║
+║                                                           ║
+║ Device Type Breakdown:                                    ║
+║ │ 🔧 Basic     : 5                                        ║
+║ │ 📷 Cameras   : 3                                        ║
+║ │ 🔫 Turrets   : 2                                        ║
+║ │ 👤 NPCs      : 4                                        ║
+║                                                           ║
+║ Radial Unlock (50m):                                      ║
+║ │ 🔌 Devices   : 2                                        ║
+║ │ 🚗 Vehicles  : 1                                        ║
+║ │ 🚶 NPCs      : 3                                        ║
+║                                                           ║
+║ Unlock Flags:                                             ║
+║ │ Basic Subnet   : ✅ UNLOCKED                            ║
+║ │ Camera Subnet  : ✅ UNLOCKED                            ║
+║ │ Turret Subnet  : 🔒 Locked                              ║
+║ │ NPC Subnet     : 🔒 Locked                              ║
+╚═══════════════════════════════════════════════════════════╝
 ```
 
-#### 5. ログ削減の影響
+#### 5. ログ最適化の成果
 
-統計収集システムは、構造化されたサマリー出力により可読性とパフォーマンスを提供します。統計ロジックは`Debug/BreachSessionStats.reds`に集約され、保守性が確保されています。
+**最新の最適化結果 (2025-10-19):**
+- **最適化箇所:** 66箇所
+  - 削除: 9箇所 (冗長ログ、機能重複)
+  - TRACE変換: 22箇所 (内部処理詳細 → Level 4)
+  - SRP修正: 16箇所 (冗長なレベルチェック削除)
+  - スタイル修正: 19箇所 (冗長コメント削除)
+- **DEBUGレベルノイズ削減:** 75%
+- **最適化対象ファイル:** 6ファイル
+  - betterNetrunning.reds
+  - BonusDaemonUtils.reds
+  - BreachProcessing.reds
+  - ProgramInjection.reds
+  - DeviceQuickhackFilters.reds
+  - BreachSessionLogger.reds (旧: BreachSessionStats.reds)
+
+**最適化内容:**
+
+1. **冗長ログ削除 (9箇所):**
+   - 機能重複するログステートメント
+   - より包括的な統計サマリーに統合
+
+2. **TRACE変換 (22箇所):**
+   - 内部処理詳細をLevel 4 (TRACE) に移動
+   - プログラム抽出、復元、注入フローの詳細
+   - デフォルト (INFO) ではノイズを抑制
+
+3. **SRP準拠化 (16箇所):**
+   - 呼び出し元の冗長なレベルチェック削除
+   - Logger.reds が全てのフィルタリングを内部処理
+
+4. **スタイル統一 (19箇所):**
+   - 冗長な説明コメント削除
+   - 標準アノテーションパターンに統一
+
+**利点:**
+- DEBUGレベルでのノイズ削減 (75%)
+- 内部処理詳細はTRACEレベルで詳細確認可能
+- コードの可読性向上 (冗長性削減)
+- 保守性向上 (SRP準拠、スタイル統一)
+
+デバッグロギングシステムは、`=====`区切りのシンプルなテキスト形式と絵文字アイコンで構造化された情報を提供します。デバイス状態、ネットワーク接続、ブリーチタイムスタンプなど、必要な情報が視覚的に識別しやすい形式で出力されます。すべてのロギング機能は`Utils/BreachSessionLogger.reds`と`Utils/DebugUtils.reds`に集約され、`Logger.reds`の統一API経由で出力されます。
 
 ### 多言語対応
 
@@ -780,7 +1017,8 @@ Better Netrunning 1.1では、開発者向けに**5段階ログレベルシス�
 
 - `Core/Logger.reds` (240行) - レベルベースロギング、重複抑制、LogMessageTracker
 - `Core/TimeUtils.reds` (58行) - タイムスタンプ管理ユーティリティ
-- `Debug/BreachSessionStats.reds` (260行) - 統計収集クラス、フィールド定義、出力フォーマット
+- `Utils/BreachSessionLogger.reds` (197行) - 統計収集クラス、絵文字アイコン、出力フォーマット
+- `Utils/DebugUtils.reds` (346行) - 診断ツール、フォーマット済み出力
 - `bin/.../nativeSettingsUI.lua` - 条件付きUI表示 (EnableDebugLog連動)
 - `.docs/Localization_Keys_LogLevel.json` - 多言語テンプレート (en-us + jp-jp、14エントリ)
 
@@ -807,18 +1045,19 @@ REDscriptゲームロジック
 2. **settings.json** (手動編集) - `bin/x64/plugins/cyber_engine_tweaks/mods/BetterNetrunning/settings.json`
 3. **config.reds** (フォールバック) - Lua設定がない場合のデフォルト値
 
-**設定カテゴリ (11種類, 合計71項目):**
+**設定カテゴリ (12種類, 合計73項目):**
 1. **Controls** - ブリーチホットキー設定
 2. **Breaching** - クラシックモード、意識不明NPCブリーチ切り替え
 3. **RemoteBreach** - デバイス種別ごとの切り替え、RAMコスト
-4. **AccessPoints** - オートDatamine、オートPing、デーモン表示
-5. **RemovedQuickhacks** - カメラ/タレット無効化クイックハックブロック
-6. **UnlockedQuickhacks** - 常時利用可能なクイックハック (Ping, Whistle, Distract)
-7. **Progression** - 要件切り替え (Cyberdeck, Intelligence, Rarity)
-8. **ProgressionCyberdeck** - サブネット別Cyberdeckティア要件
-9. **ProgressionIntelligence** - サブネット別Intelligence値要件
-10. **ProgressionEnemyRarity** - サブネット別敵レアリティ要件
-11. **Debug** - デバッグログ制御
+4. **BreachPenalty** - 失敗ペナルティ、RemoteBreach制限時間
+5. **AccessPoints** - オートDatamine、オートPing、デーモン表示
+6. **RemovedQuickhacks** - カメラ/タレット無効化クイックハックブロック
+7. **UnlockedQuickhacks** - 常時利用可能なクイックハック (Ping, Whistle, Distract)
+8. **Progression** - 要件切り替え (Cyberdeck, Intelligence, Rarity)
+9. **ProgressionCyberdeck** - サブネット別Cyberdeckティア要件
+10. **ProgressionIntelligence** - サブネット別Intelligence値要件
+11. **ProgressionEnemyRarity** - サブネット別敵レアリティ要件
+12. **Debug** - デバッグログ制御
 
 ### 主要設定項目
 
@@ -836,7 +1075,14 @@ REDscriptゲームロジック
 | `RemoteBreachEnabledComputer` | `true` | コンピュータのリモートブリーチ |
 | `RemoteBreachEnabledDevice` | `true` | デバイス（カメラ/タレット以外）のリモートブリーチ |
 | `RemoteBreachEnabledVehicle` | `true` | 車両のリモートブリーチ |
-| `RemoteBreachRAMCostPercent` | `35` | RAMコスト (最大RAMの%) |
+| `RemoteBreachRAMCostPercent` | `50` | RAMコスト (最大RAMの%) |
+
+#### ブリーチペナルティ
+
+| 設定項目 | デフォルト | 説明 |
+|---------|----------|------|
+| `BreachFailurePenaltyEnabled` | `true` | ブリーチ失敗ペナルティの有効/無効 |
+| `RemoteBreachLockDurationMinutes` | `10` | RemoteBreach制限時間（分） |
 
 #### オートデーモン
 
@@ -869,7 +1115,7 @@ REDscriptゲームロジック
 
 Native Settings UIをインストールすると、ゲーム内のSettingsメニューから直接設定変更が可能です。
 
-**メニュー構造 (13カテゴリ):**
+**メニュー構造 (14カテゴリ):**
 ```
 Settings
   └─ Mods
@@ -884,6 +1130,9 @@ Settings
           │   ├─ Device Enabled
           │   ├─ Vehicle Enabled
           │   └─ RAM Cost Percent (10-100%)
+          ├─ Breach Penalty
+          │   ├─ Enable Breach Failure Penalty (ON/OFF)
+          │   └─ RemoteBreach Lock Duration (5-30分)
           ├─ Access Points
           │   ├─ Unlock If No Access Point
           │   ├─ Auto Datamine By Success Count
@@ -1066,7 +1315,7 @@ public class BetterNetrunningSettings {
 | **CustomHackingSystem** | ✅ 完全互換 | 必須依存関係 |
 | **RadialBreach MOD** | ✅ 完全互換 | オプション統合済み |
 | **Daemon Netrunning (Revamp)** | ✅ 互換 | DNRGating.redsで統合 |
-| **Breach Takedown Improved** | ✅ 互換 | 技術協力により互換性確保 |
+| **TracePositionOverhaul** | ✅ 統合 | ブリーチ失敗時の位置露出トレース |
 | **Native Settings UI** | ✅ 完全互換 | 推奨UI |
 
 ### MOD互換性の設計方針
@@ -1151,124 +1400,3 @@ public static func GetRadialBreachRange() -> Float { }
 ### リリースノート
 
 - **RELEASE_NOTES_v0.5.0.md** - v0.5.0リリースノート
-
----
-
-## よくある質問 (FAQ)
-
-### Q1: リモートブリーチが表示されません
-
-**A:** 以下を確認してください：
-
-1. CustomHackingSystem (HackingExtensions) がインストールされているか
-2. Native Settings UIで該当デバイス種別のRemoteBreachが有効か
-3. UnlockIfNoAccessPoint = false か (trueの場合自動解除モード)
-
-### Q2: 全デバイスが自動解除されてしまいます
-
-**A:** `UnlockIfNoAccessPoint = true` になっています。以下のいずれかを実行：
-
-- Native Settings UIで "Unlock If No Access Point" を無効化
-- `config.reds` で `UnlockIfNoAccessPoint() -> Bool { return false; }` に変更
-
-### Q3: 旧バージョンのバニラの動作に戻したい
-
-**A:** `EnableClassicMode = true` に設定してください：
-
-- Native Settings UIで "Enable Classic Mode" を有効化
-- `config.reds` で `EnableClassicMode() -> Bool { return true; }` に変更
-
-### Q4: 意識不明NPCのブリーチができません
-
-**A:** 以下を確認してください：
-
-1. `AllowBreachingUnconsciousNPCs = true` か
-2. `UnlockIfNoAccessPoint = false` か (RadialUnlockモード)
-3. NPCが完全に意識不明状態か (Unconscious/Defeated)
-
-### Q5: ブリーチ範囲を変更したい
-
-**A:** RadialBreach MODをインストールしてください：
-
-1. RadialBreach MODをインストール
-2. Native Settings UIで範囲を設定 (例: 100m)
-3. Better Netrunningが自動的にその範囲を使用
-
-### Q6: セーブデータは互換性がありますか?
-
-**A:** はい、互換性があります：
-
-- Persistent Fieldsはセーブデータに保存されます
-- MOD削除後もセーブデータは破損しません
-- ただし、MOD削除後は通常のバニラ動作に戻ります
-
-### Q7: 他のハッキングMODと併用できますか?
-
-**A:** はい、多くのMODと互換性があります：
-
-- Daemon Netrunning (Revamp) - ✅ 互換
-- Breach Takedown Improved - ✅ 互換
-- CustomHackingSystem - ✅ 必須依存
-- RadialBreach - ✅ オプション統合
-
-詳細は「MOD互換性」セクションを参照してください。
-
-### Q8: デバッグログはどこで確認できますか?
-
-**A:** 以下の手順で確認：
-
-1. `EnableDebugLog = true` に設定
-2. ゲームを起動してブリーチを実行
-3. `r6/logs/` ディレクトリのログファイルを確認
-4. `[BetterNetrunning]` プレフィックスで検索
-
----
-
-## サポート・フィードバック
-
-### バグ報告
-
-**GitHub Issues:** [Better-Netrunning-Fix/issues](https://github.com/SaganoKei/Better-Netrunning-Fix/issues)
-
-**報告時に含めるべき情報:**
-1. 発生した問題の詳細
-2. 再現手順
-3. インストール済みMODのリスト
-4. `REDmodLog.txt` の内容
-5. `r6/logs/` のデバッグログ (EnableDebugLog有効時)
-
-### 機能要望
-
-**GitHub Issues** または **GitHub Discussions** で提案してください。
-
-### 貢献
-
-コントリビューションを歓迎します！
-
-1. [TODO.md](TODO.md) で現在の開発優先度を確認
-2. GitHubでIssue/PRを作成
-3. [DEVELOPMENT_GUIDELINES.md](DEVELOPMENT_GUIDELINES.md) のコーディング規約に従う
-
----
-
-## ライセンス・クレジット
-
-### オリジナルMOD
-
-**Better Netrunning** by **finley243**
-Nexus Mods: [Better Netrunning – Hacking Reworked](https://www.nexusmods.com/cyberpunk2077/mods/2302)
-
-### Fix Project
-
-**SaganoKei**
-GitHub: [Better-Netrunning-Fix](https://github.com/SaganoKei/Better-Netrunning-Fix)
-
-### コントリビューター
-
-- **[@schizoabe](https://github.com/schizoabe)** - バグ修正コントリビューション
-
-### 協力・互換性
-
-- **BiasNil** - [Daemon Netrunning (Revamp)](https://www.nexusmods.com/cyberpunk2077/mods/12523) 開発者、互換性統合
-- **lorddarkflare** - [Breach Takedown Improved](https://www.nexusmods.com/cyberpunk2077/mods/14171) 開発者、技術協力
-- **rpierrecollado** - 統合機能、CustomHackingSystemプロトタイピング、テスト

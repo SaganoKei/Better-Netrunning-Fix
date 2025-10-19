@@ -1,4 +1,4 @@
-module BetterNetrunning.Breach.Processing
+module BetterNetrunning.Breach
 
 import BetterNetrunning.*
 import BetterNetrunningConfig.*
@@ -7,8 +7,7 @@ import BetterNetrunning.Core.*
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
-import BetterNetrunning.RadialUnlock.Core.*
-import BetterNetrunning.Debug.*
+import BetterNetrunning.RadialUnlock.*
 
 /*
  * Breach processing module for Access Point minigame completion
@@ -81,7 +80,7 @@ private final func RefreshSlaves(const devices: script_ref<array<ref<DeviceCompo
   stats.programsInjected = ArraySize(minigamePrograms);
 
   // Extract unlock flags (needed for post-processing and stats)
-  let unlockFlags: BreachUnlockFlags = this.ExtractUnlockFlags(minigamePrograms);
+  let unlockFlags: BreachUnlockFlags = DaemonFilterUtils.ExtractUnlockFlags(minigamePrograms);
   stats.unlockBasic = unlockFlags.unlockBasic;
   stats.unlockCameras = unlockFlags.unlockCameras;
   stats.unlockTurrets = unlockFlags.unlockTurrets;
@@ -170,26 +169,28 @@ private final func ApplyBetterNetrunningExtensionsWithStats(
     this.GetMinigameBlackboard().GetVariant(GetAllBlackboardDefs().HackingMinigame.ActivePrograms)
   );
 
-  // DEBUG: Log breach type
-  BNDebug("BreachProcessing", s"ApplyBetterNetrunningExtensions - isUnconsciousNPCBreach: \(ToString(isUnconsciousNPCBreach))");
+  BNTrace("BreachProcessing", s"ApplyBetterNetrunningExtensions - isUnconsciousNPCBreach: \(ToString(isUnconsciousNPCBreach))");
 
   // Step 0.5: Rollback incorrect vanilla unlocks (Problem ② fix)
   // CRITICAL: Skip for Unconscious NPC breaches (they handle unlocks in ProcessUnconsciousNPCBreachCompletion)
   if !isUnconsciousNPCBreach {
-    BNDebug("BreachProcessing", "Executing RollbackIncorrectVanillaUnlocks (NOT Unconscious NPC breach)");
+    BNTrace("BreachProcessing", "Executing RollbackIncorrectVanillaUnlocks (NOT Unconscious NPC breach)");
     this.RollbackIncorrectVanillaUnlocks(devices, unlockFlags);
   } else {
-    BNDebug("BreachProcessing", "SKIPPED RollbackIncorrectVanillaUnlocks (Unconscious NPC breach detected)");
+    BNTrace("BreachProcessing", "SKIPPED RollbackIncorrectVanillaUnlocks (Unconscious NPC breach detected)");
   }
 
   // Step 1: Execute Bonus Daemons
   ProcessMinigamePrograms(minigamePrograms, this, this.GetGameInstance(), "[AccessPoint]");
 
   // Step 1.5a: Unlock standalone devices in radius (Problem ① fix)
-  this.UnlockStandaloneDevicesInBreachRadius(unlockFlags);
+  this.UnlockStandaloneDevicesInBreachRadius(unlockFlags, stats);
 
   // Step 1.5b: Unlock vehicles in radius (Problem ② fix)
-  this.UnlockVehiclesInBreachRadius(unlockFlags);
+  this.UnlockVehiclesInBreachRadius(unlockFlags, stats);
+
+  // Step 1.5c: Unlock NPCs in radius (Problem ② fix)
+  this.UnlockNPCsInBreachRadius(unlockFlags, stats);
 
   // Step 2: Apply Progressive Subnet Unlocking + Collect Statistics
   this.ApplyBreachUnlockToDevicesWithStats(devices, unlockFlags, stats);
@@ -234,8 +235,12 @@ private final func MarkUnconsciousNPCAsDirectlyBreached() -> Void {
  * Unlock standalone devices in breach radius (Problem ① fix)
  * ARCHITECTURE: Adapter method for DeviceUnlockUtils.UnlockDevicesInRadius()
  */
+/*
+ * Unlock standalone devices in breach radius (Problem ① fix)
+ * ARCHITECTURE: Adapter method for DeviceUnlockUtils.UnlockDevicesInRadius()
+ */
 @addMethod(AccessPointControllerPS)
-private final func UnlockStandaloneDevicesInBreachRadius(unlockFlags: BreachUnlockFlags) -> Void {
+private final func UnlockStandaloneDevicesInBreachRadius(unlockFlags: BreachUnlockFlags, stats: ref<BreachSessionStats>) -> Void {
   // Only unlock standalone devices if Basic Daemon succeeded
   if !unlockFlags.unlockBasic {
     return;
@@ -245,12 +250,8 @@ private final func UnlockStandaloneDevicesInBreachRadius(unlockFlags: BreachUnlo
 
   // DeviceUnlockUtils requires ScriptableDeviceComponentPS
   // AccessPointControllerPS inherits from ScriptableDeviceComponentPS ✅
-  let devicePS: ref<ScriptableDeviceComponentPS> = this as ScriptableDeviceComponentPS;
-
-  if IsDefined(devicePS) {
-    DeviceUnlockUtils.UnlockDevicesInRadius(devicePS, gameInstance);
-    BNInfo("BreachProcessing", "Unlocked standalone devices in 50m radius (Basic Daemon success)");
-  }
+  let standaloneCount: Int32 = DeviceUnlockUtils.UnlockDevicesInRadius(this, gameInstance);
+  stats.standaloneDeviceCount = standaloneCount;
 }
 
 /*
@@ -258,7 +259,7 @@ private final func UnlockStandaloneDevicesInBreachRadius(unlockFlags: BreachUnlo
  * ARCHITECTURE: Adapter method for DeviceUnlockUtils.UnlockVehiclesInRadius()
  */
 @addMethod(AccessPointControllerPS)
-private final func UnlockVehiclesInBreachRadius(unlockFlags: BreachUnlockFlags) -> Void {
+private final func UnlockVehiclesInBreachRadius(unlockFlags: BreachUnlockFlags, stats: ref<BreachSessionStats>) -> Void {
   // Only unlock vehicles if Basic Daemon succeeded
   if !unlockFlags.unlockBasic {
     return;
@@ -268,12 +269,30 @@ private final func UnlockVehiclesInBreachRadius(unlockFlags: BreachUnlockFlags) 
 
   // DeviceUnlockUtils requires ScriptableDeviceComponentPS
   // AccessPointControllerPS inherits from ScriptableDeviceComponentPS ✅
-  let devicePS: ref<ScriptableDeviceComponentPS> = this as ScriptableDeviceComponentPS;
+  let vehicleCount: Int32 = DeviceUnlockUtils.UnlockVehiclesInRadius(this, gameInstance);
+  stats.vehicleCount = vehicleCount;
+}
 
-  if IsDefined(devicePS) {
-    DeviceUnlockUtils.UnlockVehiclesInRadius(devicePS, gameInstance);
-    BNInfo("BreachProcessing", "Unlocked vehicles in 50m radius (Basic Daemon success)");
+/*
+ * Unlock NPCs in breach radius (Problem ② fix)
+ * ARCHITECTURE: Adapter method for DeviceUnlockUtils.UnlockNPCsInRadius()
+ */
+@addMethod(AccessPointControllerPS)
+private final func UnlockNPCsInBreachRadius(unlockFlags: BreachUnlockFlags, stats: ref<BreachSessionStats>) -> Void {
+  // Only unlock NPCs if Basic Daemon succeeded
+  if !unlockFlags.unlockBasic {
+    return;
   }
+
+  let gameInstance: GameInstance = this.GetGameInstance();
+
+  // DeviceUnlockUtils requires ScriptableDeviceComponentPS
+  // AccessPointControllerPS inherits from ScriptableDeviceComponentPS ✅
+  let npcResult: NPCProcessResult = DeviceUnlockUtils.UnlockNPCsInRadius(this, gameInstance);
+
+  // Extract counts from result
+  stats.npcNetworkCount = npcResult.networkCount;
+  stats.npcStandaloneCount = npcResult.standaloneCount;
 }
 
 /*
@@ -358,33 +377,6 @@ private final func RollbackIncorrectVanillaUnlocks(const devices: script_ref<arr
 }
 
 /*
- * Extracts unlock flags from program list (statistics version - no logging)
- */
-@addMethod(AccessPointControllerPS)
-private final func ExtractUnlockFlags(minigamePrograms: array<TweakDBID>) -> BreachUnlockFlags {
-  let flags: BreachUnlockFlags;
-
-  let i: Int32 = 0;
-  while i < ArraySize(minigamePrograms) {
-    let programID: TweakDBID = minigamePrograms[i];
-
-    if programID == BNConstants.PROGRAM_UNLOCK_QUICKHACKS() {
-      flags.unlockBasic = true;
-    } else if programID == BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS() {
-      flags.unlockNPCs = true;
-    } else if programID == BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS() {
-      flags.unlockCameras = true;
-    } else if programID == BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS() {
-      flags.unlockTurrets = true;
-    }
-
-    i += 1;
-  }
-
-  return flags;
-}
-
-/*
  * Executes NPC Breach PING if PING program is present (DISABLED - feature removed)
  */
 @addMethod(AccessPointControllerPS)
@@ -447,15 +439,14 @@ private final func UnlockDeviceWithStats(
   // Determine device type
   let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(device);
 
-  // Update device type counters (統吁E Doors/Terminals/Other ↁEBasic)
+  // Update device type counters (consolidated: Doors/Terminals/Other → Basic)
   if IsDefined(device as SurveillanceCameraControllerPS) {
     stats.cameraCount += 1;
   } else if IsDefined(device as SecurityTurretControllerPS) {
     stats.turretCount += 1;
-  } else if IsDefined(device) {
-    stats.npcCount += 1;
   } else {
     // Basic devices: doors, terminals, computers, other
+    // Note: NPCs are not part of the device system, so npcCount remains 0
     stats.basicCount += 1;
   }
 
@@ -583,29 +574,3 @@ public final func ApplyDeviceTypeUnlock(device: ref<DeviceComponentPS>, unlockFl
   let currentTime: Float = TimeUtils.GetCurrentTimestamp(this.GetGameInstance());
   TimeUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
 }
-
-// ============================================================================
-// ExecutePingProgram - REMOVED
-// ============================================================================
-// REASON: Cannot implement single-device PING without extensive vanilla overrides
-// - PingDevice action calls PingDevicesNetwork() in CompleteAction()
-// - Device.PulseNetwork() uses EPingType.SPACE (network-wide)
-// - No vanilla API exists for single-device PING
-// All PING-related functionality has been disabled
-// ============================================================================
-
-// ============================================================================
-// ExecuteNPCBreachPing - REMOVED
-// ============================================================================
-// REASON: Cannot implement single-device PING without extensive vanilla overrides
-// - PingDevice action calls PingDevicesNetwork() in CompleteAction()
-// - Device.PulseNetwork() uses EPingType.SPACE (network-wide)
-// - No vanilla API exists for single-device PING
-// All PING-related functionality has been disabled
-// ============================================================================
-
-// ============================================================================
-// REASON: Manual PING execution causes network propagation issues
-// Vanilla breach completion handler should execute PING daemon automatically
-// This prevents network-wide propagation while maintaining PING functionality
-// ============================================================================

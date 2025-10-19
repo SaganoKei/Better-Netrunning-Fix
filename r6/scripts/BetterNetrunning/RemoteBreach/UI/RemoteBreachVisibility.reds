@@ -32,7 +32,7 @@ import BetterNetrunning.Core.*
 import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.RemoteBreach.Actions.*
 import BetterNetrunning.Utils.*
-import BetterNetrunning.Breach.Systems.*
+import BetterNetrunning.Breach.*
 import BetterNetrunning.*
 import BetterNetrunningConfig.*
 
@@ -103,19 +103,9 @@ public final func TryAddCustomRemoteBreach(outActions: script_ref<array<ref<Devi
     return;
   }
 
-  // EARLY EXIT: Device locked by RemoteBreach failure penalty
-  // Check if device is within breach failure lock range (50m, 10 minutes)
-  if BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
-    let deviceEntity: wref<GameObject> = this.GetOwnerEntityWeak() as GameObject;
-    if IsDefined(deviceEntity) {
-      let player: ref<PlayerPuppet> = GetPlayer(this.GetGameInstance());
-      if IsDefined(player) {
-        let devicePosition: Vector4 = deviceEntity.GetWorldPosition();
-        if RemoteBreachLockUtils.IsRemoteBreachLockedForDevice(player, devicePosition, this.GetGameInstance()) {
-          return;
-        }
-      }
-    }
+  // EARLY EXIT: Device locked by RemoteBreach failure penalty (50m radius, 10 minutes)
+  if BreachLockUtils.IsDeviceLockedByBreachFailure(this) {
+    return;
   }
 
   // Check if Custom RemoteBreach already exists
@@ -194,27 +184,18 @@ public final func TryAddMissingCustomRemoteBreach(outActions: script_ref<array<r
   }
 
   // EARLY EXIT: Device locked by RemoteBreach failure penalty
-  if BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
-    let deviceEntity: wref<GameObject> = this.GetOwnerEntityWeak() as GameObject;
-    if IsDefined(deviceEntity) {
-      let player: ref<PlayerPuppet> = GetPlayer(this.GetGameInstance());
-      if IsDefined(player) {
-        let devicePosition: Vector4 = deviceEntity.GetWorldPosition();
-        if RemoteBreachLockUtils.IsRemoteBreachLockedForDevice(player, devicePosition, this.GetGameInstance()) {
-          // Remove existing DeviceRemoteBreachAction if present (added before breach failure)
-          let i: Int32 = ArraySize(Deref(outActions)) - 1;
-          while i >= 0 {
-            let action: ref<DeviceAction> = Deref(outActions)[i];
-            let className: CName = action.GetClassName();
-            if IsCustomRemoteBreachAction(className) || IsDefined(action as RemoteBreach) {
-              ArrayErase(Deref(outActions), i);
-            }
-            i -= 1;
-          }
-          return;  // ❁EロチE��時�Eミニゲーム入口も表示しなぁE
-        }
+  if BreachLockUtils.IsDeviceLockedByBreachFailure(this) {
+    // Remove existing DeviceRemoteBreachAction if present (added before breach failure)
+    let i: Int32 = ArraySize(Deref(outActions)) - 1;
+    while i >= 0 {
+      let action: ref<DeviceAction> = Deref(outActions)[i];
+      let className: CName = action.GetClassName();
+      if IsCustomRemoteBreachAction(className) || IsDefined(action as RemoteBreach) {
+        ArrayErase(Deref(outActions), i);
       }
+      i -= 1;
     }
+    return;  // Don't show minigame entry when unlocked
   }
 
   // Skip Computer and Vehicle (they have specialized implementations)

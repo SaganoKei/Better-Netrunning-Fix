@@ -3,12 +3,12 @@ module BetterNetrunning.Devices
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
-import BetterNetrunning.Progression.*
-import BetterNetrunning.Breach.Systems.*
+import BetterNetrunning.Systems.*
+import BetterNetrunning.Breach.*
 import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.RemoteBreach.Actions.*
 import BetterNetrunning.RemoteBreach.UI.*
-import BetterNetrunning.RadialUnlock.Core.*
+import BetterNetrunning.RadialUnlock.*
 
 
 // ==================== Remote Actions ====================
@@ -82,17 +82,7 @@ public final func GetRemoteActions(out outActions: array<ref<DeviceAction>>, con
   let isUnsecuredNetwork: Bool = !hasAccessPoint && BetterNetrunningSettings.UnlockIfNoAccessPoint();
 
   // Check if RemoteBreach is locked due to breach failure
-  let isRemoteBreachLocked: Bool = false;
-  if BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
-    let deviceEntity: wref<GameObject> = this.GetOwnerEntityWeak() as GameObject;
-    if IsDefined(deviceEntity) {
-      let player: ref<PlayerPuppet> = GetPlayer(this.GetGameInstance());
-      if IsDefined(player) {
-        let devicePosition: Vector4 = deviceEntity.GetWorldPosition();
-        isRemoteBreachLocked = RemoteBreachLockUtils.IsRemoteBreachLockedForDevice(player, devicePosition, this.GetGameInstance());
-      }
-    }
-  }
+  let isRemoteBreachLocked: Bool = BreachLockUtils.IsDeviceLockedByBreachFailure(this);
 
   // Handle sequencer lock or breach state
   if this.IsLockedViaSequencer() {

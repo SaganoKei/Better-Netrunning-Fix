@@ -29,7 +29,7 @@
 // - Breach/BreachPenaltySystem.reds: Failure position recording
 // ============================================================================
 
-module BetterNetrunning.Breach.Systems
+module BetterNetrunning.Breach
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
@@ -70,7 +70,53 @@ public persistent let m_betterNetrunning_remoteBreachFailedTimestamps: array<Flo
 // ============================================================================
 
 public class RemoteBreachLockUtils {
-  // Public static wrapper for IsRemoteBreachLockedForDevice
+  /**
+   * RemoveAllRemoteBreachActions - Remove all RemoteBreach actions from action list
+   *
+   * PURPOSE: Single source of truth for RemoteBreach action filtering
+   * ARCHITECTURE: Static utility method, callable from any context
+   * USE CASES:
+   * - Breach failure penalty (GetQuickHackActions)
+   * - Device already breached (FinalizeGetQuickHackActions)
+   * - HackingExtensions integration (CustomHackingIntegration)
+   *
+   * REMOVED ACTIONS:
+   * - RemoteBreachAction (Computer)
+   * - DeviceRemoteBreachAction (Devices)
+   * - VehicleRemoteBreachAction (Vehicles)
+   * - Vanilla RemoteBreach
+   */
+  public static func RemoveAllRemoteBreachActions(
+    outActions: script_ref<array<ref<DeviceAction>>>
+  ) -> Void {
+    let i: Int32 = ArraySize(Deref(outActions)) - 1;
+
+    while i >= 0 {
+      let action: ref<DeviceAction> = Deref(outActions)[i];
+      let className: CName = action.GetClassName();
+
+      if IsCustomRemoteBreachAction(className) || IsDefined(action as RemoteBreach) {
+        ArrayErase(Deref(outActions), i);
+      }
+
+      i -= 1;
+    }
+  }
+
+  /*
+   * NOTE: High-level wrapper methods have been moved to Utils/BreachLockUtils.reds
+   *
+   * MIGRATION:
+   * - OLD: RemoteBreachLockUtils.IsDeviceLockedByBreachFailure(this)
+   * - NEW: BreachLockUtils.IsDeviceLockedByBreachFailure(this)
+   *
+   * RATIONALE:
+   * - Proper separation of concerns (Breach domain vs Utility helpers)
+   * - RemoteBreachLock.reds focuses on breach penalty system (domain logic)
+   * - BreachLockUtils.reds provides generic entity/position helpers (utilities)
+   */
+
+  // Low-level position-based lock check (called by Utils/BreachLockUtils high-level wrappers)
   public static func IsRemoteBreachLockedForDevice(
     player: ref<PlayerPuppet>,
     devicePosition: Vector4,
@@ -191,8 +237,8 @@ public class RemoteBreachLockUtils {
   //
   // RETURNS:
   // - "" (empty) if canExecute=true
-  // - "LocKey#27398" if RAM insufficient (バニラ: "RAM不足")
-  // - "LocKey#7021" if position penalty (バニラ: "ネットワークのブリーチ失敁E)
+  // - "LocKey#27398" if RAM insufficient (Vanilla: "RAM insufficient")
+  // - "LocKey#7021" if position penalty (Vanilla: "Network breach failure")
   //
   // USAGE:
   // ```
@@ -231,7 +277,7 @@ public class RemoteBreachLockUtils {
     let devicePosition: Vector4 = deviceEntity.GetWorldPosition();
     if RemoteBreachLockUtils.IsRemoteBreachLockedForDevice(player, devicePosition, devicePS.GetGameInstance()) {
       canExecute = false;
-      return BNConstants.LOCKEY_NO_NETWORK_ACCESS(); // "ネットワークのブリーチ失敁E
+      return BNConstants.LOCKEY_NO_NETWORK_ACCESS(); // "Network breach failure"
     }
 
     return ""; // All checks passed, action executable

@@ -7,8 +7,8 @@ import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.RemoteBreach.Actions.*
 import BetterNetrunning.RemoteBreach.UI.*
 import BetterNetrunning.Minigame.*
-import BetterNetrunning.Progression.*
-import BetterNetrunning.RadialUnlock.Core.*
+import BetterNetrunning.Systems.*
+import BetterNetrunning.RadialUnlock.*
 import BetterNetrunningConfig.*
 
 // ==================== MODULE ARCHITECTURE ====================
@@ -69,27 +69,53 @@ import BetterNetrunningConfig.*
 // - Filters programs based on network device types (cameras, turrets, NPCs)
 // - DNR (Daemon Netrunning Revamp) compatibility layer
 //
+// ARCHITECTURE - PROTECT/RESTORE PATTERN:
+// BetterNetrunning subnet daemons (type="MinigameAction.Both") bypass vanilla
+// Rule 3/4 but also skip Rule 5 (network connectivity check). To fix:
+// 1. Extract BN daemons before wrappedMethod() → protected array
+// 2. Execute vanilla filtering on remaining programs
+// 3. Apply manual Rule 5 to protected daemons → ProgramFilteringRules
+// 4. Restore filtered daemons to main program list
+// 5. Continue existing BN filtering (Datamine, physical range, etc.)
+//
 // MOD COMPATIBILITY: @wrapMethod allows other mods to also hook this function
 @wrapMethod(MinigameGenerationRuleScalingPrograms)
 public final func FilterPlayerPrograms(programs: script_ref<array<MinigameProgramData>>) -> Void {
-  BNDebug("FilterPlayerPrograms", "Starting daemon filtering");
-
   // Store the hacking target entity in minigame blackboard (used for access point logic)
   this.m_blackboardSystem.Get(GetAllBlackboardDefs().HackingMinigame).SetVariant(GetAllBlackboardDefs().HackingMinigame.Entity, ToVariant(this.m_entity));
 
-  // Call base game filtering logic FIRST to properly initialize program data
-  // This populates actionID fields correctly
+  // PHASE 1: Extract BN subnet daemons (protect from vanilla Rule 3/4)
+  let protectedPrograms: array<MinigameProgramData>;
+  this.ExtractBetterNetrunningDaemons(programs, protectedPrograms);
+
+  BNTrace("FilterPlayerPrograms",
+    "Extracted " + ToString(ArraySize(protectedPrograms)) + " BN daemons, " +
+    ToString(ArraySize(Deref(programs))) + " programs remain for vanilla filtering");
+
+  // PHASE 2: Call vanilla filtering (Rule 1-5) on non-BN programs
   wrappedMethod(programs);
 
-  // CRITICAL: Inject Better Netrunning programs AFTER wrappedMethod()
-  // This ensures our programs are not overwritten by base game logic
+  // PHASE 3: Apply network connectivity filter (Rule 5) to protected BN daemons
+  ApplyNetworkConnectivityFilter(this.m_entity, protectedPrograms);
+
+  BNTrace("FilterPlayerPrograms",
+    "After Rule 5 filtering: " + ToString(ArraySize(protectedPrograms)) + " BN daemons survived");
+
+  // PHASE 4: Restore filtered BN daemons to program list
+  this.RestoreBetterNetrunningDaemons(programs, protectedPrograms);
+
+  BNTrace("FilterPlayerPrograms",
+    "After restoration: " + ToString(ArraySize(Deref(programs))) + " total programs");
+
+  // PHASE 5: Inject BN programs (PING, Datamine bonuses, etc.)
+  // CRITICAL: Inject AFTER restoration to ensure proper program order
   this.InjectBetterNetrunningPrograms(programs);
 
+  // PHASE 6: Apply BN custom filtering (existing logic)
   let initialProgramCount: Int32 = ArraySize(Deref(programs));
-  BNDebug("FilterPlayerPrograms", "Programs after injection (before filtering): " + ToString(initialProgramCount));
 
-  // CRITICAL: Remove already-breached programs AFTER wrappedMethod()
-  // This ensures actionID fields are properly initialized by base game logic
+  // CRITICAL: Remove already-breached programs
+  // This ensures we don't show subnet unlock daemons for already-unlocked subnets
   let i: Int32 = ArraySize(Deref(programs)) - 1;
   while i >= 0 {
     if ShouldRemoveBreachedPrograms(Deref(programs)[i].actionID, this.m_entity as GameObject) {
@@ -108,16 +134,13 @@ public final func FilterPlayerPrograms(programs: script_ref<array<MinigameProgra
     connectedToNetwork = true;
     data = (this.m_entity as ScriptedPuppet).GetMasterConnectedClassTypes();
     devPS = (this.m_entity as ScriptedPuppet).GetPS().GetDeviceLink();
-    BNDebug("FilterPlayerPrograms", "Target: NPC (always connected)");
   } else {
     // CRITICAL FIX: Access Points are always connected to network (they ARE the network)
     let isAccessPoint: Bool = IsDefined(this.m_entity as AccessPoint);
     if isAccessPoint {
       connectedToNetwork = true;
-      BNDebug("FilterPlayerPrograms", "Target: Access Point (always connected)");
     } else {
       connectedToNetwork = (this.m_entity as Device).GetDevicePS().IsConnectedToPhysicalAccessPoint();
-      BNDebug("FilterPlayerPrograms", "Target: Device (connected=" + ToString(connectedToNetwork) + ")");
     }
     data = (this.m_entity as Device).GetDevicePS().CheckMasterConnectedClassTypes();
     devPS = (this.m_entity as Device).GetDevicePS();
@@ -175,7 +198,6 @@ public final func FilterPlayerPrograms(programs: script_ref<array<MinigameProgra
 
   // CRITICAL: Count programs AFTER DNR gating (may add/remove programs)
   let finalProgramCount: Int32 = ArraySize(Deref(programs));
-  BNDebug("FilterPlayerPrograms", "After filtering/DNR gating - final count: " + ToString(finalProgramCount));
 
   // Log detailed filtering summary
   LogFilteringSummary(initialProgramCount, finalProgramCount, removedPrograms, "[FilterPlayerPrograms]");
@@ -246,6 +268,87 @@ public final func FilterPlayerPrograms(programs: script_ref<array<MinigameProgra
 // - Integration/TracePositionOverhaulGating.reds: TracePositionOverhaul compatibility
 // - Integration/RadialBreachGating.reds: RadialBreach MOD physical range filtering
 // - CustomHacking/*: RemoteBreach action integration (9 files)
+
+// ==================== PROTECT/RESTORE PATTERN HELPERS ====================
+
+/*
+ * Extract BetterNetrunning subnet daemons before vanilla filtering
+ *
+ * PURPOSE:
+ * Protects BN subnet daemons from vanilla Rule 3/4 deletion by extracting
+ * them into a separate array before wrappedMethod() execution.
+ *
+ * FUNCTIONALITY:
+ * - Iterates programs array in reverse order (safe for removal)
+ * - Identifies BN subnet daemons via ProgramFilteringRules helper
+ * - Moves matching programs to protectedPrograms array
+ * - Removes from main programs array
+ *
+ * RATIONALE:
+ * BN daemons have type="MinigameAction.Both", which technically bypasses
+ * Rule 3 (!m_isRemoteBreach && Type != AccessPoint) in AP Breach, but
+ * triggers Rule 4 (m_isRemoteBreach && Type == AccessPoint) in RemoteBreach.
+ * Extraction ensures consistent behavior across all breach types.
+ *
+ * @param programs - Main program array (modified: BN daemons removed)
+ * @param protectedPrograms - Output array receiving BN daemons
+ */
+@addMethod(MinigameGenerationRuleScalingPrograms)
+private final func ExtractBetterNetrunningDaemons(
+  programs: script_ref<array<MinigameProgramData>>,
+  protectedPrograms: script_ref<array<MinigameProgramData>>
+) -> Void {
+  let i: Int32 = ArraySize(Deref(programs)) - 1;
+  while i >= 0 {
+    let program: MinigameProgramData = Deref(programs)[i];
+
+    if IsBetterNetrunningSubnetDaemon(program.actionID) {
+      BNTrace("ExtractBetterNetrunningDaemons",
+        "Extracting daemon: " + TDBID.ToStringDEBUG(program.actionID));
+
+      ArrayPush(Deref(protectedPrograms), program);
+      ArrayErase(Deref(programs), i);
+    }
+
+    i -= 1;
+  }
+}
+
+/*
+ * Restore filtered BetterNetrunning daemons to program list
+ *
+ * PURPOSE:
+ * Merges protected BN daemons back into main program array after vanilla
+ * filtering and manual Rule 5 application.
+ *
+ * FUNCTIONALITY:
+ * - Appends all programs from protectedPrograms to main programs array
+ * - Order: vanilla programs first, BN daemons last
+ *
+ * RATIONALE:
+ * Vanilla filtering (Rule 1-5) operates on non-BN programs only. After
+ * manual Rule 5 on BN daemons, both arrays contain properly filtered
+ * programs and can be safely merged.
+ *
+ * @param programs - Main program array (modified: BN daemons appended)
+ * @param protectedPrograms - Filtered BN daemons to restore
+ */
+@addMethod(MinigameGenerationRuleScalingPrograms)
+private final func RestoreBetterNetrunningDaemons(
+  programs: script_ref<array<MinigameProgramData>>,
+  protectedPrograms: array<MinigameProgramData>
+) -> Void {
+  let i: Int32 = 0;
+  let count: Int32 = ArraySize(protectedPrograms);
+
+  while i < count {
+    BNTrace("RestoreBetterNetrunningDaemons",
+      "Restoring daemon: " + TDBID.ToStringDEBUG(protectedPrograms[i].actionID));
+
+    ArrayPush(Deref(programs), protectedPrograms[i]);
+    i += 1;
+  }
+}
 
 // ==================== PHYSICAL RANGE FILTERING HELPERS ====================
 

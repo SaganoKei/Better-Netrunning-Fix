@@ -46,6 +46,12 @@ public struct VehicleProcessResult {
     public let unlocked: Bool;
 }
 
+// Helper struct for NPC processing result
+public struct NPCProcessResult {
+    public let networkCount: Int32;      // Count of NPCs with network connection
+    public let standaloneCount: Int32;   // Count of NPCs without network connection
+}
+
 public abstract class DeviceUnlockUtils {
     // ============================================================================
     // UnlockNPCsInRadius - Radial NPC Unlock
@@ -53,67 +59,90 @@ public abstract class DeviceUnlockUtils {
     /*
      * Unlock NPCs in 50m radius via TargetingSystem
      * ARCHITECTURE: Sets m_quickHacksExposed = true for NPCs in range
+     * NETWORK LOGIC: Separates network-connected vs standalone NPCs
+     * RETURNS: NPCProcessResult with network/standalone counts
      */
-    public static func UnlockNPCsInRadius(devicePS: ref<ScriptableDeviceComponentPS>, gameInstance: GameInstance) -> Void {
+    public static func UnlockNPCsInRadius(devicePS: ref<ScriptableDeviceComponentPS>, gameInstance: GameInstance) -> NPCProcessResult {
+        let result: NPCProcessResult;
+
         let deviceEntity: wref<GameObject> = devicePS.GetOwnerEntityWeak() as GameObject;
         if !IsDefined(deviceEntity) {
-            return;
+            return result;
         }
 
         let targetingSetup: TargetingSetup = DeviceUnlockUtils.SetupNPCTargeting(deviceEntity, gameInstance);
         if !targetingSetup.isValid {
-            return;
+            return result;
         }
 
         let parts: array<TS_TargetPartInfo>;
         targetingSetup.targetingSystem.GetTargetParts(targetingSetup.player, targetingSetup.query, parts);
 
+        let networkCount: Int32 = 0;
+        let standaloneCount: Int32 = 0;
         let idx: Int32 = 0;
         while idx < ArraySize(parts) {
-            DeviceUnlockUtils.ProcessAndUnlockNPC(parts[idx], targetingSetup.sourcePos, targetingSetup.breachRadius);
+            let npcResult: NPCProcessResult = DeviceUnlockUtils.ProcessAndUnlockNPC(parts[idx], targetingSetup.sourcePos, targetingSetup.breachRadius);
+            networkCount += npcResult.networkCount;
+            standaloneCount += npcResult.standaloneCount;
             idx += 1;
         }
+
+        result.networkCount = networkCount;
+        result.standaloneCount = standaloneCount;
+        return result;
     }
 
+    // ============================================================================
+    // UnlockDevicesInRadius - Radial Standalone Device Unlock
     // ============================================================================
     // UnlockDevicesInRadius - Radial Standalone Device Unlock
     // ============================================================================
     /*
      * Unlock standalone devices in 50m radius via TargetingSystem
      * ARCHITECTURE: Uses TargetingSystem to find devices without network connections
+     * RETURNS: Number of devices unlocked
      */
-    public static func UnlockDevicesInRadius(devicePS: ref<ScriptableDeviceComponentPS>, gameInstance: GameInstance) -> Void {
+    public static func UnlockDevicesInRadius(devicePS: ref<ScriptableDeviceComponentPS>, gameInstance: GameInstance) -> Int32 {
         let deviceEntity: wref<GameObject> = devicePS.GetOwnerEntityWeak() as GameObject;
         if !IsDefined(deviceEntity) {
-            return;
+            return 0;
         }
 
         let targetingSetup: TargetingSetup = DeviceUnlockUtils.SetupDeviceTargeting(deviceEntity, gameInstance);
         if !targetingSetup.isValid {
-            return;
+            return 0;
         }
 
         let parts: array<TS_TargetPartInfo>;
         targetingSetup.targetingSystem.GetTargetParts(targetingSetup.player, targetingSetup.query, parts);
 
+        let deviceCount: Int32 = 0;
         let idx: Int32 = 0;
         while idx < ArraySize(parts) {
-            DeviceUnlockUtils.ProcessAndUnlockStandaloneDevice(parts[idx], targetingSetup.sourcePos, targetingSetup.breachRadius);
+            if DeviceUnlockUtils.ProcessAndUnlockStandaloneDevice(parts[idx], targetingSetup.sourcePos, targetingSetup.breachRadius) {
+                deviceCount += 1;
+            }
             idx += 1;
         }
+
+        return deviceCount;
     }
 
+    // ============================================================================
+    // UnlockVehiclesInRadius - Radial Vehicle Unlock
     // ============================================================================
     // UnlockVehiclesInRadius - Radial Vehicle Unlock
     // ============================================================================
     /*
      * Unlock vehicles in 50m radius via TargetingSystem
      * ARCHITECTURE: Uses TargetingSystem to find VehicleObject entities
+     * RETURNS: Number of vehicles unlocked
      */
-    public static func UnlockVehiclesInRadius(devicePS: ref<ScriptableDeviceComponentPS>, gameInstance: GameInstance) -> Void {
+    public static func UnlockVehiclesInRadius(devicePS: ref<ScriptableDeviceComponentPS>, gameInstance: GameInstance) -> Int32 {
         let targetingSetup: TargetingSetup = DeviceUnlockUtils.SetupVehicleTargeting(devicePS, gameInstance);
         if !targetingSetup.isValid {
-            return;
+            return 0;
         }
 
         let parts: array<TS_TargetPartInfo>;
@@ -128,6 +157,8 @@ public abstract class DeviceUnlockUtils {
             unlockedCount += result.unlocked ? 1 : 0;
             idx += 1;
         }
+
+        return vehicleCount;
     }
 
     // ============================================================================
@@ -231,51 +262,71 @@ public abstract class DeviceUnlockUtils {
     // ============================================================================
 
     // Process and unlock NPC (reduce nesting in UnlockNPCsInRange)
-    private static func ProcessAndUnlockNPC(part: TS_TargetPartInfo, sourcePos: Vector4, breachRadius: Float) -> Void {
+    // RETURNS: NPCProcessResult with network/standalone status
+    // Network-connected NPCs: Have PuppetDeviceLinkPS (connected to local network)
+    // Standalone NPCs: No DeviceLink (civilians, isolated entities)
+    private static func ProcessAndUnlockNPC(part: TS_TargetPartInfo, sourcePos: Vector4, breachRadius: Float) -> NPCProcessResult {
+        let result: NPCProcessResult;
+
         let entity: wref<GameObject> = TS_TargetPartInfo.GetComponent(part).GetEntity() as GameObject;
         if !IsDefined(entity) {
-            return;
+            return result;
         }
 
         let puppet: ref<NPCPuppet> = entity as NPCPuppet;
         if !IsDefined(puppet) {
-            return;
+            return result;
         }
 
         let distance: Float = Vector4.Distance(sourcePos, puppet.GetWorldPosition());
         if distance > breachRadius {
-            return;
+            return result;
         }
 
         let npcPS: ref<ScriptedPuppetPS> = puppet.GetPS();
-        if IsDefined(npcPS) {
-            npcPS.m_quickHacksExposed = true;
+        if !IsDefined(npcPS) {
+            return result;
         }
+
+        // Unlock quickhacks regardless of network status
+        npcPS.m_quickHacksExposed = true;
+
+        // Check network connection via DeviceLink
+        let deviceLink: ref<PuppetDeviceLinkPS> = npcPS.GetDeviceLink();
+        if IsDefined(deviceLink) {
+            result.networkCount = 1;     // Has network connection
+        } else {
+            result.standaloneCount = 1;  // No network connection
+        }
+
+        return result;
     }
 
     // Process and unlock standalone device (reduce nesting in UnlockDevicesInRadius)
-    private static func ProcessAndUnlockStandaloneDevice(part: TS_TargetPartInfo, sourcePos: Vector4, breachRadius: Float) -> Void {
+    // RETURNS: True if device was unlocked, false otherwise
+    private static func ProcessAndUnlockStandaloneDevice(part: TS_TargetPartInfo, sourcePos: Vector4, breachRadius: Float) -> Bool {
         let entity: wref<GameObject> = TS_TargetPartInfo.GetComponent(part).GetEntity() as GameObject;
         if !IsDefined(entity) {
-            return;
+            return false;
         }
 
         let device: ref<Device> = entity as Device;
         if !IsDefined(device) {
-            return;
+            return false;
         }
 
         let devicePS: ref<ScriptableDeviceComponentPS> = device.GetDevicePS();
         if !IsDefined(devicePS) {
-            return;
+            return false;
         }
 
         let distance: Float = Vector4.Distance(sourcePos, entity.GetWorldPosition());
         if distance > breachRadius {
-            return;
+            return false;
         }
 
         DeviceUnlockUtils.UnlockStandaloneDevice(devicePS);
+        return true;
     }
 
     // Unlock standalone device by type (reduce nesting)

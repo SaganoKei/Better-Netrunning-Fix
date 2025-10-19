@@ -101,7 +101,7 @@ public final func InjectBetterNetrunningPrograms(programs: script_ref<array<Mini
     turretAccessProgram.actionID = BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS();
     turretAccessProgram.programName = BNConstants.LOCKEY_ACCESS();
     ArrayInsert(Deref(programs), 0, turretAccessProgram);
-    BNDebug("ProgramInjection", "Turret program added (isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isNetrunner=" + ToString(isNetrunner) + ")");
+    BNTrace("ProgramInjection", "Turret program added (isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isNetrunner=" + ToString(isNetrunner) + ")");
   } else {
     BNTrace("ProgramInjection", "Turret program SKIPPED (breached=" + ToString(BreachStatusUtils.IsTurretsBreached(device)) + ", isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isNetrunner=" + ToString(isNetrunner) + ")");
   }
@@ -113,7 +113,7 @@ public final func InjectBetterNetrunningPrograms(programs: script_ref<array<Mini
     cameraAccessProgram.actionID = BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS();
     cameraAccessProgram.programName = BNConstants.LOCKEY_ACCESS();
     ArrayInsert(Deref(programs), 0, cameraAccessProgram);
-    BNDebug("ProgramInjection", "Camera program added (isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isBackdoor=" + ToString(isBackdoor) + ", isNetrunner=" + ToString(isNetrunner) + ")");
+    BNTrace("ProgramInjection", "Camera program added (isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isBackdoor=" + ToString(isBackdoor) + ", isNetrunner=" + ToString(isNetrunner) + ")");
   } else {
     BNTrace("ProgramInjection", "Camera program SKIPPED (breached=" + ToString(BreachStatusUtils.IsCamerasBreached(device)) + ", isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isBackdoor=" + ToString(isBackdoor) + ", isNetrunner=" + ToString(isNetrunner) + ")");
   }
@@ -125,7 +125,7 @@ public final func InjectBetterNetrunningPrograms(programs: script_ref<array<Mini
     npcAccessProgram.actionID = BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS();
     npcAccessProgram.programName = BNConstants.LOCKEY_ACCESS();
     ArrayInsert(Deref(programs), 0, npcAccessProgram);
-    BNDebug("ProgramInjection", "NPC program added (isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isUnconsciousNPC=" + ToString(isUnconsciousNPC) + ", isNetrunner=" + ToString(isNetrunner) + ")");
+    BNTrace("ProgramInjection", "NPC program added (isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isUnconsciousNPC=" + ToString(isUnconsciousNPC) + ", isNetrunner=" + ToString(isNetrunner) + ")");
   } else {
     BNTrace("ProgramInjection", "NPC program SKIPPED (breached=" + ToString(BreachStatusUtils.IsNPCsBreached(device)) + ", isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isUnconsciousNPC=" + ToString(isUnconsciousNPC) + ", isNetrunner=" + ToString(isNetrunner) + ")");
   }
@@ -137,7 +137,7 @@ public final func InjectBetterNetrunningPrograms(programs: script_ref<array<Mini
     basicAccessProgram.actionID = BNConstants.PROGRAM_UNLOCK_QUICKHACKS();
     basicAccessProgram.programName = BNConstants.LOCKEY_ACCESS();
     ArrayInsert(Deref(programs), 0, basicAccessProgram);
-    BNDebug("ProgramInjection", "Basic program added");
+    BNTrace("ProgramInjection", "Basic program added");
   } else {
     BNTrace("ProgramInjection", "Basic program SKIPPED (breached=" + ToString(BreachStatusUtils.IsBasicBreached(device)) + ")");
   }

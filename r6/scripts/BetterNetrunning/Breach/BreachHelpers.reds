@@ -1,9 +1,9 @@
-module BetterNetrunning.Breach.Core
+module BetterNetrunning.Breach
 
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
-import BetterNetrunning.Breach.Systems.*
+import BetterNetrunning.Breach.*
 
 /*
  * Breach helper functions for network hierarchy and minigame completion

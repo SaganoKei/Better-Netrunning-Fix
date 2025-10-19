@@ -51,15 +51,8 @@ public class UnconsciousNPCBreach extends AccessBreach {
         );
 
         // Execute vanilla CompleteAction logic (calls RefreshSlaves() internally)
+        // RefreshSlaves() handles statistics collection for UnconsciousNPC breach
         super.CompleteAction(gameInstance);
-
-        // Execute custom UnconsciousNPC breach processing
-        let player: ref<PlayerPuppet> = GetPlayer(gameInstance);
-        if IsDefined(player) {
-            player.ProcessUnconsciousNPCBreachCompletion();
-        } else {
-            BNError("NPCBreach", "Player not found - cannot process breach");
-        }
     }
 }
 
@@ -79,24 +72,7 @@ public class UnconsciousNPCBreach extends AccessBreach {
 
 @wrapMethod(AccessBreach)
 protected func CompleteAction(gameInstance: GameInstance) -> Void {
-    // Get OfficerBreach flag from NetworkBlackboard
-    let networkBB: ref<IBlackboard> = this.GetNetworkBlackboard(gameInstance);
-    let isOfficerBreach: Bool = false;
-
-    if IsDefined(networkBB) {
-        isOfficerBreach = networkBB.GetBool(this.GetNetworkBlackboardDef().OfficerBreach);
-    }
-
-    // Execute vanilla CompleteAction logic first
+    // Execute vanilla CompleteAction logic
+    // RefreshSlaves() handles statistics collection for all breach types
     wrappedMethod(gameInstance);
-
-    // If this is an NPC breach, execute custom processing
-    if isOfficerBreach {
-        let player: ref<PlayerPuppet> = GetPlayer(gameInstance);
-        if IsDefined(player) {
-            player.ProcessUnconsciousNPCBreachCompletion();
-        } else {
-            BNError("NPCBreach", "Player not found");
-        }
-    }
 }

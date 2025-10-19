@@ -3,12 +3,12 @@ module BetterNetrunning.Devices
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
-import BetterNetrunning.Progression.*
-import BetterNetrunning.Breach.Systems.*
+import BetterNetrunning.Systems.*
+import BetterNetrunning.Breach.*
 import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.RemoteBreach.Actions.*
 import BetterNetrunning.RemoteBreach.UI.*
-import BetterNetrunning.RadialUnlock.Core.*
+import BetterNetrunning.RadialUnlock.*
 
 
 // ==================== Post-Processing Filters ====================
@@ -58,7 +58,7 @@ private final func ReplaceVanillaRemoteBreachWithCustom(outActions: script_ref<a
   }
 
   // Guard 2: Device locked by breach failure - remove all RemoteBreach actions
-  if this.IsDeviceLockedByBreachFailure() {
+  if BreachLockUtils.IsDeviceLockedByBreachFailure(this) {
     this.RemoveAllRemoteBreachActions(outActions);
     return;
   }
@@ -73,7 +73,7 @@ private final func ReplaceVanillaRemoteBreachWithCustom(outActions: script_ref<a
     if IsDefined(action as RemoteBreach) {
       ArrayErase(Deref(outActions), i);
       vanillaRemoteBreachFound = true;
-      BNDebug("ReplaceVanillaRemoteBreachWithCustom", "Removed vanilla RemoteBreach");
+      BNTrace("ReplaceVanillaRemoteBreachWithCustom", "Removed vanilla RemoteBreach");
     }
     i -= 1;
   }
@@ -81,17 +81,17 @@ private final func ReplaceVanillaRemoteBreachWithCustom(outActions: script_ref<a
   // Step 2: Add BetterNetrunning RemoteBreach action (if device is connected to backdoor network)
   if vanillaRemoteBreachFound && this.IsConnectedToBackdoorDevice() {
     let beforeSize: Int32 = ArraySize(Deref(outActions));
-    BNDebug("ReplaceVanillaRemoteBreachWithCustom", "Before TryAddCustomRemoteBreach: " + IntToString(beforeSize) + " actions");
+    BNTrace("ReplaceVanillaRemoteBreachWithCustom", "Before TryAddCustomRemoteBreach: " + IntToString(beforeSize) + " actions");
 
     this.TryAddCustomRemoteBreach(outActions);
 
     let afterSize: Int32 = ArraySize(Deref(outActions));
-    BNDebug("ReplaceVanillaRemoteBreachWithCustom", "After TryAddCustomRemoteBreach: " + IntToString(afterSize) + " actions");
+    BNTrace("ReplaceVanillaRemoteBreachWithCustom", "After TryAddCustomRemoteBreach: " + IntToString(afterSize) + " actions");
 
     if afterSize > beforeSize {
-      BNDebug("ReplaceVanillaRemoteBreachWithCustom", "Added BetterNetrunning RemoteBreach (RemoteBreachAction/VehicleRemoteBreachAction/DeviceRemoteBreachAction)");
+      BNTrace("ReplaceVanillaRemoteBreachWithCustom", "Added BetterNetrunning RemoteBreach (RemoteBreachAction/VehicleRemoteBreachAction/DeviceRemoteBreachAction)");
     } else {
-      BNDebug("ReplaceVanillaRemoteBreachWithCustom", "BetterNetrunning RemoteBreach NOT added (locked or other reason)");
+      BNTrace("ReplaceVanillaRemoteBreachWithCustom", "BetterNetrunning RemoteBreach NOT added (locked or other reason)");
     }
   }
 }
@@ -120,14 +120,14 @@ private final func RemoveRemoteBreachIfUnlocked(outActions: script_ref<array<ref
     // Check vanilla RemoteBreach
     if IsDefined(action as RemoteBreach) {
       ArrayErase(Deref(outActions), i);
-      BNDebug("RemoveRemoteBreachIfUnlocked", "Removed vanilla RemoteBreach (device already breached)");
+      BNTrace("RemoveRemoteBreachIfUnlocked", "Removed vanilla RemoteBreach (device already breached)");
     }
 
     // Check CustomAccessBreach
     let customBreachAction: ref<CustomAccessBreach> = action as CustomAccessBreach;
     if IsDefined(customBreachAction) {
       ArrayErase(Deref(outActions), i);
-      BNDebug("RemoveRemoteBreachIfUnlocked", "Removed CustomAccessBreach (device already breached)");
+      BNTrace("RemoveRemoteBreachIfUnlocked", "Removed CustomAccessBreach (device already breached)");
     }
 
     i -= 1;
@@ -154,7 +154,7 @@ private final func RemoveRemoteBreachIfUnlocked(outActions: script_ref<array<ref
     // Check vanilla RemoteBreach
     if IsDefined(action as RemoteBreach) {
       ArrayErase(Deref(outActions), i);
-      BNDebug("RemoveRemoteBreachIfUnlocked", "Removed vanilla RemoteBreach (device already breached)");
+      BNTrace("RemoveRemoteBreachIfUnlocked", "Removed vanilla RemoteBreach (device already breached)");
     }
 
     i -= 1;

@@ -3,12 +3,12 @@ module BetterNetrunning.Devices
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
-import BetterNetrunning.Progression.*
-import BetterNetrunning.Breach.Systems.*
+import BetterNetrunning.Systems.*
+import BetterNetrunning.Breach.*
 import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.RemoteBreach.Actions.*
 import BetterNetrunning.RemoteBreach.UI.*
-import BetterNetrunning.RadialUnlock.Core.*
+import BetterNetrunning.RadialUnlock.*
 
 /*
  * ============================================================================
@@ -180,17 +180,7 @@ private final func CalculateDevicePermissions(deviceInfo: DeviceBreachInfo) -> D
 @addMethod(ScriptableDeviceComponentPS)
 private final func ApplyPermissionsToActions(actions: script_ref<array<ref<DeviceAction>>>, deviceInfo: DeviceBreachInfo, permissions: DevicePermissions) -> Void {
   // Check if RemoteBreach is locked due to breach failure
-  let isRemoteBreachLocked: Bool = false;
-  if BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
-    let deviceEntity: wref<GameObject> = this.GetOwnerEntityWeak() as GameObject;
-    if IsDefined(deviceEntity) {
-      let player: ref<PlayerPuppet> = GetPlayer(this.GetGameInstance());
-      if IsDefined(player) {
-        let devicePosition: Vector4 = deviceEntity.GetWorldPosition();
-        isRemoteBreachLocked = RemoteBreachLockUtils.IsRemoteBreachLockedForDevice(player, devicePosition, this.GetGameInstance());
-      }
-    }
-  }
+  let isRemoteBreachLocked: Bool = BreachLockUtils.IsDeviceLockedByBreachFailure(this);
 
   let i: Int32 = 0;
   while i < ArraySize(Deref(actions)) {
@@ -247,30 +237,11 @@ private final func ShouldAllowAction(action: ref<ScriptableDeviceAction>, isCame
 // ==================== Helper Methods: Device Lock State ====================
 
 /**
- * IsDeviceLockedByBreachFailure - Check if device is locked by breach failure penalty
- *
- * PURPOSE: Extract complex nested condition from ReplaceVanillaRemoteBreachWithCustom()
- * RETURNS: true if RemoteBreach should be blocked due to breach failure in 50m radius
+ * NOTE: IsDeviceLockedByBreachFailure() is now a static method in BreachLockUtils (Utils module)
+ * MIGRATION: Use BreachLockUtils.IsDeviceLockedByBreachFailure(this) instead
+ * FILE: Utils/BreachLockUtils.reds
+ * RATIONALE: Proper separation of concerns (Utility helpers vs Breach domain logic)
  */
-@addMethod(ScriptableDeviceComponentPS)
-private final func IsDeviceLockedByBreachFailure() -> Bool {
-  if !BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
-    return false;
-  }
-
-  let deviceEntity: wref<GameObject> = this.GetOwnerEntityWeak() as GameObject;
-  if !IsDefined(deviceEntity) {
-    return false;
-  }
-
-  let player: ref<PlayerPuppet> = GetPlayer(this.GetGameInstance());
-  if !IsDefined(player) {
-    return false;
-  }
-
-  let devicePosition: Vector4 = deviceEntity.GetWorldPosition();
-  return RemoteBreachLockUtils.IsRemoteBreachLockedForDevice(player, devicePosition, this.GetGameInstance());
-}
 
 /**
  * RemoveVanillaRemoteBreachActions - Remove only vanilla RemoteBreach actions
@@ -298,23 +269,11 @@ private final func RemoveVanillaRemoteBreachActions(outActions: script_ref<array
  * RemoveAllRemoteBreachActions - Remove all RemoteBreach actions (vanilla + custom)
  *
  * PURPOSE: Remove all RemoteBreach types when device is locked by breach failure
- * ARCHITECTURE: Extract Method pattern, handles both vanilla and BetterNetrunning actions
+ * ARCHITECTURE: Delegate to RemoteBreachLockUtils static method (single source of truth)
  */
 @addMethod(ScriptableDeviceComponentPS)
 private final func RemoveAllRemoteBreachActions(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
-  let i: Int32 = ArraySize(Deref(outActions)) - 1;
-
-  while i >= 0 {
-    let action: ref<DeviceAction> = Deref(outActions)[i];
-    let className: CName = action.GetClassName();
-
-    if IsCustomRemoteBreachAction(className) || IsDefined(action as RemoteBreach) {
-      ArrayErase(Deref(outActions), i);
-      BNDebug("RemoveAllRemoteBreachActions", "Removed " + ToString(className) + " (device locked by breach failure)");
-    }
-
-    i -= 1;
-  }
+  RemoteBreachLockUtils.RemoveAllRemoteBreachActions(outActions);
 }
 
 // ==================== Quickhack Finalization ====================
