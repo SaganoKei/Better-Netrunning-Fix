@@ -62,16 +62,17 @@ protected func ExposeQuickHakcsIfNotConnnectedToAP() -> Bool {
  * - We cannot selectively disable side effect #4 without @replaceMethod on 290-line function
  * - Current approach maintains modularity and MOD compatibility via @wrapMethod
  */
-@wrapMethod(SharedGameplayPS)
-public func IsConnectedToBackdoorDevice() -> Bool {
-  let vanilla: Bool = wrappedMethod();
-  if !vanilla {
-    // Treat standalone devices as if connected to backdoor
-    // This enables RemoteBreach action for all devices
-    return true;
-  }
-  return vanilla;
-}
+// CRITICAL FIX (v0.6.0 Softlock Bug):
+// @wrapMethod(SharedGameplayPS)
+// public func IsConnectedToBackdoorDevice() -> Bool {
+//   let vanilla: Bool = wrappedMethod();
+//   if !vanilla {
+//     // Treat standalone devices as if connected to backdoor
+//     // This enables RemoteBreach action for all devices
+//     return true;
+//   }
+//   return true;
+// }
 
 /*
  * Allow Ping on all devices regardless of network backdoor status
@@ -82,7 +83,8 @@ public func IsConnectedToBackdoorDevice() -> Bool {
  * RATIONALE: Ping is a reconnaissance tool. Players should be able to
  * gather information about any device they can scan, not just networked ones.
  */
-@replaceMethod(SharedGameplayPS)
-public const func HasNetworkBackdoor() -> Bool {
-  return true;
-}
+ // CRITICAL FIX (v0.6.0 Softlock Bug):
+// @replaceMethod(SharedGameplayPS)
+// public const func HasNetworkBackdoor() -> Bool {
+//   return true;
+// }
