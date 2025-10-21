@@ -41,6 +41,19 @@ import BetterNetrunningConfig.*
 // DATA STRUCTURES
 // ============================================================================
 
+// Radial Unlock statistics result
+// Tracks device counts and unlock success for 50m radius breach operations
+public struct RadialUnlockResult {
+    public let basicCount: Int32;
+    public let cameraCount: Int32;
+    public let turretCount: Int32;
+    public let npcCount: Int32;
+    public let basicUnlocked: Int32;
+    public let cameraUnlocked: Int32;
+    public let turretUnlocked: Int32;
+    public let npcUnlocked: Int32;
+}
+
 // RemoteBreach loot reward accumulator (reduces parameter passing)
 // Using struct instead of class to avoid ref<> requirement
 public struct RemoteBreachLootData {
@@ -56,14 +69,18 @@ public struct RemoteBreachLootData {
 // ============================================================================
 
 // Apply network unlock to devices after Unconscious NPC Breach
+// ARCHITECTURE: Uses BreachStatisticsCollector for unified statistics collection
 @addMethod(PlayerPuppet)
 private func ApplyUnconsciousNPCNetworkUnlockWithStats(
   networkDevices: array<ref<DeviceComponentPS>>,
   unlockFlags: BreachUnlockFlags,
   stats: ref<BreachSessionStats>
 ) -> Void {
-  let i: Int32 = 0;
+  // Collect network device statistics using unified collector
+  BreachStatisticsCollector.CollectNetworkDeviceStats(networkDevices, unlockFlags, stats);
 
+  // Apply unlock to all devices
+  let i: Int32 = 0;
   while i < ArraySize(networkDevices) {
     let device: ref<DeviceComponentPS> = networkDevices[i];
     if IsDefined(device) {
@@ -81,23 +98,7 @@ private func ApplyUnconsciousNPCNetworkUnlockWithStats(
           BNTrace("UnconsciousNPCUnlock", "Applied unlock timestamp: " +
             ToString(currentTime) + " to device type: " +
             EnumValueToString("DeviceType", Cast<Int64>(EnumInt(deviceType))));
-
-          // Update statistics
-          stats.devicesUnlocked += 1;
-          if Equals(deviceType, DeviceType.Camera) {
-            stats.cameraCount += 1;
-          } else if Equals(deviceType, DeviceType.Turret) {
-            stats.turretCount += 1;
-          } else if Equals(deviceType, DeviceType.NPC) {
-            stats.npcNetworkCount += 1;
-          } else {
-            stats.basicCount += 1;
-          }
-        } else {
-          stats.devicesSkipped += 1;
         }
-      } else {
-        stats.devicesSkipped += 1;
       }
     }
     i += 1;
@@ -192,6 +193,7 @@ private func IsUnconsciousNPCBreachMinigame() -> Bool {
 // ============================================================================
 
 // Apply network unlock to devices after RemoteBreach (with statistics)
+// ARCHITECTURE: Uses BreachStatisticsCollector for unified statistics collection
 @addMethod(PlayerPuppet)
 private func ApplyRemoteBreachNetworkUnlockWithStats(
   targetDevice: ref<ScriptableDeviceComponentPS>,
@@ -199,8 +201,11 @@ private func ApplyRemoteBreachNetworkUnlockWithStats(
   unlockFlags: BreachUnlockFlags,
   stats: ref<BreachSessionStats>
 ) -> Void {
-  let i: Int32 = 0;
+  // Collect network device statistics using unified collector
+  BreachStatisticsCollector.CollectNetworkDeviceStats(networkDevices, unlockFlags, stats);
 
+  // Apply unlock to all devices
+  let i: Int32 = 0;
   while i < ArraySize(networkDevices) {
     let device: ref<DeviceComponentPS> = networkDevices[i];
     if IsDefined(device) {
@@ -215,23 +220,7 @@ private func ApplyRemoteBreachNetworkUnlockWithStats(
             // Apply device-type-specific unlock timestamp
             let currentTime: Float = TimeUtils.GetCurrentTimestamp(this.GetGame());
             TimeUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
-
-            // Update statistics
-            stats.devicesUnlocked += 1;
-            if Equals(deviceType, DeviceType.Camera) {
-              stats.cameraCount += 1;
-            } else if Equals(deviceType, DeviceType.Turret) {
-              stats.turretCount += 1;
-            } else if Equals(deviceType, DeviceType.NPC) {
-              stats.npcNetworkCount += 1;
-            } else {
-              stats.basicCount += 1;
-            }
-          } else {
-            stats.devicesSkipped += 1;
           }
-        } else {
-          stats.devicesSkipped += 1;
         }
       }
     }

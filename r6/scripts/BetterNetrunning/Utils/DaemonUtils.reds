@@ -129,6 +129,7 @@ public abstract class DaemonFilterUtils {
         while i < ArraySize(minigamePrograms) {
             let programID: TweakDBID = minigamePrograms[i];
 
+            // AccessPoint/UnconsciousNPC Breach programs
             if Equals(programID, BNConstants.PROGRAM_UNLOCK_QUICKHACKS()) {
                 flags.unlockBasic = true;
             } else if Equals(programID, BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS()) {
@@ -136,6 +137,16 @@ public abstract class DaemonFilterUtils {
             } else if Equals(programID, BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS()) {
                 flags.unlockCameras = true;
             } else if Equals(programID, BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS()) {
+                flags.unlockTurrets = true;
+            }
+            // RemoteBreach programs (BN_RemoteBreach_* series)
+            else if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_BASIC()) {
+                flags.unlockBasic = true;
+            } else if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_NPC()) {
+                flags.unlockNPCs = true;
+            } else if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_CAMERA()) {
+                flags.unlockCameras = true;
+            } else if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_TURRET()) {
                 flags.unlockTurrets = true;
             }
 
@@ -219,6 +230,50 @@ public abstract class DaemonFilterUtils {
         } else {
             return "Unknown";
         }
+    }
+
+    // ========================================================================
+    // DAEMON CLASSIFICATION HELPERS (for executed daemon display)
+    // ========================================================================
+
+    /// Check if program is a Subnet Daemon (Basic/Camera/Turret/NPC)
+    /// Used for EXECUTED DAEMONS display section
+    public static func IsSubnetDaemon(programID: TweakDBID) -> Bool {
+        // AccessPoint/UnconsciousNPC Breach subnet daemons
+        if Equals(programID, BNConstants.PROGRAM_UNLOCK_QUICKHACKS()) { return true; }
+        if Equals(programID, BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS()) { return true; }
+        if Equals(programID, BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS()) { return true; }
+        if Equals(programID, BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS()) { return true; }
+
+        // RemoteBreach subnet daemons (BN_RemoteBreach_* series)
+        if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_BASIC()) { return true; }
+        if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_CAMERA()) { return true; }
+        if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_TURRET()) { return true; }
+        if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_NPC()) { return true; }
+
+        return false;
+    }
+
+    /// Get human-readable daemon name (localized via TweakDB)
+    ///
+    /// FUNCTIONALITY:
+    /// - Retrieves localized display name from TweakDB ObjectAction records
+    /// - Supports all daemon types: vanilla, BN-specific, mod-added
+    /// - Automatic language support (uses user's game language)
+    ///
+    /// ARCHITECTURE:
+    /// - TweakDBInterface API for dynamic name resolution
+    /// - Fallback to TweakDBID string if record not found
+    /// - Zero maintenance (new daemons work automatically)
+    public static func GetDaemonDisplayName(programID: TweakDBID) -> String {
+        // Retrieve TweakDB record for this program
+        let record: ref<ObjectAction_Record> = TweakDBInterface.GetObjectActionRecord(programID);
+        if !IsDefined(record) {
+            return TDBID.ToStringDEBUG(programID);
+        }
+
+        // Get localized display name directly from record (CName → String via GetLocalizedTextByKey)
+        return GetLocalizedTextByKey(record.ObjectActionUI().Caption());
     }
 }
 

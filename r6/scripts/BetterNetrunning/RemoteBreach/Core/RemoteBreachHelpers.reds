@@ -29,7 +29,7 @@ import BetterNetrunning.RadialUnlock.*
 @if(ModuleExists("HackingExtensions"))
 import HackingExtensions.*
 
-@if(ModuleExists("HackingExtensions.Programs"))
+@if(ModuleExists("HackingExtensions"))
 import HackingExtensions.Programs.*
 
 public abstract class DaemonTypes {
@@ -169,14 +169,17 @@ public abstract class RemoteBreachUtils {
     }
 
     // Unlock nearby network-connected devices (shared logic for Device and Vehicle RemoteBreach)
-    public static func UnlockNearbyNetworkDevices(sourceEntity: wref<GameObject>, gameInstance: GameInstance, unlockBasic: Bool, unlockNPCs: Bool, unlockCameras: Bool, unlockTurrets: Bool, logPrefix: String) -> Void {
+    // RETURNS: RadialUnlockResult with device counts and unlock statistics
+    public static func UnlockNearbyNetworkDevices(sourceEntity: wref<GameObject>, gameInstance: GameInstance, unlockBasic: Bool, unlockNPCs: Bool, unlockCameras: Bool, unlockTurrets: Bool, logPrefix: String) -> RadialUnlockResult {
+        let result: RadialUnlockResult;
+
         if !IsDefined(sourceEntity) {
-            return;
+            return result;
         }
 
         let targetingSetup: TargetingSetup = RemoteBreachUtils.SetupDeviceTargeting(sourceEntity, gameInstance);
         if !targetingSetup.isValid {
-            return;
+            return result;
         }
 
         let parts: array<TS_TargetPartInfo>;
@@ -190,9 +193,19 @@ public abstract class RemoteBreachUtils {
 
         let i: Int32 = 0;
         while i < ArraySize(parts) {
-            RemoteBreachUtils.ProcessNetworkDevice(parts[i], targetingSetup, unlockFlags);
+            let deviceResult: RadialUnlockResult = RemoteBreachUtils.ProcessNetworkDevice(parts[i], targetingSetup, unlockFlags);
+            result.basicCount += deviceResult.basicCount;
+            result.cameraCount += deviceResult.cameraCount;
+            result.turretCount += deviceResult.turretCount;
+            result.npcCount += deviceResult.npcCount;
+            result.basicUnlocked += deviceResult.basicUnlocked;
+            result.cameraUnlocked += deviceResult.cameraUnlocked;
+            result.turretUnlocked += deviceResult.turretUnlocked;
+            result.npcUnlocked += deviceResult.npcUnlocked;
             i += 1;
         }
+
+        return result;
     }
 
     // Setup targeting for Device search (internal helper for UnlockNearbyNetworkDevices)
@@ -224,45 +237,92 @@ public abstract class RemoteBreachUtils {
     }
 
     // Process network-connected device (reduce nesting in UnlockNearbyNetworkDevices)
-    private static func ProcessNetworkDevice(part: TS_TargetPartInfo, setup: TargetingSetup, flags: UnlockFlags) -> Void {
+    // RETURNS: RadialUnlockResult with device type counts
+    private static func ProcessNetworkDevice(part: TS_TargetPartInfo, setup: TargetingSetup, flags: UnlockFlags) -> RadialUnlockResult {
+        let result: RadialUnlockResult;
+
         let entity: wref<GameObject> = TS_TargetPartInfo.GetComponent(part).GetEntity() as GameObject;
         if !IsDefined(entity) {
-            return;
+            return result;
         }
 
         let device: ref<Device> = entity as Device;
         if !IsDefined(device) {
-            return;
+            return result;
         }
 
         let devicePS: ref<ScriptableDeviceComponentPS> = device.GetDevicePS();
         if !IsDefined(devicePS) {
-            return;
+            return result;
         }
 
         let sharedPS: ref<SharedGameplayPS> = devicePS;
         if !IsDefined(sharedPS) {
-            return;
+            return result;
         }
 
         // Check if network-connected
         let apControllers: array<ref<AccessPointControllerPS>> = sharedPS.GetAccessPoints();
         if ArraySize(apControllers) == 0 {
-            return;  // Not network-connected
+            return result;  // Not network-connected
         }
 
         // Check distance
         let distance: Float = Vector4.Distance(setup.sourcePos, entity.GetWorldPosition());
         if distance > setup.breachRadius {
-            return;
+            return result;
+        }
+
+        // Determine device type and update counts
+        let isCamera: Bool = DeviceTypeUtils.IsCameraDevice(devicePS);
+        let isTurret: Bool = DeviceTypeUtils.IsTurretDevice(devicePS);
+        let isNPC: Bool = DeviceTypeUtils.IsNPCDevice(devicePS);
+
+        if isCamera {
+            result.cameraCount = 1;
+        } else if isTurret {
+            result.turretCount = 1;
+        } else if isNPC {
+            result.npcCount = 1;
+        } else {
+            result.basicCount = 1;
         }
 
         // Unlock based on device type
-        RemoteBreachUtils.UnlockDeviceByType(devicePS, flags);
+        let unlocked: Bool = RemoteBreachUtils.UnlockDeviceByType(devicePS, flags);
+
+        // Update unlocked counts if successful
+        if unlocked {
+            if isCamera {
+                result.cameraUnlocked = 1;
+            } else if isTurret {
+                result.turretUnlocked = 1;
+            } else if isNPC {
+                result.npcUnlocked = 1;
+            } else {
+                result.basicUnlocked = 1;
+            }
+        }
+
+        return result;
     }
 
     // Unlock device by type with flags (reduce nesting)
-    private static func UnlockDeviceByType(devicePS: ref<ScriptableDeviceComponentPS>, flags: UnlockFlags) -> Void {
+    // RETURNS: true if device was unlocked, false if skipped
+    private static func UnlockDeviceByType(devicePS: ref<ScriptableDeviceComponentPS>, flags: UnlockFlags) -> Bool {
+        let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(devicePS);
+
+        // Check if device should be unlocked based on flags
+        let unlockFlags: BreachUnlockFlags;
+        unlockFlags.unlockBasic = flags.unlockBasic;
+        unlockFlags.unlockNPCs = flags.unlockNPCs;
+        unlockFlags.unlockCameras = flags.unlockCameras;
+        unlockFlags.unlockTurrets = flags.unlockTurrets;
+
+        if !DeviceTypeUtils.ShouldUnlockByFlags(deviceType, unlockFlags) {
+            return false;  // Device type not allowed by flags
+        }
+
         // Use centralized timestamp unlock logic from DeviceUnlockUtils
         DeviceUnlockUtils.ApplyTimestampUnlock(
             devicePS,
@@ -272,6 +332,8 @@ public abstract class RemoteBreachUtils {
             flags.unlockCameras,
             flags.unlockTurrets
         );
+
+        return true;  // Successfully unlocked
     }
 }
 
@@ -438,16 +500,10 @@ public abstract class MinigameIDHelper {
         }
     }
 
-    // Vehicle RemoteBreach: Basic daemon only
+    // Vehicle RemoteBreach: Basic daemon only (fixed difficulty - same treatment as Basic devices)
     private static func GetVehicleMinigameID(difficulty: GameplayDifficulty) -> TweakDBID {
-        switch difficulty {
-            case GameplayDifficulty.Easy:
-                return BNConstants.MINIGAME_VEHICLE_BREACH_EASY();
-            case GameplayDifficulty.Hard:
-                return BNConstants.MINIGAME_VEHICLE_BREACH_HARD();
-            default:
-                return BNConstants.MINIGAME_VEHICLE_BREACH_MEDIUM();
-        }
+        // Vehicle uses fixed minigame regardless of difficulty setting
+        return BNConstants.MINIGAME_VEHICLE_BREACH();
     }
 }
 
@@ -677,7 +733,7 @@ public class OnRemoteBreachSucceeded extends OnCustomHackingSucceeded {
     }
 
     // ============================================================================
-    // Helper: Execute programs and grant rewards with statistics collection
+    // Helper: Execute programs and rewards with statistics collection
     // ============================================================================
     private func ExecuteProgramsAndRewardsWithStats(activePrograms: array<TweakDBID>, device: wref<ScriptableDeviceComponentPS>) -> Void {
         // Initialize statistics
@@ -692,42 +748,45 @@ public class OnRemoteBreachSucceeded extends OnCustomHackingSucceeded {
         stats.unlockTurrets = unlockFlags.unlockTurrets;
         stats.unlockNPCs = unlockFlags.unlockNPCs;
 
-        // Get network devices for statistics (MasterControllerPS and its subclasses have GetChildren)
+        // Collect executed daemon information for display
+        BreachStatisticsCollector.CollectExecutedDaemons(activePrograms, stats);
+
+        // Get network devices for statistics
+        // IMPLEMENTATION: Supports both MasterControllerPS (Computer/AccessPoint) and child devices (Speaker/Camera/Turret)
         let networkDevices: array<ref<DeviceComponentPS>>;
         let masterPS: ref<MasterControllerPS> = device as MasterControllerPS;
         if IsDefined(masterPS) {
+            // Case 1: Device is MasterControllerPS (Computer, AccessPoint) - direct GetChildren
             masterPS.GetChildren(networkDevices);
-        }
-        stats.networkDeviceCount = ArraySize(networkDevices);
-
-        // Count device types
-        let i: Int32 = 0;
-        while i < ArraySize(networkDevices) {
-            let netDevice: ref<DeviceComponentPS> = networkDevices[i];
-            if IsDefined(netDevice) {
-                if DeviceTypeUtils.IsCameraDevice(netDevice) {
-                    stats.cameraCount += 1;
-                } else if DeviceTypeUtils.IsTurretDevice(netDevice) {
-                    stats.turretCount += 1;
-                } else if DeviceTypeUtils.IsNPCDevice(netDevice) {
-                    stats.npcNetworkCount += 1;
-                } else {
-                    stats.basicCount += 1;
+        } else {
+            // Case 2: Device is child (Speaker, Camera, Turret) - get network via parent AccessPoint
+            let sharedPS: ref<SharedGameplayPS> = device;
+            if IsDefined(sharedPS) {
+                let apControllers: array<ref<AccessPointControllerPS>> = sharedPS.GetAccessPoints();
+                if ArraySize(apControllers) > 0 {
+                    // Network-connected device - get all devices from parent AccessPoint
+                    apControllers[0].GetChildren(networkDevices);
                 }
+                // If ArraySize(apControllers) == 0, device is standalone (networkDevices remains empty)
             }
-            i += 1;
         }
+
+        // Collect network device statistics using unified collector
+        BreachStatisticsCollector.CollectNetworkDeviceStats(networkDevices, unlockFlags, stats);
 
         let deviceEntity: ref<Device> = GameInstance.FindEntityByID(GetGameInstance(), PersistentID.ExtractEntityID(device.GetID())) as Device;
 
         // Execute programs (Datamine, etc.)
-        ProcessMinigamePrograms(activePrograms, device, GetGameInstance(), "[RemoteBreach]");
+        ProcessMinigamePrograms(activePrograms, device, GetGameInstance(), stats.executedNormalDaemons, "[RemoteBreach]");
 
         // Grant vanilla hacking rewards
         RPGManager.GiveReward(GetGameInstance(), t"RPGActionRewards.Hacking", Cast<StatsObjectID>(device.GetMyEntityID()));
 
         // Disable JackIn interaction
         DisableJackInInteractionForAccessPoint(device);
+
+        // Collect radial unlock statistics using unified collector
+        BreachStatisticsCollector.CollectRadialUnlockStats(device, unlockFlags, stats, GetGameInstance());
 
         // Output statistics summary
         stats.Finalize();

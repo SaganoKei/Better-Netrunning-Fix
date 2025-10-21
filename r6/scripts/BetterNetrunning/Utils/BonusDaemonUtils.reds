@@ -29,34 +29,12 @@
 module BetterNetrunning.Utils
 
 import BetterNetrunning.Core.*
+import BetterNetrunning.Utils.DaemonFilterUtils
 import BetterNetrunningConfig.*
 
 // ============================================================================
 // BONUS DAEMON APPLICATION
 // ============================================================================
-
-// Helper: Get human-readable daemon name from TweakDBID
-public func GetDaemonDisplayName(programID: TweakDBID) -> String {
-  if Equals(programID, BNConstants.PROGRAM_NETWORK_PING_HACK()) {
-    return "PING";
-  } else if Equals(programID, BNConstants.PROGRAM_UNLOCK_QUICKHACKS()) {
-    return "Unlock Basic Subnet";
-  } else if Equals(programID, BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS()) {
-    return "Unlock NPC Subnet";
-  } else if Equals(programID, BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS()) {
-    return "Unlock Camera Subnet";
-  } else if Equals(programID, BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS()) {
-    return "Unlock Turret Subnet";
-  } else if Equals(programID, BNConstants.PROGRAM_DATAMINE_BASIC()) {
-    return "Datamine V1 (Basic)";
-  } else if Equals(programID, BNConstants.PROGRAM_DATAMINE_ADVANCED()) {
-    return "Datamine V2 (Advanced)";
-  } else if Equals(programID, BNConstants.PROGRAM_DATAMINE_MASTER()) {
-    return "Datamine V3 (Master)";
-  } else {
-    return TDBID.ToStringDEBUG(programID);
-  }
-}
 
 // Apply bonus daemons based on settings and success count
 // - Auto-execute PING if any daemon succeeded (AutoExecutePingOnSuccess)
@@ -77,7 +55,7 @@ public func ApplyBonusDaemons(
     // Log all programs BEFORE bonus daemon processing with readable names
     let i: Int32 = 0;
     while i < successCount {
-      let programName: String = GetDaemonDisplayName(Deref(activePrograms)[i]);
+      let programName: String = DaemonFilterUtils.GetDaemonDisplayName(Deref(activePrograms)[i]);
       BNTrace(logContext, "[BEFORE] Program " + ToString(i + 1) + ": " + programName + " (" + TDBID.ToStringDEBUG(Deref(activePrograms)[i]) + ")");
       i += 1;
     }
@@ -163,7 +141,7 @@ public func ApplyBonusDaemons(
 
     let i: Int32 = 0;
     while i < finalCount {
-      let programName: String = GetDaemonDisplayName(Deref(activePrograms)[i]);
+      let programName: String = DaemonFilterUtils.GetDaemonDisplayName(Deref(activePrograms)[i]);
       BNTrace(logContext, "[AFTER] Program " + ToString(i + 1) + ": " + programName + " (" + TDBID.ToStringDEBUG(Deref(activePrograms)[i]) + ")");
       i += 1;
     }
@@ -187,8 +165,7 @@ public func HasProgram(programs: array<TweakDBID>, programID: TweakDBID) -> Bool
 }
 
 // Count non-Datamine programs (for auto-datamine feature)
-// Returns the number of daemons that are NOT Datamine or PING programs
-// IMPORTANT: Excludes PING to avoid counting auto-added PING as a successful daemon
+// Returns the number of daemons that are NOT Datamine programs
 public func CountNonDataminePrograms(programs: array<TweakDBID>) -> Int32 {
   let count: Int32 = 0;
   let i: Int32 = 0;
@@ -199,9 +176,7 @@ public func CountNonDataminePrograms(programs: array<TweakDBID>) -> Int32 {
     // Exclude Datamine programs
     if programID != BNConstants.PROGRAM_DATAMINE_BASIC()
        && programID != BNConstants.PROGRAM_DATAMINE_ADVANCED()
-       && programID != BNConstants.PROGRAM_DATAMINE_MASTER()
-       // Exclude PING (auto-added by AutoExecutePingOnSuccess)
-       && programID != BNConstants.PROGRAM_NETWORK_PING_HACK() {
+       && programID != BNConstants.PROGRAM_DATAMINE_MASTER() {
       count += 1;
     }
 

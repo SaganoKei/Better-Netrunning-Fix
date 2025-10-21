@@ -302,7 +302,7 @@ public func LogProgramFilteringStep(
   let context: String = NotEquals(logContext, "") ? logContext : "[Filter]";
 
   if programsBefore != programsAfter {
-    let programName: String = GetDaemonDisplayName(removedProgram);
+    let programName: String = DaemonFilterUtils.GetDaemonDisplayName(removedProgram);
     BNDebug(context, filterName + ": Removed " + programName +
           " (" + ToString(programsBefore) + " → " + ToString(programsAfter) + " programs)");
   }
@@ -331,7 +331,7 @@ public func LogFilteringSummary(
     BNDebug(context, "--- Removed Program List ---");
     let i: Int32 = 0;
     while i < ArraySize(removedPrograms) {
-      let programName: String = GetDaemonDisplayName(removedPrograms[i]);
+      let programName: String = DaemonFilterUtils.GetDaemonDisplayName(removedPrograms[i]);
       BNDebug(context, ToString(i + 1) + ". " + programName +
             " (" + TDBID.ToStringDEBUG(removedPrograms[i]) + ")");
       i += 1;

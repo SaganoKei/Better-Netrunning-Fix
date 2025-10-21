@@ -327,38 +327,15 @@ function RemoteBreach.Setup()
     )
 
     -- =========================================================================
-    -- Vehicle RemoteBreach Minigames (Basic Daemon Only)
+    -- Vehicle RemoteBreach Minigame (Basic Daemon Only - Fixed Difficulty)
     -- =========================================================================
-    local vehicleMinigameEasy = api.CreateHackingMinigame(
-        "VehicleRemoteBreachEasy",
-        10.00,
-        5,
-        -20,
-        7,
-        {
-            unlockBasicProgram
-        },
-        {}
-    )
-
-    local vehicleMinigameMedium = api.CreateHackingMinigame(
-        "VehicleRemoteBreachMedium",
-        10.00,
-        6,
-        10,
-        8,
-        {
-            unlockBasicProgram
-        },
-        {}
-    )
-
-    local vehicleMinigameHard = api.CreateHackingMinigame(
-        "VehicleRemoteBreachHard",
-        10.00,
-        7,
-        30,
-        9,
+    -- Note: Vehicle is treated same as Basic devices (difficulty-independent)
+    local vehicleMinigame = api.CreateHackingMinigame(
+        "VehicleRemoteBreach",
+        10.00,  -- duration
+        6,      -- bufferSize
+        10,     -- difficulty (Medium-equivalent)
+        8,      -- tracesStartingLength
         {
             unlockBasicProgram
         },
@@ -392,10 +369,8 @@ function RemoteBreach.Setup()
     TweakDB:CloneRecord("Minigame.TurretRemoteBreachMedium", "CustomHackingSystemMinigame.TurretRemoteBreachMedium")
     TweakDB:CloneRecord("Minigame.TurretRemoteBreachHard", "CustomHackingSystemMinigame.TurretRemoteBreachHard")
 
-    -- Vehicle minigames (Basic only)
-    TweakDB:CloneRecord("Minigame.VehicleRemoteBreachEasy", "CustomHackingSystemMinigame.VehicleRemoteBreachEasy")
-    TweakDB:CloneRecord("Minigame.VehicleRemoteBreachMedium", "CustomHackingSystemMinigame.VehicleRemoteBreachMedium")
-    TweakDB:CloneRecord("Minigame.VehicleRemoteBreachHard", "CustomHackingSystemMinigame.VehicleRemoteBreachHard")
+    -- Vehicle minigame (Basic only - fixed difficulty)
+    TweakDB:CloneRecord("Minigame.VehicleRemoteBreach", "CustomHackingSystemMinigame.VehicleRemoteBreach")
 
     print("[BetterNetrunning] TweakDB entries created for minigame mapping (Minigame.* → CustomHackingSystemMinigame.*)")
 
@@ -405,7 +380,7 @@ function RemoteBreach.Setup()
     print("  - Generic Device Minigames: Easy/Medium/Hard (Basic only)")
     print("  - Camera Minigames: Easy/Medium/Hard (Basic + Camera)")
     print("  - Turret Minigames: Easy/Medium/Hard (Basic + Turret)")
-    print("  - Vehicle Minigames: Easy/Medium/Hard (Basic only)")
+    print("  - Vehicle Minigame: Fixed difficulty (Basic only)")
     print("  - Computer Easy: " .. computerMinigameEasy)
     print("  - Device Easy: " .. deviceMinigameEasy)
     print("  - Camera Easy: " .. cameraMinigameEasy)

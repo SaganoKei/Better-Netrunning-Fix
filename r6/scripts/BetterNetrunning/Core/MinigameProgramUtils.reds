@@ -8,7 +8,6 @@
 // Provides centralized daemon execution logic to avoid code duplication
 //
 // FUNCTIONALITY:
-// - PING execution: Executes PING from device position
 // - Datamine rewards: Money/crafting material/shard drops
 // - Quest programs: Special quest-specific programs
 //
@@ -36,7 +35,7 @@ import BetterNetrunningConfig.*
 
 /*
  * Processes all minigame programs (bonus daemons + player uploaded)
- * Handles PING execution, Datamine rewards, and quest-specific programs
+ * Handles Datamine rewards and quest-specific programs
  *
  * PURPOSE:
  * Centralized daemon execution logic shared by AccessPoint and RemoteBreach
@@ -53,14 +52,16 @@ import BetterNetrunningConfig.*
  *
  * Parameters:
  *   minigamePrograms: Array of successfully uploaded daemon programs
- *   sourceDevice: Device that initiated the breach (for PING execution)
+ *   sourceDevice: Device that initiated the breach
  *   gameInstance: GameInstance for system access
+ *   executedList: Output array for actually executed programs (optional)
  *   logContext: Optional context string for logging (e.g., "[RemoteBreach]", "[AccessPoint]")
  */
 public func ProcessMinigamePrograms(
   minigamePrograms: array<TweakDBID>,
   sourceDevice: wref<DeviceComponentPS>,
   gameInstance: GameInstance,
+  opt executedList: script_ref<array<TweakDBID>>,
   opt logContext: String
 ) -> Void {
   if NotEquals(logContext, "") {
@@ -84,22 +85,16 @@ public func ProcessMinigamePrograms(
     // Quest-specific programs
     if Equals(programID, t"minigame_v2.FindAnna") {
       AddFact(gameInstance, n"Kab08Minigame_program_uploaded");
+      ArrayPush(Deref(executedList), programID);
       if NotEquals(logContext, "") {
         BNDebug(logContext, "Quest program executed: FindAnna");
       }
     }
     else if Equals(programID, BNConstants.PROGRAM_NETWORK_LOOT_Q003()) {
       TS.GiveItemByItemQuery(player, t"Query.Q003CyberdeckProgram");
+      ArrayPush(Deref(executedList), programID);
       if NotEquals(logContext, "") {
         BNDebug(logContext, "Quest program executed: NetworkLootQ003");
-      }
-    }
-    // PING execution - REMOVED
-    // REASON: Cannot implement single-device PING without extensive vanilla overrides
-    // All PING-related functionality has been disabled
-    else if Equals(programID, BNConstants.PROGRAM_NETWORK_PING_HACK()) {
-      if NotEquals(logContext, "") {
-        BNTrace(logContext, "[PING] PING daemon detected but execution is disabled (feature removed)");
       }
     }
     // Datamine loot programs
@@ -107,6 +102,7 @@ public func ProcessMinigamePrograms(
          || Equals(programID, BNConstants.PROGRAM_DATAMINE_ADVANCED())
          || Equals(programID, BNConstants.PROGRAM_DATAMINE_MASTER()) {
       ProcessDatamineLoot(programID, TS, player, logContext);
+      ArrayPush(Deref(executedList), programID);
     }
 
     i += 1;

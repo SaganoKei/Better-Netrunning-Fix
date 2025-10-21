@@ -52,16 +52,17 @@ import BetterNetrunning.RadialUnlock.*
  */
 @wrapMethod(AccessPointControllerPS)
 private final func RefreshSlaves(const devices: script_ref<array<ref<DeviceComponentPS>>>) -> Void {
-  // Create statistics object
-  let stats: ref<BreachSessionStats> = BreachSessionStats.Create(
-    "AccessPoint",
-    this.GetDeviceName()
-  );
-
   // ========================================
   // Pre-processing Step 1: Check if Unconscious NPC Breach
   // ========================================
   let isUnconsciousNPCBreach: Bool = this.IsUnconsciousNPCBreach();
+
+  // Create statistics object with correct breach type
+  let breachType: String = isUnconsciousNPCBreach ? "UnconsciousNPC" : "AccessPoint";
+  let stats: ref<BreachSessionStats> = BreachSessionStats.Create(
+    breachType,
+    this.GetDeviceName()
+  );
 
   if isUnconsciousNPCBreach {
     // Mark NPC as breached (Problem ① fix)
@@ -85,6 +86,9 @@ private final func RefreshSlaves(const devices: script_ref<array<ref<DeviceCompo
   stats.unlockCameras = unlockFlags.unlockCameras;
   stats.unlockTurrets = unlockFlags.unlockTurrets;
   stats.unlockNPCs = unlockFlags.unlockNPCs;
+
+  // Collect executed daemon information for display
+  BreachStatisticsCollector.CollectExecutedDaemons(minigamePrograms, stats);
 
   // ========================================
   // Base Game Processing (Black Box)
@@ -181,16 +185,10 @@ private final func ApplyBetterNetrunningExtensionsWithStats(
   }
 
   // Step 1: Execute Bonus Daemons
-  ProcessMinigamePrograms(minigamePrograms, this, this.GetGameInstance(), "[AccessPoint]");
+  ProcessMinigamePrograms(minigamePrograms, this, this.GetGameInstance(), stats.executedNormalDaemons, "[AccessPoint]");
 
-  // Step 1.5a: Unlock standalone devices in radius (Problem ① fix)
+  // Step 1.5: Unlock standalone devices/vehicles/NPCs in radius (using unified collector)
   this.UnlockStandaloneDevicesInBreachRadius(unlockFlags, stats);
-
-  // Step 1.5b: Unlock vehicles in radius (Problem ② fix)
-  this.UnlockVehiclesInBreachRadius(unlockFlags, stats);
-
-  // Step 1.5c: Unlock NPCs in radius (Problem ② fix)
-  this.UnlockNPCsInBreachRadius(unlockFlags, stats);
 
   // Step 2: Apply Progressive Subnet Unlocking + Collect Statistics
   this.ApplyBreachUnlockToDevicesWithStats(devices, unlockFlags, stats);
@@ -233,66 +231,32 @@ private final func MarkUnconsciousNPCAsDirectlyBreached() -> Void {
 
 /*
  * Unlock standalone devices in breach radius (Problem ① fix)
- * ARCHITECTURE: Adapter method for DeviceUnlockUtils.UnlockDevicesInRadius()
- */
-/*
- * Unlock standalone devices in breach radius (Problem ① fix)
- * ARCHITECTURE: Adapter method for DeviceUnlockUtils.UnlockDevicesInRadius()
+ * ARCHITECTURE: Uses BreachStatisticsCollector for unified radial unlock statistics
  */
 @addMethod(AccessPointControllerPS)
 private final func UnlockStandaloneDevicesInBreachRadius(unlockFlags: BreachUnlockFlags, stats: ref<BreachSessionStats>) -> Void {
-  // Only unlock standalone devices if Basic Daemon succeeded
-  if !unlockFlags.unlockBasic {
-    return;
-  }
-
-  let gameInstance: GameInstance = this.GetGameInstance();
-
-  // DeviceUnlockUtils requires ScriptableDeviceComponentPS
-  // AccessPointControllerPS inherits from ScriptableDeviceComponentPS ✅
-  let standaloneCount: Int32 = DeviceUnlockUtils.UnlockDevicesInRadius(this, gameInstance);
-  stats.standaloneDeviceCount = standaloneCount;
+  // Collect radial unlock statistics using unified collector
+  BreachStatisticsCollector.CollectRadialUnlockStats(this, unlockFlags, stats, this.GetGameInstance());
 }
 
 /*
  * Unlock vehicles in breach radius (Problem ② fix)
- * ARCHITECTURE: Adapter method for DeviceUnlockUtils.UnlockVehiclesInRadius()
+ * DEPRECATED: Functionality merged into BreachStatisticsCollector.CollectRadialUnlockStats()
+ * Kept for backward compatibility but not called
  */
 @addMethod(AccessPointControllerPS)
 private final func UnlockVehiclesInBreachRadius(unlockFlags: BreachUnlockFlags, stats: ref<BreachSessionStats>) -> Void {
-  // Only unlock vehicles if Basic Daemon succeeded
-  if !unlockFlags.unlockBasic {
-    return;
-  }
-
-  let gameInstance: GameInstance = this.GetGameInstance();
-
-  // DeviceUnlockUtils requires ScriptableDeviceComponentPS
-  // AccessPointControllerPS inherits from ScriptableDeviceComponentPS ✅
-  let vehicleCount: Int32 = DeviceUnlockUtils.UnlockVehiclesInRadius(this, gameInstance);
-  stats.vehicleCount = vehicleCount;
+  // No-op: Functionality moved to CollectRadialUnlockStats
 }
 
 /*
  * Unlock NPCs in breach radius (Problem ② fix)
- * ARCHITECTURE: Adapter method for DeviceUnlockUtils.UnlockNPCsInRadius()
+ * DEPRECATED: Functionality merged into BreachStatisticsCollector.CollectRadialUnlockStats()
+ * Kept for backward compatibility but not called
  */
 @addMethod(AccessPointControllerPS)
 private final func UnlockNPCsInBreachRadius(unlockFlags: BreachUnlockFlags, stats: ref<BreachSessionStats>) -> Void {
-  // Only unlock NPCs if Basic Daemon succeeded
-  if !unlockFlags.unlockBasic {
-    return;
-  }
-
-  let gameInstance: GameInstance = this.GetGameInstance();
-
-  // DeviceUnlockUtils requires ScriptableDeviceComponentPS
-  // AccessPointControllerPS inherits from ScriptableDeviceComponentPS ✅
-  let npcResult: NPCProcessResult = DeviceUnlockUtils.UnlockNPCsInRadius(this, gameInstance);
-
-  // Extract counts from result
-  stats.npcNetworkCount = npcResult.networkCount;
-  stats.npcStandaloneCount = npcResult.standaloneCount;
+  // No-op: Functionality moved to CollectRadialUnlockStats
 }
 
 /*
@@ -362,11 +326,11 @@ private final func RollbackIncorrectVanillaUnlocks(const devices: script_ref<arr
 
           // DEBUG: Rollback only logged at DEBUG level (non-critical operation)
           BNDebug("RollbackUnlock", "Reverted vanilla unlock for device (Type: " +
-            EnumValueToString("DeviceType", Cast<Int64>(EnumInt(deviceType))) + ")");
+            DeviceTypeUtils.DeviceTypeToString(deviceType) + ")");
         } else {
           // Device was already unlocked by a previous breach - preserve it
           BNDebug("RollbackUnlock", "Preserved existing unlock for device (Type: " +
-            EnumValueToString("DeviceType", Cast<Int64>(EnumInt(deviceType))) +
+            DeviceTypeUtils.DeviceTypeToString(deviceType) +
             ", Timestamp: " + ToString(currentTimestamp) + ")");
         }
       }
@@ -401,6 +365,7 @@ private final func GetMinigameBlackboard() -> ref<IBlackboard> {
 
 /*
  * Applies breach unlock to devices and collects statistics
+ * ARCHITECTURE: Uses BreachStatisticsCollector for unified statistics collection
  */
 @addMethod(AccessPointControllerPS)
 private final func ApplyBreachUnlockToDevicesWithStats(
@@ -408,51 +373,38 @@ private final func ApplyBreachUnlockToDevicesWithStats(
   unlockFlags: BreachUnlockFlags,
   stats: ref<BreachSessionStats>
 ) -> Void {
-  let i: Int32 = 0;
-  let deviceCount: Int32 = ArraySize(Deref(devices));
-  stats.networkDeviceCount = deviceCount;
+  // Collect network device statistics using unified collector
+  BreachStatisticsCollector.CollectNetworkDeviceStats(Deref(devices), unlockFlags, stats);
 
-  while i < deviceCount {
+  // Apply unlock to all devices
+  let i: Int32 = 0;
+  while i < ArraySize(Deref(devices)) {
     let device: ref<DeviceComponentPS> = Deref(devices)[i];
     if IsDefined(device) {
-      this.UnlockDeviceWithStats(device, unlockFlags, stats);
+      this.UnlockDevice(device, unlockFlags);
     }
     i += 1;
   }
 }
 
 /*
- * Unlocks single device and updates statistics
+ * Unlocks single device (statistics collection handled by BreachStatisticsCollector)
  */
 @addMethod(AccessPointControllerPS)
-private final func UnlockDeviceWithStats(
+private final func UnlockDevice(
   device: ref<DeviceComponentPS>,
-  unlockFlags: BreachUnlockFlags,
-  stats: ref<BreachSessionStats>
+  unlockFlags: BreachUnlockFlags
 ) -> Void {
   let sharedPS: ref<SharedGameplayPS> = device as SharedGameplayPS;
   if !IsDefined(sharedPS) {
-    stats.devicesSkipped += 1;
     return;
   }
 
   // Determine device type
   let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(device);
 
-  // Update device type counters (consolidated: Doors/Terminals/Other → Basic)
-  if IsDefined(device as SurveillanceCameraControllerPS) {
-    stats.cameraCount += 1;
-  } else if IsDefined(device as SecurityTurretControllerPS) {
-    stats.turretCount += 1;
-  } else {
-    // Basic devices: doors, terminals, computers, other
-    // Note: NPCs are not part of the device system, so npcCount remains 0
-    stats.basicCount += 1;
-  }
-
   // Check if device should be unlocked
   if !DeviceTypeUtils.ShouldUnlockByFlags(deviceType, unlockFlags) {
-    stats.devicesSkipped += 1;
     return;
   }
 
@@ -466,8 +418,6 @@ private final func UnlockDeviceWithStats(
     unlockFlags.unlockCameras,
     unlockFlags.unlockTurrets
   );
-
-  stats.devicesUnlocked += 1;
 }
 
 // Helper: Records network centroid position for radial unlock

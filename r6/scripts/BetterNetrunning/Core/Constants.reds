@@ -341,16 +341,8 @@ public abstract class BNConstants {
     return t"MinigameProgramAction.BN_RemoteBreach_UnlockTurret";
   }
 
-  public static func PROGRAM_ACTION_BN_VEHICLE_EASY() -> TweakDBID {
-    return t"MinigameProgramAction.BN_VehicleRemoteBreach_Easy";
-  }
-
-  public static func PROGRAM_ACTION_BN_VEHICLE_MEDIUM() -> TweakDBID {
-    return t"MinigameProgramAction.BN_VehicleRemoteBreach_Medium";
-  }
-
-  public static func PROGRAM_ACTION_BN_VEHICLE_HARD() -> TweakDBID {
-    return t"MinigameProgramAction.BN_VehicleRemoteBreach_Hard";
+  public static func PROGRAM_ACTION_BN_UNLOCK_VEHICLE() -> TweakDBID {
+    return t"MinigameProgramAction.BN_RemoteBreach_UnlockVehicle";
   }
 
   public static func PROGRAM_ACTION_REMOTE_BREACH_EASY() -> TweakDBID {
@@ -384,16 +376,8 @@ public abstract class BNConstants {
     return t"Minigame.DeviceRemoteBreachMedium";
   }
 
-  public static func MINIGAME_VEHICLE_BREACH_EASY() -> TweakDBID {
-    return t"Minigame.VehicleRemoteBreachEasy";
-  }
-
-  public static func MINIGAME_VEHICLE_BREACH_MEDIUM() -> TweakDBID {
-    return t"Minigame.VehicleRemoteBreachMedium";
-  }
-
-  public static func MINIGAME_VEHICLE_BREACH_HARD() -> TweakDBID {
-    return t"Minigame.VehicleRemoteBreachHard";
+  public static func MINIGAME_VEHICLE_BREACH() -> TweakDBID {
+    return t"Minigame.VehicleRemoteBreach";
   }
 
   // ----- Device Actions (DeviceAction.*) -----
