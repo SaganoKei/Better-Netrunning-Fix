@@ -288,8 +288,17 @@ public abstract class DeviceUnlockUtils {
             return result;
         }
 
-        // Unlock quickhacks regardless of network status
-        npcPS.m_quickHacksExposed = true;
+        // BUG FIX (2025-10-20): Check if NPC subnet is unlocked before exposing quickhacks
+        // - Issue: m_quickHacksExposed was set unconditionally, bypassing OnSetExposeQuickHacks check
+        // - This function is called by UnlockNPCsInRadius(), which is ONLY called when NPC daemon succeeds
+        // - However, we still need to fire SetExposeQuickHacks event to trigger proper unlock flow
+        // - This ensures OnSetExposeQuickHacks wrapper can verify NPC subnet timestamp before allowing unlock
+
+        // Fire SetExposeQuickHacks event instead of directly setting m_quickHacksExposed
+        // This triggers OnSetExposeQuickHacks() which performs NPC subnet timestamp check
+        let exposeEvent: ref<SetExposeQuickHacks> = new SetExposeQuickHacks();
+        exposeEvent.isRemote = true;
+        npcPS.GetPersistencySystem().QueueEntityEvent(PersistentID.ExtractEntityID(npcPS.GetID()), exposeEvent);
 
         // Check network connection via DeviceLink
         let deviceLink: ref<PuppetDeviceLinkPS> = npcPS.GetDeviceLink();

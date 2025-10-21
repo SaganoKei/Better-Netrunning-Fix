@@ -56,7 +56,10 @@ public abstract class DaemonExecutionUtils {
         }
 
         // Step 2: Determine device type for timestamp selection
-        let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(sourcePS);
+        // BUG FIX (2025-10-20): Use daemon type instead of source device type for timestamp assignment
+        // - RATIONALE: sourcePS is always Access Point, cannot determine actual target device type
+        // - IMPLEMENTATION: Map daemon type string directly to DeviceType enum for correct field selection
+        let deviceType: DeviceType = DaemonExecutionUtils.GetDeviceTypeFromDaemonType(daemonTypeStr);
 
         // Step 3: Set breach timestamp for this daemon's device type
         let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
@@ -70,6 +73,27 @@ public abstract class DaemonExecutionUtils {
 
         // Step 5: Execute unlock logic (varies by target type - delegated to Strategy)
         strategy.ExecuteUnlock(daemonTypeStr, deviceType, sourcePS, gameInstance);
+    }
+
+    // BUG FIX (2025-10-20): Map daemon type string to DeviceType enum
+    // FUNCTIONALITY: Converts daemon type to device type for timestamp field selection
+    // RATIONALE: Access Point device type cannot identify actual target (NPC/Camera/Turret)
+    public static func GetDeviceTypeFromDaemonType(daemonTypeStr: String) -> DeviceType {
+        let deviceType: DeviceType;
+
+        if Equals(daemonTypeStr, DaemonTypes.NPC()) {
+            deviceType = DeviceType.NPC;
+        } else if Equals(daemonTypeStr, DaemonTypes.Camera()) {
+            deviceType = DeviceType.Camera;
+        } else if Equals(daemonTypeStr, DaemonTypes.Turret()) {
+            deviceType = DeviceType.Turret;
+        } else {
+            // Basic daemon or unknown
+            deviceType = DeviceType.Basic;
+        }
+
+        BNDebug("DaemonTypeMapping", s"Mapped daemon type '\(daemonTypeStr)' to DeviceType.\(ToString(deviceType))");
+        return deviceType;
     }
 }
 
