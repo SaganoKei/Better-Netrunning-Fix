@@ -318,10 +318,13 @@ Better Netrunningが追加する専用デーモン：
 
 **その他の永続フィールド:**
 - `m_betterNetrunningWasDirectlyBreached` (ScriptedPuppetPS): NPC直接ブリーチ済みフラグ
-- `m_betterNetrunning_breachedAccessPointPositions` (PlayerPuppet): ブリーチ位置配列
-- `m_betterNetrunning_breachTimestamps` (PlayerPuppet): ブリーチ時刻配列
-- `m_betterNetrunning_remoteBreachFailedPositions` (PlayerPuppet): RemoteBreach失敗位置配列
-- `m_betterNetrunning_remoteBreachFailedTimestamps` (PlayerPuppet): RemoteBreach失敗時刻配列
+- `m_betterNetrunning_breachedAccessPointPositions` (PlayerPuppet): ブリーチ位置配列（RadialUnlock用）
+- `m_betterNetrunning_breachTimestamps` (PlayerPuppet): ブリーチ時刻配列（RadialUnlock用）
+
+**ブリーチ失敗ペナルティフィールド:**
+- `m_betterNetrunningAPBreachFailedTimestamp` (SharedGameplayPS): APブリーチ失敗時刻
+- `m_betterNetrunningNPCBreachFailedTimestamp` (ScriptedPuppetPS): NPCブリーチ失敗時刻
+- `m_betterNetrunningRemoteBreachFailedTimestamp` (SharedGameplayPS): RemoteBreach失敗時刻
 
 **Persistent Fieldsの特徴:**
 - セーブデータに自動保存される
@@ -621,17 +624,35 @@ Settings
 RemoteBreach使用制限を実現するため、PlayerPuppetに2つの永続フィールドが追加されています：
 
 ```redscript
-@addField(PlayerPuppet)
-public persistent let m_betterNetrunning_remoteBreachFailedPositions: array<Vector4>;
+@addField(SharedGameplayPS)
+public persistent let m_betterNetrunningRemoteBreachFailedTimestamp: Float;
+```
 
-@addField(PlayerPuppet)
-public persistent let m_betterNetrunning_remoteBreachFailedTimestamps: array<Float>;
+**ロック方式: タイムスタンプベースのハイブリッドロック (4フェーズ)**
+
+```
+RemoteBreach失敗
+  ↓
+Phase 1: 失敗デバイス自身をロック
+  └─ デバイスPSにタイムスタンプを記録
+
+Phase 2: 接続先ネットワーク全体をロック（距離制限なし）
+  └─ GetNetworkDevices()で全デバイス取得
+  └─ 各デバイスPSにタイムスタンプを記録
+
+Phase 3: 範囲内のスタンドアロン/ネットワークデバイスをロック（設定依存、デフォルト25m）
+  └─ 失敗位置から半径スキャン
+  └─ 範囲内デバイスPSにタイムスタンプを記録
+
+Phase 3B: 範囲内の車両をロック（設定依存、デフォルト25m）
+  └─ 失敗位置から半径スキャン
+  └─ 範囲内車両PSにタイムスタンプを記録
 ```
 
 **管理方法:**
-- **追加:** `BreachPenaltySystem.reds` の `ApplyFailurePenalty()` が失敗位置を記録
-- **チェック:** `RemoteBreachLock.reds` の `IsRemoteBreachLockedForDevice()` が判定
-- **クリーンアップ:** 期限切れエントリは判定時に自動削除
+- **記録:** `RemoteBreachLockSystem.reds` の `RecordRemoteBreachFailure()` がタイムスタンプ記録
+- **チェック:** `BreachLockUtils.reds` の `IsDeviceLockedByBreachFailure()` が判定
+- **有効期限:** デフォルト10分、設定により変更可能
 
 ### 技術詳細
 
@@ -649,8 +670,9 @@ BreachPenaltySystem.reds (ペナルティ適用)
   ├─ depends on Core/DeviceTypeUtils.reds (範囲取得)
   └─ depends on Integration/TracePositionOverhaulGating.reds (トレース起動)
 
-RemoteBreachLock.reds (RemoteBreach制限)
+RemoteBreachLockSystem.reds (RemoteBreach制限)
   ├─ depends on BetterNetrunningConfig (設定読み取り)
+  ├─ depends on Core/TimeUtils.reds (タイムスタンプ管理)
   └─ depends on Core/Logger.reds (ログ出力)
 
 Utils/BreachLockUtils.reds (共通ロジック)
@@ -667,7 +689,7 @@ Utils/BreachLockUtils.reds (共通ロジック)
 ### 実装ファイル
 
 - `Breach/Systems/BreachPenaltySystem.reds` (341行) - ペナルティ適用ロジック
-- `Breach/Systems/RemoteBreachLock.reds` (216行) - RemoteBreach制限ロジック
+- `RemoteBreach/Core/RemoteBreachLockSystem.reds` (370行) - RemoteBreach制限ロジック
 - `Utils/BreachLockUtils.reds` (140行) - 共通ユーティリティ
 - `Integration/TracePositionOverhaulGating.reds` (199行) - トレースMOD連携
 

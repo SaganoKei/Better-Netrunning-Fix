@@ -16,14 +16,17 @@ local defaults = {
     QuickhackUnlockDurationHours = 6,
     -- RemoteBreach
     RemoteBreachEnabledDevice = true,
-    RemoteBreachEnabledComputer = true,
+    RemoteBreachEnabledComputer = false,
     RemoteBreachEnabledCamera = true,
     RemoteBreachEnabledTurret = true,
     RemoteBreachEnabledVehicle = true,
     RemoteBreachRAMCostPercent = 50,
     -- Breach Failure Penalty
     BreachFailurePenaltyEnabled = true,
-    RemoteBreachLockDurationMinutes = 10,
+    APBreachFailurePenaltyEnabled = true,
+    NPCBreachFailurePenaltyEnabled = true,
+    RemoteBreachFailurePenaltyEnabled = true,
+    BreachPenaltyDurationMinutes = 10,
     -- Unlocked Quickhacks
     AlwaysAllowPing = true,
     AlwaysAllowWhistle = false,

@@ -7,7 +7,6 @@ import BetterNetrunning.Systems.*
 import BetterNetrunning.Breach.*
 import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.RemoteBreach.Actions.*
-import BetterNetrunning.RemoteBreach.UI.*
 import BetterNetrunning.RadialUnlock.*
 
 
@@ -57,26 +56,18 @@ private final func ReplaceVanillaRemoteBreachWithCustom(outActions: script_ref<a
     return;
   }
 
-  // Guard 2: Device locked by breach failure - remove all RemoteBreach actions
-  if BreachLockUtils.IsDeviceLockedByBreachFailure(this) {
-    this.RemoveAllRemoteBreachActions(outActions);
+  // Guard 2: Device locked by RemoteBreach failure - remove all RemoteBreach actions
+  if BreachLockUtils.IsDeviceLockedByRemoteBreachFailure(this) {
+    // RemoteBreachLock.reds functionality moved to BreachLockSystem.reds
+    // this.RemoveAllRemoteBreachActions(outActions);
     return;
   }
 
-  // Step 1: Remove vanilla RemoteBreach (if present)
-  let i: Int32 = ArraySize(Deref(outActions)) - 1;
-  let vanillaRemoteBreachFound: Bool = false;
-
-  while i >= 0 {
-    let action: ref<DeviceAction> = Deref(outActions)[i];
-    // Type-based detection: Check if action is vanilla RemoteBreach
-    if IsDefined(action as RemoteBreach) {
-      ArrayErase(Deref(outActions), i);
-      vanillaRemoteBreachFound = true;
-      BNTrace("ReplaceVanillaRemoteBreachWithCustom", "Removed vanilla RemoteBreach");
-    }
-    i -= 1;
-  }
+  // Step 1: Check if vanilla RemoteBreach exists (delegation to RemoveVanillaRemoteBreachActions)
+  let actionCountBefore: Int32 = ArraySize(Deref(outActions));
+  this.RemoveVanillaRemoteBreachActions(outActions);
+  let actionCountAfter: Int32 = ArraySize(Deref(outActions));
+  let vanillaRemoteBreachFound: Bool = actionCountBefore > actionCountAfter;
 
   // Step 2: Add BetterNetrunning RemoteBreach action (if device is connected to backdoor network)
   if vanillaRemoteBreachFound && this.IsConnectedToBackdoorDevice() {
@@ -201,17 +192,6 @@ private final func ShouldProcessQuickHackActions(outActions: script_ref<array<re
 }
 
 /*
- * Adds Ping action to backdoor device
- * Common logic shared by both conditional compilation versions
- */
-@addMethod(ScriptableDeviceComponentPS)
-private final func AddPingAction(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
-  let currentAction: ref<ScriptableDeviceAction> = this.ActionPing();
-  currentAction.SetInactiveWithReason(!this.GetNetworkSystem().HasActivePing(this.GetMyEntityID()), BNConstants.LOCKEY_ACTIVATE_NETWORK_DEVICE());
-  ArrayPush(Deref(outActions), currentAction);
-}
-
-/*
  * Override MarkActionsAsQuickHacks to support CustomAccessBreach
  * CRITICAL FIX: CustomAccessBreach extends PuppetAction, not ScriptableDeviceAction,
  * so base game MarkActionsAsQuickHacks skips it. This causes RemoteBreach to not appear in UI.
@@ -260,8 +240,5 @@ private final func ApplyCommonQuickHackRestrictions(outActions: script_ref<array
   // NEW REQUIREMENT: Remove Custom RemoteBreach if device is already unlocked
   // This must be called AFTER all actions are added to prevent re-adding
   this.RemoveCustomRemoteBreachIfUnlocked(outActions);
-
-  // NOTE: MoveVehicleRemoteBreachToBottom is NOT called here
-  // It must be called AFTER TryAddCustomRemoteBreach in FinalizeGetQuickHackActions
 }
 

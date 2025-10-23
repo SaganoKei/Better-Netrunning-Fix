@@ -38,17 +38,39 @@ import BetterNetrunning.Utils.*
 // PlayerPuppet Extensions - Persistent Failure Position Storage
 // ============================================================================
 //
-// Store breach failure positions and timestamps for RemoteBreach locking.
-// Uses persistent fields to survive save/load cycles.
+// FUNCTIONALITY:
+// - Store breach failure positions and timestamps per breach type
+// - Persistent fields survive save/load cycles
+// - Separate arrays for AP, NPC, RemoteBreach breach types
 //
-// FIELDS:
-// - m_betterNetrunning_remoteBreachFailedPositions: Array of failure positions (Vector4)
-// - m_betterNetrunning_remoteBreachFailedTimestamps: Array of failure times (Float)
+// FIELDS (AccessPoint):
+// - m_betterNetrunning_APBreachFailedPositions: AP breach failure positions
+// - m_betterNetrunning_APBreachFailedTimestamps: AP breach failure times
 //
-// ARRAY MANAGEMENT:
-// - ArrayPush() adds new failures (BreachPenaltySystem.reds)
-// - Expired entries cleaned up during lock checks
+// FIELDS (UnconsciousNPC):
+// - m_betterNetrunning_NPCBreachFailedPositions: NPC breach failure positions
+// - m_betterNetrunning_NPCBreachFailedTimestamps: NPC breach failure times
+//
+// FIELDS (RemoteBreach):
+// - m_betterNetrunning_remoteBreachFailedPositions: RemoteBreach failure positions
+// - m_betterNetrunning_remoteBreachFailedTimestamps: RemoteBreach failure times
+//
+// ARCHITECTURE:
+// - Persistent Fields Pattern (survive save/load)
+// - Type-specific arrays for independent lock management
 // ============================================================================
+
+@addField(PlayerPuppet)
+public persistent let m_betterNetrunning_APBreachFailedPositions: array<Vector4>;
+
+@addField(PlayerPuppet)
+public persistent let m_betterNetrunning_APBreachFailedTimestamps: array<Float>;
+
+@addField(PlayerPuppet)
+public persistent let m_betterNetrunning_NPCBreachFailedPositions: array<Vector4>;
+
+@addField(PlayerPuppet)
+public persistent let m_betterNetrunning_NPCBreachFailedTimestamps: array<Float>;
 
 @addField(PlayerPuppet)
 public persistent let m_betterNetrunning_remoteBreachFailedPositions: array<Vector4>;
@@ -122,58 +144,118 @@ public class RemoteBreachLockUtils {
     devicePosition: Vector4,
     gameInstance: GameInstance
   ) -> Bool {
-    // Validate arrays exist and have matching sizes
+    return IsLockedByBreachType(
+      player,
+      devicePosition,
+      gameInstance,
+      player.m_betterNetrunning_remoteBreachFailedPositions,
+      player.m_betterNetrunning_remoteBreachFailedTimestamps,
+      "RemoteBreach"
+    );
+  }
+
+  // AP breach lock check (used by DeviceInteractionUtils)
+  public static func IsAPBreachLockedForDevice(
+    player: ref<PlayerPuppet>,
+    devicePosition: Vector4,
+    gameInstance: GameInstance
+  ) -> Bool {
+    return IsLockedByBreachType(
+      player,
+      devicePosition,
+      gameInstance,
+      player.m_betterNetrunning_APBreachFailedPositions,
+      player.m_betterNetrunning_APBreachFailedTimestamps,
+      "APBreach"
+    );
+  }
+
+  // NPC breach lock check (used by NPCLifecycle)
+  public static func IsNPCBreachLockedForNPC(
+    player: ref<PlayerPuppet>,
+    npcPosition: Vector4,
+    gameInstance: GameInstance
+  ) -> Bool {
+    return IsLockedByBreachType(
+      player,
+      npcPosition,
+      gameInstance,
+      player.m_betterNetrunning_NPCBreachFailedPositions,
+      player.m_betterNetrunning_NPCBreachFailedTimestamps,
+      "NPCBreach"
+    );
+  }
+
+  // ============================================================================
+  // Helper: IsLockedByBreachType() - Generic Position-Based Lock Check
+  // ============================================================================
+  //
+  // FUNCTIONALITY:
+  // - Generic position-based lock check for any breach type
+  // - Checks if position is within lock range of any failure position
+  // - Auto-expires locks after configurable duration
+  //
+  // ARCHITECTURE:
+  // - DRY principle: Shared logic for all breach types
+  // - Array management: Removes expired entries during check
+  // - Performance: Uses squared distance for range checks
+  // ============================================================================
+
+  private static func IsLockedByBreachType(
+    player: ref<PlayerPuppet>,
+    checkPosition: Vector4,
+    gameInstance: GameInstance,
+    failedPositions: script_ref<array<Vector4>>,
+    failedTimestamps: script_ref<array<Float>>,
+    lockType: String
+  ) -> Bool {
+    // Guard: Player validation
     if !IsDefined(player) {
       BNError("RemoteBreachLock", "Player not defined");
       return false;
     }
 
-    let positionsSize: Int32 = ArraySize(player.m_betterNetrunning_remoteBreachFailedPositions);
-    let timestampsSize: Int32 = ArraySize(player.m_betterNetrunning_remoteBreachFailedTimestamps);
+    // Guard: Array size validation
+    let positionsSize: Int32 = ArraySize(Deref(failedPositions));
+    let timestampsSize: Int32 = ArraySize(Deref(failedTimestamps));
 
     if positionsSize != timestampsSize {
-      BNError("RemoteBreachLock", "Array size mismatch (positions: " + IntToString(positionsSize) + ", timestamps: " + IntToString(timestampsSize) + ")");
-      // Clear both arrays to reset state
-      ArrayClear(player.m_betterNetrunning_remoteBreachFailedPositions);
-      ArrayClear(player.m_betterNetrunning_remoteBreachFailedTimestamps);
+      BNError("RemoteBreachLock", lockType + " array size mismatch (positions: " + IntToString(positionsSize) + ", timestamps: " + IntToString(timestampsSize) + ")");
+      ArrayClear(Deref(failedPositions));
+      ArrayClear(Deref(failedTimestamps));
       return false;
     }
 
     if positionsSize == 0 {
-      // No failures recorded, not locked
       return false;
     }
 
+    // Calculate lock parameters
     let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
-    let lockDurationSeconds: Float = Cast<Float>(
-      BetterNetrunningSettings.RemoteBreachLockDurationMinutes() * 60
-    );
+    let lockDurationSeconds: Float = Cast<Float>(BetterNetrunningSettings.BreachPenaltyDurationMinutes() * 60);
     let lockRange: Float = DeviceTypeUtils.GetRadialBreachRange(gameInstance);
 
+    // Check each failure position
     let i: Int32 = 0;
-    while i < ArraySize(player.m_betterNetrunning_remoteBreachFailedPositions) {
-      let failedPosition: Vector4 = player.m_betterNetrunning_remoteBreachFailedPositions[i];
-      let failedTime: Float = player.m_betterNetrunning_remoteBreachFailedTimestamps[i];
+    while i < ArraySize(Deref(failedPositions)) {
+      let failedPosition: Vector4 = Deref(failedPositions)[i];
+      let failedTime: Float = Deref(failedTimestamps)[i];
 
+      // Expired: Remove entry
       if currentTime - failedTime > lockDurationSeconds {
-        ArrayErase(player.m_betterNetrunning_remoteBreachFailedPositions, i);
-        ArrayErase(player.m_betterNetrunning_remoteBreachFailedTimestamps, i);
+        ArrayErase(Deref(failedPositions), i);
+        ArrayErase(Deref(failedTimestamps), i);
       } else {
-        let distance: Float = Vector4.Distance(devicePosition, failedPosition);
+        // Active: Check distance
+        let distance: Float = Vector4.Distance(checkPosition, failedPosition);
         if distance <= lockRange {
-          BNDebug(
-            "RemoteBreachLock",
-            "Device locked (distance: "
-            + FloatToString(distance)
-            + "m, time since failure: "
-            + FloatToString(currentTime - failedTime)
-            + "s)"
-          );
+          BNDebug(lockType + "Lock", "Locked (distance: " + FloatToString(distance) + "m, time since failure: " + FloatToString(currentTime - failedTime) + "s)");
           return true;
         }
         i += 1;
       }
     }
+
     return false;
   }
 

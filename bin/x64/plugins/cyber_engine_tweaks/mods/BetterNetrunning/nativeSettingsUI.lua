@@ -13,6 +13,9 @@ local progressionOptionTables = {
     enemyRarity = {}
 }
 
+-- Breach Penalty option table storage (for dynamic UI rebuild)
+local breachPenaltyOptionTables = {}
+
 -- Debug option table storage
 local debugOptionTable = nil
 
@@ -97,18 +100,8 @@ function NativeSettingsUI.Build(nativeSettings, SettingsManager, TweakDBSetup)
         end
     )
 
-    -- Breach Failure Penalty
-    nativeSettings.addSwitch("/BetterNetrunning/BreachPenalty", GetLocKey("DisplayName-BetterNetrunning-BreachFailurePenaltyEnabled"), GetLocKey("Description-BetterNetrunning-BreachFailurePenaltyEnabled"), settings.BreachFailurePenaltyEnabled, true, function(state)
-        SettingsManager.Set("BreachFailurePenaltyEnabled", state)
-        SettingsManager.Save()
-    end)
-    nativeSettings.addRangeInt("/BetterNetrunning/BreachPenalty", GetLocKey("DisplayName-BetterNetrunning-RemoteBreachLockDurationMinutes"), GetLocKey("Description-BetterNetrunning-RemoteBreachLockDurationMinutes"), 1, 60, 1,
-        settings.RemoteBreachLockDurationMinutes, 10,
-        function(state)
-            SettingsManager.Set("RemoteBreachLockDurationMinutes", state)
-            SettingsManager.Save()
-        end
-    )
+    -- Breach Failure Penalty (dynamic UI)
+    NativeSettingsUI.BuildBreachPenalty(nativeSettings, SettingsManager)
 
     -- Access Points
     nativeSettings.addSwitch("/BetterNetrunning/AccessPoints", GetLocKey("DisplayName-BetterNetrunning-UnlockIfNoAccessPoint"), GetLocKey("Description-BetterNetrunning-UnlockIfNoAccessPoint"), settings.UnlockIfNoAccessPoint, true, function(state)
@@ -193,6 +186,74 @@ function NativeSettingsUI.Build(nativeSettings, SettingsManager, TweakDBSetup)
     NativeSettingsUI.CreateDebugOptions(nativeSettings, SettingsManager)
 
     print("[Better Netrunning] NativeSettings UI built successfully")
+end
+
+-- Breach Penalty (dynamic UI)
+function NativeSettingsUI.BuildBreachPenalty(nativeSettings, SettingsManager)
+    local settings = SettingsManager.GetAll()
+
+    -- Master toggle
+    nativeSettings.addSwitch("/BetterNetrunning/BreachPenalty", GetLocKey("DisplayName-BetterNetrunning-BreachFailurePenaltyEnabled"), GetLocKey("Description-BetterNetrunning-BreachFailurePenaltyEnabled"), settings.BreachFailurePenaltyEnabled, true, function(state)
+        SettingsManager.Set("BreachFailurePenaltyEnabled", state)
+        SettingsManager.Save()
+        NativeSettingsUI.RebuildBreachPenaltyOptions(nativeSettings, SettingsManager)
+        nativeSettings.refresh()
+    end)
+
+    -- Create sub-options (conditionally)
+    NativeSettingsUI.CreateBreachPenaltyOptions(nativeSettings, SettingsManager)
+end
+
+function NativeSettingsUI.CreateBreachPenaltyOptions(nativeSettings, SettingsManager)
+    local settings = SettingsManager.GetAll()
+    if not settings.BreachFailurePenaltyEnabled then
+        return
+    end
+
+    local opt
+
+    -- AP Breach Penalty
+    opt = nativeSettings.addSwitch("/BetterNetrunning/BreachPenalty", GetLocKey("DisplayName-BetterNetrunning-APBreachFailurePenaltyEnabled"), GetLocKey("Description-BetterNetrunning-APBreachFailurePenaltyEnabled"), settings.APBreachFailurePenaltyEnabled, true, function(state)
+        SettingsManager.Set("APBreachFailurePenaltyEnabled", state)
+        SettingsManager.Save()
+    end)
+    table.insert(breachPenaltyOptionTables, opt)
+
+    -- NPC Breach Penalty
+    opt = nativeSettings.addSwitch("/BetterNetrunning/BreachPenalty", GetLocKey("DisplayName-BetterNetrunning-NPCBreachFailurePenaltyEnabled"), GetLocKey("Description-BetterNetrunning-NPCBreachFailurePenaltyEnabled"), settings.NPCBreachFailurePenaltyEnabled, true, function(state)
+        SettingsManager.Set("NPCBreachFailurePenaltyEnabled", state)
+        SettingsManager.Save()
+    end)
+    table.insert(breachPenaltyOptionTables, opt)
+
+    -- RemoteBreach Penalty
+    opt = nativeSettings.addSwitch("/BetterNetrunning/BreachPenalty", GetLocKey("DisplayName-BetterNetrunning-RemoteBreachFailurePenaltyEnabled"), GetLocKey("Description-BetterNetrunning-RemoteBreachFailurePenaltyEnabled"), settings.RemoteBreachFailurePenaltyEnabled, true, function(state)
+        SettingsManager.Set("RemoteBreachFailurePenaltyEnabled", state)
+        SettingsManager.Save()
+    end)
+    table.insert(breachPenaltyOptionTables, opt)
+
+    -- Lock Duration
+    opt = nativeSettings.addRangeInt("/BetterNetrunning/BreachPenalty", GetLocKey("DisplayName-BetterNetrunning-BreachPenaltyDurationMinutes"), GetLocKey("Description-BetterNetrunning-BreachPenaltyDurationMinutes"), 1, 60, 1,
+        settings.BreachPenaltyDurationMinutes, 10,
+        function(state)
+            SettingsManager.Set("BreachPenaltyDurationMinutes", state)
+            SettingsManager.Save()
+        end
+    )
+    table.insert(breachPenaltyOptionTables, opt)
+end
+
+function NativeSettingsUI.ClearBreachPenaltyOptions(nativeSettings)
+    for _, optionTable in ipairs(breachPenaltyOptionTables) do
+        nativeSettings.removeOption(optionTable)
+    end
+    breachPenaltyOptionTables = {}
+end
+
+function NativeSettingsUI.RebuildBreachPenaltyOptions(nativeSettings, SettingsManager)
+    NativeSettingsUI.ClearBreachPenaltyOptions(nativeSettings)
+    NativeSettingsUI.CreateBreachPenaltyOptions(nativeSettings, SettingsManager)
 end
 
 -- Progression - Cyberdeck (dynamic UI)

@@ -207,8 +207,8 @@ private final func ShouldQuickhackBeInactive(puppetAction: ref<PuppetAction>, pe
 // Helper: Sets inactive reason for unbreached network (unified message for all NPCs)
 @addMethod(ScriptedPuppetPS)
 private final func SetQuickhackInactiveReason(puppetAction: ref<PuppetAction>, attiudeTowardsPlayer: EAIAttitude) -> Void {
-  // Check if RemoteBreach is locked due to breach failure
-  let isRemoteBreachLocked: Bool = BreachLockUtils.IsNPCLockedByBreachFailure(this);
+  // Check if RemoteBreach is locked due to breach failure (position-based, 50m radius)
+  let isRemoteBreachLocked: Bool = BreachLockUtils.IsNPCLockedByRemoteBreachFailure(this);
 
   // Use vanilla lock message when RemoteBreach is locked (breach failure penalty)
   // Otherwise use Better Netrunning's custom message

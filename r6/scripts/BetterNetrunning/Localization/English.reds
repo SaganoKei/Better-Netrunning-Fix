@@ -74,11 +74,23 @@ public class English extends ModLocalizationPackage {
     this.Text("Category-BreachPenalty", "Breach Failure Penalty");
     this.Text("DisplayName-BetterNetrunning-BreachFailurePenaltyEnabled", "Enable Breach Failure Penalty");
     this.Text("Description-BetterNetrunning-BreachFailurePenaltyEnabled",
-              "Apply penalties when breach protocol fails or is skipped. \nFailure: Red VFX + Stun effect (2 seconds) + RemoteBreach lock (10 minutes, within breach radius). \nSkip: Light VFX only (no Stun, no lock).");
+              "Apply penalties when breach protocol fails (applies to all breach types). \nOn failure: Disconnection VFX + Type-specific lock + Trace attempt. \nNote: Failure and skip are not differentiated; both are treated as Failed state.");
 
-    this.Text("DisplayName-BetterNetrunning-RemoteBreachLockDurationMinutes", "RemoteBreach Lock Duration (minutes)");
-    this.Text("Description-BetterNetrunning-RemoteBreachLockDurationMinutes",
-              "Duration that RemoteBreach quickhacks become unavailable after breach failure (in-game time).\nRemoteBreach quickhacks cannot be used within the breach radius from the failure position.\nLock radius follows the 'Breach Radius' setting in Radial Breach (default 50m).");
+    this.Text("DisplayName-BetterNetrunning-APBreachFailurePenaltyEnabled", "Access Point Breach Penalty");
+    this.Text("Description-BetterNetrunning-APBreachFailurePenaltyEnabled",
+              "Apply penalty when Access Point breach fails.\nWhen enabled: Disconnection VFX + Re-Jack In unavailable on target + Trace (if netrunner nearby)\nJack In action becomes unavailable on the failed device for a certain duration (other devices remain accessible)");
+
+    this.Text("DisplayName-BetterNetrunning-NPCBreachFailurePenaltyEnabled", "NPC Breach Penalty");
+    this.Text("Description-BetterNetrunning-NPCBreachFailurePenaltyEnabled",
+              "Apply penalty when Unconscious NPC breach fails.\nWhen enabled: Disconnection VFX + Re-Breach unavailable on target + Trace (if netrunner nearby)\nBreach action becomes unavailable on the failed NPC for a certain duration (other NPCs remain breachable)");
+
+    this.Text("DisplayName-BetterNetrunning-RemoteBreachFailurePenaltyEnabled", "RemoteBreach Penalty");
+    this.Text("Description-BetterNetrunning-RemoteBreachFailurePenaltyEnabled",
+              "Apply penalty when RemoteBreach quickhack fails.\nWhen enabled: Disconnection VFX + RemoteBreach unavailable on entire connected network + standalone/vehicle devices within range + Trace (if netrunner nearby)\nBreach Protocol quickhacks become unavailable on: (1) entire connected network if failed device is network-connected, (2) standalone/vehicle devices within range from failure position for a certain duration");
+
+    this.Text("DisplayName-BetterNetrunning-BreachPenaltyDurationMinutes", "Breach Penalty Duration (minutes)");
+    this.Text("Description-BetterNetrunning-BreachPenaltyDurationMinutes",
+              "Duration that breach failure penalties persist (in-game time).\nAP Breach: Jack In action locked on failed device\nNPC Breach: Breach action locked on failed NPC\nRemoteBreach: Breach Protocol quickhacks locked on entire connected network (if network-connected) or standalone/vehicle devices within range (if standalone)");
 
     // ===== ACCESS POINTS =====
     this.Text("Category-AccessPoints", "Access Points");
@@ -234,6 +246,8 @@ public class English extends ModLocalizationPackage {
     this.Text("DisplayValues-BetterNetrunning-LogLevel-INFO", "INFO (Default)");
     this.Text("DisplayValues-BetterNetrunning-LogLevel-DEBUG", "DEBUG (Detailed)");
     this.Text("DisplayValues-BetterNetrunning-LogLevel-TRACE", "TRACE (Very Detailed)");
+
+    // ===== DAEMON NAMES / DESCRIPTIONS =====
     this.Text("Better-Netrunning-Basic-Access-Name", "Breach Root Network");
     this.Text("Better-Netrunning-Basic-Access-Description", "Unlocks quickhacks on connected basic devices.");
     this.Text("Better-Netrunning-NPC-Access-Name", "Breach Personnel System");

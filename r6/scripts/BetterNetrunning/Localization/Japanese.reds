@@ -73,12 +73,23 @@ public class Japanese extends ModLocalizationPackage {
     // ===== BREACH FAILURE PENALTY =====
     this.Text("Category-BreachPenalty", "ブリーチ失敗ペナルティ");
     this.Text("DisplayName-BetterNetrunning-BreachFailurePenaltyEnabled", "ブリーチ失敗ペナルティを有効化");
-    this.Text("Description-BetterNetrunning-BreachFailurePenaltyEnabled",
-              "ブリーチプロトコルの失敗またはスキップ時にペナルティを適用します。\n失敗時: 赤色VFX + スタン効果（2秒） + リモートブリーチロック（10分間、ブリーチ範囲内）。\nスキップ時: 軽度のVFXのみ（スタンなし、ロックなし）");
+    this.Text("Description-BetterNetrunning-BreachFailurePenaltyEnabled", "ブリーチプロトコルの失敗時にペナルティを適用します");
 
-    this.Text("DisplayName-BetterNetrunning-RemoteBreachLockDurationMinutes", "リモートブリーチ ロック期間（分）");
-    this.Text("Description-BetterNetrunning-RemoteBreachLockDurationMinutes",
-              "ブリーチ失敗後、『リモートブリーチ』クイックハックが一時的に使用不可になる時間（ゲーム内時間）。\n失敗位置からブリーチ範囲内で『リモートブリーチ』クイックハックが使用できなくなります。\nロック範囲は“Radial Breach”設定の「ブリーチ範囲」に従います（デフォルト50m）");
+    this.Text("DisplayName-BetterNetrunning-APBreachFailurePenaltyEnabled", "アクセスポイント ブリーチペナルティ");
+    this.Text("Description-BetterNetrunning-APBreachFailurePenaltyEnabled",
+              "アクセスポイントのブリーチ失敗時にペナルティを適用します。\n有効時: 切断エフェクト + 対象への再「接続」実行不可 + 逆探知（周囲にネットランナーがいる場合）\n一定期間、失敗したデバイスに対する「接続」アクションが非表示になります（他のデバイスは通常通りアクセス可能）");
+
+    this.Text("DisplayName-BetterNetrunning-NPCBreachFailurePenaltyEnabled", "NPC ブリーチペナルティ");
+    this.Text("Description-BetterNetrunning-NPCBreachFailurePenaltyEnabled",
+              "気絶NPCのブリーチ失敗時にペナルティを適用します。\n有効時: 切断エフェクト + 対象への再「ブリーチ」実行不可 + 逆探知（周囲にネットランナーがいる場合）\n一定期間、失敗した気絶NPCに対する「ブリーチ」アクションが非表示になります（他の気絶NPCは通常通りブリーチ可能）");
+
+    this.Text("DisplayName-BetterNetrunning-RemoteBreachFailurePenaltyEnabled", "リモートブリーチ ペナルティ");
+    this.Text("Description-BetterNetrunning-RemoteBreachFailurePenaltyEnabled",
+              "リモートブリーチクイックハックの失敗時にペナルティを適用します。\n有効時: 切断エフェクト + 接続先ネットワーク全体（ネットワーク接続時）または範囲内スタンドアロン/車両（スタンドアロン時）のリモートブリーチ実行不可 + 逆探知（周囲にネットランナーがいる場合）\n一定期間、「ブリーチプロトコル」クイックハックが非表示になる範囲: (1) 失敗デバイスがネットワーク接続時は接続先ネットワーク全体、(2) 失敗位置から一定範囲内のスタンドアロン/車両デバイス");
+
+    this.Text("DisplayName-BetterNetrunning-BreachPenaltyDurationMinutes", "ブリーチペナルティ 持続期間（分）");
+    this.Text("Description-BetterNetrunning-BreachPenaltyDurationMinutes",
+              "ブリーチ失敗後、ペナルティが持続する時間（ゲーム内時間）。\nAPブリーチ: 失敗したデバイスに対する「接続」操作をロック\n気絶NPCブリーチ: 失敗したNPCに対する「ブリーチ」操作をロック\nリモートブリーチ: 接続先ネットワーク全体（ネットワーク接続時）または範囲内スタンドアロン/車両（スタンドアロン時）の「ブリーチプロトコル」クイックハックをロック");
 
     // ===== ACCESS POINTS =====
     this.Text("Category-AccessPoints", "アクセスポイント");
@@ -234,6 +245,8 @@ public class Japanese extends ModLocalizationPackage {
     this.Text("DisplayValues-BetterNetrunning-LogLevel-INFO", "INFO（デフォルト）");
     this.Text("DisplayValues-BetterNetrunning-LogLevel-DEBUG", "DEBUG（詳細）");
     this.Text("DisplayValues-BetterNetrunning-LogLevel-TRACE", "TRACE（非常に詳細）");
+
+    // ===== DAEMON NAMES / DESCRIPTIONS =====
     this.Text("Better-Netrunning-Basic-Access-Name", "ルートネットワークをブリーチ");
     this.Text("Better-Netrunning-Basic-Access-Description", "接続された一般デバイスに対するクイックハックをアンロックする");
     this.Text("Better-Netrunning-NPC-Access-Name", "人員管理システムをブリーチ");

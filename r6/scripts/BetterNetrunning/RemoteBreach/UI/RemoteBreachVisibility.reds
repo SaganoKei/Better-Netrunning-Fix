@@ -30,6 +30,7 @@
 module BetterNetrunning.RemoteBreach.UI
 import BetterNetrunning.Core.*
 import BetterNetrunning.RemoteBreach.Core.*
+import BetterNetrunning.RemoteBreach.Common.*
 import BetterNetrunning.RemoteBreach.Actions.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.Breach.*
@@ -104,7 +105,7 @@ public final func TryAddCustomRemoteBreach(outActions: script_ref<array<ref<Devi
   }
 
   // EARLY EXIT: Device locked by RemoteBreach failure penalty (50m radius, 10 minutes)
-  if BreachLockUtils.IsDeviceLockedByBreachFailure(this) {
+  if BreachLockUtils.IsDeviceLockedByRemoteBreachFailure(this) {
     return;
   }
 
@@ -184,7 +185,7 @@ public final func TryAddMissingCustomRemoteBreach(outActions: script_ref<array<r
   }
 
   // EARLY EXIT: Device locked by RemoteBreach failure penalty
-  if BreachLockUtils.IsDeviceLockedByBreachFailure(this) {
+  if BreachLockUtils.IsDeviceLockedByRemoteBreachFailure(this) {
     // Remove existing DeviceRemoteBreachAction if present (added before breach failure)
     let i: Int32 = ArraySize(Deref(outActions)) - 1;
     while i >= 0 {
@@ -233,8 +234,13 @@ public final func TryAddMissingCustomRemoteBreach(outActions: script_ref<array<r
  * - Primary prevention: IsDeviceAlreadyUnlocked() check in TryAddCustomRemoteBreach()
  * - Secondary cleanup: This function removes any RemoteBreach that slipped through
  *
- * NEW REQUIREMENT: Once device is unlocked OR any RemoteBreach daemon succeeds, RemoteBreach should be hidden
- * APPLIES TO: All devices including Vehicles, Cameras, Turrets, and generic devices
+ * FUNCTIONALITY:
+ * - Checks device-specific unlock flags (Vehicle/Camera/Turret/Basic)
+ * - Handles timestamp expiration via UnlockExpirationUtils
+ * - Re-enables JackIn interaction on expiration via DeviceInteractionUtils
+ * - Removes CustomAccessBreach action if device is unlocked
+ *
+ * ARCHITECTURE: Composed Method pattern with shallow nesting (max 2 levels)
  *
  * UNLOCK DETECTION (OR logic):
  * - Vehicles: m_betterNetrunningUnlockTimestampBasic > 0.0 (UnlockQuickhacks daemon)
@@ -246,190 +252,67 @@ public final func TryAddMissingCustomRemoteBreach(outActions: script_ref<array<r
  */
 @addMethod(ScriptableDeviceComponentPS)
 public final func RemoveCustomRemoteBreachIfUnlocked(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
-  let unlockDurationHours: Int32 = BetterNetrunningSettings.QuickhackUnlockDurationHours();
-  let gameInstance: GameInstance = this.GetGameInstance();
+  // Step 1: Check timestamp expiration for device type
+  let expirationResult: UnlockExpirationResult = UnlockExpirationUtils.CheckUnlockExpiration(this);
 
-  // Check if device is unlocked
-  let isUnlocked: Bool = false;
-  let wasExpired: Bool = false;
-  let expiredDeviceType: CName = n"";
-
-  // Check 1: Vehicle-specific unlock (via UnlockQuickhacks daemon)
-  if !isUnlocked && IsDefined(this as VehicleComponentPS) {
-    let timestamp: Float = this.m_betterNetrunningUnlockTimestampBasic;
-
-    // PERFORMANCE: Skip calculation if already expired (timestamp = 0.0)
-    if timestamp == 0.0 {
-      // Already expired or never unlocked - skip
-    } else if unlockDurationHours > 0 {
-      // Time-limited unlock - check expiration
-      let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
-      let elapsedTime: Float = currentTime - timestamp;
-      let durationSeconds: Float = Cast<Float>(unlockDurationHours) * 3600.0;
-
-      if elapsedTime > durationSeconds {
-        // Expired - reset timestamp (one-time operation)
-        this.m_betterNetrunningUnlockTimestampBasic = 0.0;
-        wasExpired = true;
-        expiredDeviceType = n"Vehicle";
-
-        // Re-enable JackIn interaction (if supported, one-time operation)
-        EnableJackInInteractionForAccessPoint(this);
-      } else {
-        isUnlocked = true;
-      }
-    } else {
-      // Permanent unlock (duration = 0)
-      isUnlocked = true;
-    }
-  }
-  // Check 2: Camera-specific unlock (via UnlockCameraQuickhacks daemon)
-  else if !isUnlocked && DaemonFilterUtils.IsCamera(this) {
-    let timestamp: Float = this.m_betterNetrunningUnlockTimestampCameras;
-
-    // PERFORMANCE: Skip calculation if already expired (timestamp = 0.0)
-    if timestamp == 0.0 {
-      // Already expired or never unlocked - skip
-    } else if unlockDurationHours > 0 {
-      // Time-limited unlock - check expiration
-      let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
-      let elapsedTime: Float = currentTime - timestamp;
-      let durationSeconds: Float = Cast<Float>(unlockDurationHours) * 3600.0;
-
-      if elapsedTime > durationSeconds {
-        // Expired - reset timestamp (one-time operation)
-        this.m_betterNetrunningUnlockTimestampCameras = 0.0;
-        wasExpired = true;
-        expiredDeviceType = n"Camera";
-
-        // Re-enable JackIn interaction (if supported, one-time operation)
-        EnableJackInInteractionForAccessPoint(this);
-      } else {
-        isUnlocked = true;
-      }
-    } else {
-      // Permanent unlock (duration = 0)
-      isUnlocked = true;
-    }
-  }
-  // Check 3: Turret-specific unlock (via UnlockTurretQuickhacks daemon)
-  else if !isUnlocked && DaemonFilterUtils.IsTurret(this) {
-    let timestamp: Float = this.m_betterNetrunningUnlockTimestampTurrets;
-
-    // PERFORMANCE: Skip calculation if already expired (timestamp = 0.0)
-    if timestamp == 0.0 {
-      // Already expired or never unlocked - skip
-    } else if unlockDurationHours > 0 {
-      // Time-limited unlock - check expiration
-      let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
-      let elapsedTime: Float = currentTime - timestamp;
-      let durationSeconds: Float = Cast<Float>(unlockDurationHours) * 3600.0;
-
-      if elapsedTime > durationSeconds {
-        // Expired - reset timestamp (one-time operation)
-        this.m_betterNetrunningUnlockTimestampTurrets = 0.0;
-        wasExpired = true;
-        expiredDeviceType = n"Turret";
-
-        // Re-enable JackIn interaction (if supported, one-time operation)
-        EnableJackInInteractionForAccessPoint(this);
-      } else {
-        isUnlocked = true;
-      }
-    } else {
-      // Permanent unlock (duration = 0)
-      isUnlocked = true;
-    }
-  }
-  // Check 4: Basic device unlock (via CustomHackingSystem RemoteBreach OR UnlockQuickhacks daemon)
-  else if !isUnlocked {
-    // Check 4a: UnlockQuickhacks daemon flag
-    let timestamp: Float = this.m_betterNetrunningUnlockTimestampBasic;
-
-    // PERFORMANCE: Skip calculation if already expired (timestamp = 0.0)
-    if timestamp == 0.0 {
-      // Already expired or never unlocked - check CustomHackingSystem state
-    } else if unlockDurationHours > 0 {
-      // Time-limited unlock - check expiration
-      let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
-      let elapsedTime: Float = currentTime - timestamp;
-      let durationSeconds: Float = Cast<Float>(unlockDurationHours) * 3600.0;
-
-      if elapsedTime > durationSeconds {
-        // Expired - reset timestamp (one-time operation)
-        this.m_betterNetrunningUnlockTimestampBasic = 0.0;
-        wasExpired = true;
-        expiredDeviceType = n"Basic";
-
-        // Re-enable JackIn interaction (if supported, one-time operation)
-        EnableJackInInteractionForAccessPoint(this);
-      } else {
-        isUnlocked = true;
-      }
-    } else {
-      // Permanent unlock (duration = 0)
-      isUnlocked = true;
-    }
-
-    // Check 4b: CustomHackingSystem RemoteBreach (only if not already unlocked)
-    if !isUnlocked && !wasExpired {
-      let deviceEntity: wref<GameObject> = this.GetOwnerEntityWeak() as GameObject;
-      if IsDefined(deviceEntity) {
-        let deviceID: EntityID = deviceEntity.GetEntityID();
-        let stateSystem: ref<DeviceRemoteBreachStateSystem> =
-          GameInstance.GetScriptableSystemsContainer(this.GetGameInstance()).Get(BNConstants.CLASS_DEVICE_REMOTE_BREACH_STATE_SYSTEM()) as DeviceRemoteBreachStateSystem;
-
-        if IsDefined(stateSystem) {
-          isUnlocked = stateSystem.IsDeviceBreached(deviceID);
-        }
-      }
-    }
+  // Step 2: Re-enable JackIn if unlock expired
+  if expirationResult.wasExpired {
+    DeviceInteractionUtils.EnableJackInInteractionForAccessPoint(this);
   }
 
-  // Remove RemoteBreach if device is unlocked
+  // Step 3: Check CustomHackingSystem RemoteBreach state (Basic devices only)
+  let isUnlocked: Bool = expirationResult.isUnlocked;
+  if !isUnlocked && !expirationResult.wasExpired && !DaemonFilterUtils.IsCamera(this) && !DaemonFilterUtils.IsTurret(this) && !IsDefined(this as VehicleComponentPS) {
+    isUnlocked = this.IsBasicDeviceBreachedByCustomHackingSystem();
+  }
+
+  // Step 4: Remove CustomAccessBreach action if unlocked
   if isUnlocked {
-    let i: Int32 = 0;
-    while i < ArraySize(Deref(outActions)) {
-      let action: ref<DeviceAction> = Deref(outActions)[i];
-      if IsDefined(action) && IsCustomRemoteBreachAction(action.GetClassName()) {
-        ArrayErase(Deref(outActions), i);
-        break;
-      }
-      i += 1;
-    }
+    this.RemoveCustomRemoteBreachAction(outActions);
   }
 }
 
 /*
- * Moves Vehicle RemoteBreach to the bottom of action list
- * CONDITION: Only applies if Vehicle is NOT yet unlocked
- * BEHAVIOR: If unlocked, RemoteBreach is removed by RemoveCustomRemoteBreachIfUnlocked()
- * PURPOSE: Prevent RemoteBreach from jumping to top during transition states
+ * Checks if basic device is breached via CustomHackingSystem RemoteBreach
+ *
+ * FUNCTIONALITY:
+ * - Queries DeviceRemoteBreachStateSystem for breach state
+ * - Only applies to basic devices (Computer, TV, etc.)
+ *
+ * ARCHITECTURE: Early return pattern with type-safe casting
  */
 @addMethod(ScriptableDeviceComponentPS)
-public final func MoveVehicleRemoteBreachToBottom(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
-  // Only applies to Vehicles
-  if !IsDefined(this as VehicleComponentPS) {
-    return;
-  }
+private final func IsBasicDeviceBreachedByCustomHackingSystem() -> Bool {
+  let deviceEntity: wref<GameObject> = this.GetOwnerEntityWeak() as GameObject;
+  if !IsDefined(deviceEntity) { return false; }
 
-  // Find Vehicle RemoteBreach action
-  let remoteBreachIndex: Int32 = -1;
+  let deviceID: EntityID = deviceEntity.GetEntityID();
+  let stateSystem: ref<DeviceRemoteBreachStateSystem> =
+    GameInstance.GetScriptableSystemsContainer(this.GetGameInstance()).Get(BNConstants.CLASS_DEVICE_REMOTE_BREACH_STATE_SYSTEM()) as DeviceRemoteBreachStateSystem;
+
+  if !IsDefined(stateSystem) { return false; }
+
+  return stateSystem.IsDeviceBreached(deviceID);
+}
+
+/*
+ * Removes CustomAccessBreach action from action list
+ *
+ * FUNCTIONALITY:
+ * - Finds first CustomAccessBreach action in list
+ * - Removes action and exits (assumes max 1 RemoteBreach per device)
+ *
+ * ARCHITECTURE: Forward iteration with early break
+ */
+@addMethod(ScriptableDeviceComponentPS)
+private final func RemoveCustomRemoteBreachAction(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
   let i: Int32 = 0;
   while i < ArraySize(Deref(outActions)) {
     let action: ref<DeviceAction> = Deref(outActions)[i];
-    // Use constant instead of magic string
-    if IsDefined(action) && Equals(action.GetClassName(), BNConstants.CLASS_REMOTE_BREACH_VEHICLE()) {
-      remoteBreachIndex = i;
+    if IsDefined(action) && IsCustomRemoteBreachAction(action.GetClassName()) {
+      ArrayErase(Deref(outActions), i);
       break;
     }
     i += 1;
-  }
-
-  // If found and not already at bottom, move it
-  if remoteBreachIndex >= 0 && remoteBreachIndex < ArraySize(Deref(outActions)) - 1 {
-    let remoteBreachAction: ref<DeviceAction> = Deref(outActions)[remoteBreachIndex];
-    ArrayErase(Deref(outActions), remoteBreachIndex);
-    ArrayPush(Deref(outActions), remoteBreachAction);
   }
 }

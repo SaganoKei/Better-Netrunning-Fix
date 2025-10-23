@@ -108,7 +108,12 @@ public final func IsConnectedToPhysicalAccessPoint() -> Bool {
  */
 @wrapMethod(ScriptedPuppetPS)
 public final const func GetValidChoices(const actions: script_ref<array<wref<ObjectAction_Record>>>, const context: script_ref<GetActionsContext>, objectActionsCallbackController: wref<gameObjectActionsCallbackController>, checkPlayerQuickHackList: Bool, choices: script_ref<array<InteractionChoice>>) -> Void {
-	if BetterNetrunningSettings.AllowBreachingUnconsciousNPCs() && this.IsConnectedToAccessPoint() && (!BetterNetrunningSettings.UnlockIfNoAccessPoint() || this.GetDeviceLink().IsConnectedToPhysicalAccessPoint()) && !this.m_betterNetrunningWasDirectlyBreached {
+	// Add BreachUnconsciousOfficer action if all conditions met
+	if BetterNetrunningSettings.AllowBreachingUnconsciousNPCs()
+		&& this.IsConnectedToAccessPoint()
+		&& (!BetterNetrunningSettings.UnlockIfNoAccessPoint() || this.GetDeviceLink().IsConnectedToPhysicalAccessPoint())
+		&& !this.m_betterNetrunningWasDirectlyBreached
+		&& !BreachLockUtils.IsNPCLockedByUnconsciousNPCBreachFailure(this) {
     ArrayPush(Deref(actions), TweakDBInterface.GetObjectActionRecord(t"Takedown.BreachUnconsciousOfficer"));
   }
 	wrappedMethod(actions, context, objectActionsCallbackController, checkPlayerQuickHackList, choices);

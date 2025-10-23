@@ -17,6 +17,8 @@
 
 module BetterNetrunning.Core
 
+import BetterNetrunning.Integration.*
+
 // Device type classification enum
 public enum DeviceType {
   NPC = 0,
@@ -185,35 +187,6 @@ public abstract class DeviceTypeUtils {
 
   public static func IsBasicDevice(deviceType: DeviceType) -> Bool {
     return Equals(deviceType, DeviceType.Basic);
-  }
-
-  // ==================== RadialBreach Range Utilities ====================
-
-  /*
-   * Gets RadialBreach range from RadialBreach MOD settings (or default 50m)
-   *
-   * PURPOSE:
-   * Centralized function for getting breach radius across all modules
-   * Automatically syncs with RadialBreach user configuration via Native Settings UI
-   * Falls back to 50m default when RadialBreach MOD is not installed
-   *
-   * USAGE:
-   * let maxDistance: Float = DeviceTypeUtils.GetRadialBreachRange(gameInstance);
-   *
-   * @param gameInstance - The game instance
-   * @return Breach range in meters (from RadialBreach settings or 50m default)
-   */
-  @if(ModuleExists("RadialBreach"))
-  public static func GetRadialBreachRange(gameInstance: GameInstance) -> Float {
-    // TODO: RadialBreachSettings integration not yet implemented
-    // let settings: ref<RadialBreachSettings> = new RadialBreachSettings();
-    // return settings.breachRange;
-    return 50.0; // Fallback to default range
-  }
-
-  @if(!ModuleExists("RadialBreach"))
-  public static func GetRadialBreachRange(gameInstance: GameInstance) -> Float {
-    return 50.0; // Default range when RadialBreach is not installed
   }
 
   // ==================== Debug Utilities ====================

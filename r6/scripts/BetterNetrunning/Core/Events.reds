@@ -44,6 +44,23 @@ public persistent let m_betterNetrunningUnlockTimestampTurrets: Float;
 @addField(SharedGameplayPS)
 public persistent let m_betterNetrunningUnlockTimestampNPCs: Float;
 
+// ==================== Breach Failure Penalty Timestamps ====================
+// Records breach failure timestamps for penalty system (10 minutes lock duration)
+// Value: Float timestamp from TimeSystem.GetGameTimeStamp()
+// 0.0 = never failed or penalty expired
+
+// AP Breach failure penalty timestamp (device-side persistent for save/load compatibility)
+@addField(SharedGameplayPS)
+public persistent let m_betterNetrunningAPBreachFailedTimestamp: Float;
+
+// NPC Breach failure penalty timestamp (NPC-side persistent for save/load compatibility)
+@addField(ScriptedPuppetPS)
+public persistent let m_betterNetrunningNPCBreachFailedTimestamp: Float;
+
+// RemoteBreach failure penalty timestamp (device-side persistent for save/load compatibility)
+@addField(SharedGameplayPS)
+public persistent let m_betterNetrunningRemoteBreachFailedTimestamp: Float;
+
 // ==================== Breach State Event System ====================
 
 /*

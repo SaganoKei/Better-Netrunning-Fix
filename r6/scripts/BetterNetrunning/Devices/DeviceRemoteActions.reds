@@ -7,7 +7,6 @@ import BetterNetrunning.Systems.*
 import BetterNetrunning.Breach.*
 import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.RemoteBreach.Actions.*
-import BetterNetrunning.RemoteBreach.UI.*
 import BetterNetrunning.RadialUnlock.*
 
 
@@ -82,7 +81,7 @@ public final func GetRemoteActions(out outActions: array<ref<DeviceAction>>, con
   let isUnsecuredNetwork: Bool = !hasAccessPoint && BetterNetrunningSettings.UnlockIfNoAccessPoint();
 
   // Check if RemoteBreach is locked due to breach failure
-  let isRemoteBreachLocked: Bool = BreachLockUtils.IsDeviceLockedByBreachFailure(this);
+  let isRemoteBreachLocked: Bool = BreachLockUtils.IsDeviceLockedByRemoteBreachFailure(this);
 
   // Handle sequencer lock or breach state
   if this.IsLockedViaSequencer() {
@@ -93,14 +92,12 @@ public final func GetRemoteActions(out outActions: array<ref<DeviceAction>>, con
     } else {
       ScriptableDeviceComponentPS.SetActionsInactiveAll(outActions, LocKeyToString(BNConstants.LOCKEY_QUICKHACKS_LOCKED()), BNConstants.ACTION_REMOTE_BREACH());
     }
+    // Sequencer Lock: Apply RAM check to RemoteBreach (SetActionsInactiveAll doesn't check RAM)
+    RemoteBreachRAMUtils.CheckAndLockRemoteBreachRAM(outActions);
   } else if !BetterNetrunningSettings.EnableClassicMode() && !isUnsecuredNetwork {
     // Progressive Mode: apply device-type-specific unlock restrictions (unless unsecured network)
     this.SetActionsInactiveUnbreached(outActions);
   }
-
-  // CRITICAL FIX: Move Vehicle RemoteBreach to bottom AFTER all processing
-  // This must be the LAST operation to ensure RemoteBreach stays at bottom
-  this.MoveVehicleRemoteBreachToBottom(outActions);
 
   // If isUnsecuredNetwork == true, all quickhacks remain active (no restrictions applied)
 }

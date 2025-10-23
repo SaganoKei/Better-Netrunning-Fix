@@ -1,6 +1,6 @@
 # Better Netrunning - Breach System Technical Reference
 
-**Last Updated:** 2025-10-19
+**Last Updated:** 2025-10-24
 **Purpose:** Technical reference for Breach System implementation
 
 **IMPORTANT DEPENDENCY:** Remote Breach functionality requires CustomHackingSystem (HackingExtensions mod). All RemoteBreach-related code is wrapped with `@if(ModuleExists("HackingExtensions"))`.
@@ -103,7 +103,7 @@ Better Netrunning includes network access relaxation features that enhance playe
    - ESC skip (player aborts)
 ```
 
-**Implementation:** `Breach/Systems/BreachPenaltySystem.reds`, `Breach/Systems/RemoteBreachLock.reds`
+**Implementation:** `Breach/BreachPenaltySystem.reds`, `RemoteBreach/Core/RemoteBreachLockSystem.reds`
 
 ---
 
@@ -439,9 +439,9 @@ if( !( m_isRemoteBreach ) && m_isOfficerBreach ) {
 | **Application Conditions** | `AutoExecutePingOnSuccess = true`<br>`AutoDatamineBySuccessCount = true` | Same | Same |
 
 **Implementation Locations:**
-- ✅ `Breach/Processing/BreachProcessing.reds` (AP Breach) - Calls BonusDaemonUtils.ApplyBonusDaemons()
+- ✅ `Breach/BreachProcessing.reds` (AP Breach) - Calls BonusDaemonUtils.ApplyBonusDaemons()
 - ✅ `NPCs/NPCLifecycle.reds` (Unconscious NPC Breach) - Calls BonusDaemonUtils.ApplyBonusDaemons()
-- ✅ `RadialUnlock/Core/RemoteBreachNetworkUnlock.reds` (Remote Breach) - Calls BonusDaemonUtils.ApplyBonusDaemons()
+- ✅ `RadialUnlock/RemoteBreachNetworkUnlock.reds` (Remote Breach) - Calls BonusDaemonUtils.ApplyBonusDaemons()
 
 ### Auto PING Operation
 
@@ -516,7 +516,7 @@ AutoDatamineBySuccessCount = false:
 
 ### Breach Failure Penalties
 
-**Implementation:** `Breach/Systems/BreachPenaltySystem.reds` `ApplyFailurePenalty()`
+**Implementation:** `Breach/BreachPenaltySystem.reds` (736 lines) `ApplyFailurePenalty()`
 
 ```
 Condition: BreachFailurePenaltyEnabled = true AND state == HackingMinigameState.Failed
@@ -534,18 +534,24 @@ Operation:
    - Purpose: Clear failure feedback to player
 
 2. **RemoteBreach Lock Recording**
-   - Range: 50m radius around failure position
-   - Duration: 10 minutes (default, configurable via `RemoteBreachLockDurationMinutes`)
-   - Scope: Only affects RemoteBreach actions (no effect on AP Breach, Unconscious NPC Breach)
-   - Persistence: Saved to PlayerPuppet persistent fields
+   - Scope: Hybrid locking (network hierarchy + radial scan)
+   - Duration: 10 minutes (default, configurable via `BreachPenaltyDurationMinutes`)
+   - Target: Only affects RemoteBreach actions (no effect on AP Breach, Unconscious NPC Breach)
+   - Persistence: Timestamp stored on device PS (`m_betterNetrunningRemoteBreachFailedTimestamp`)
 
-   **Lock Logic (RemoteBreachLock.reds):**
+   **Lock Logic (RemoteBreachLockSystem.reds):**
    ```
+   Device RemoteBreach failure
+     ↓
+   Phase 1: Lock failed device itself
+   Phase 2: Lock entire connected network (via GetNetworkDevices, no distance limit)
+   Phase 3: Lock standalone/network devices in radius (configurable, default 25m)
+   Phase 3B: Lock vehicles in radius (configurable, default 25m)
+     ↓
    Device RemoteBreach attempt
      ↓
-   Check failure position array (PlayerPuppet.m_betterNetrunning_remoteBreachFailedPositions)
-     ├─ Calculate distance to each failure position (Vector4.DistanceSquared2D)
-     ├─ Within 50m AND within 10 minutes of failure position exists
+   Check device timestamp (SharedGameplayPS.m_betterNetrunningRemoteBreachFailedTimestamp)
+     ├─ Timestamp > 0 AND (currentTime - timestamp) <= lockDuration
      └─ → Remove RemoteBreach actions from QuickHack menu
    ```
 
@@ -567,22 +573,25 @@ Operation:
 
 **Debug Logging:**
 When `EnableDebugLog = true`, the following logs are output:
-- `ApplyFailurePenalty called - Failed at position: X Y Z`
-- `Recording failure position for RemoteBreach lock (50m, 10min)`
+- `Phase 1: Locked failed device: <EntityID>`
+- `Locked X devices (Network: Y [connected network], Standalone: Z [Rm], Vehicles: W [Rm])`
 - `Red VFX applied (2-3 seconds)`
 - `Trace triggered at nearest netrunner: NPC_ID` (if TracePositionOverhaul)
 
 **Persistent Fields:**
 ```redscript
-@addField(PlayerPuppet)
-public persistent let m_betterNetrunning_remoteBreachFailedPositions: array<Vector4>;
+@addField(SharedGameplayPS)
+public persistent let m_betterNetrunningRemoteBreachFailedTimestamp: Float;
 
-@addField(PlayerPuppet)
-public persistent let m_betterNetrunning_remoteBreachFailedTimestamps: array<Float>;
+@addField(ScriptedPuppetPS)
+public persistent let m_betterNetrunningNPCBreachFailedTimestamp: Float;
+
+@addField(SharedGameplayPS)
+public persistent let m_betterNetrunningAPBreachFailedTimestamp: Float;
 ```
 
 **Related Utilities:**
-- `Utils/BreachLockUtils.reds` (140 lines) - Entity/Player/Position retrieval aggregation (DRY principle)
+- `Utils/BreachLockUtils.reds` (153 lines) - Entity/Player/Position retrieval aggregation (DRY principle)
   - `IsDeviceLockedByBreachFailure()` - Device context check
   - `IsNPCLockedByBreachFailure()` - NPC context check
   - Called from 8 files (RemoteBreachAction_*, DeviceProgressiveUnlock, DeviceRemoteActions, RemoteBreachVisibility, NPCQuickhacks)
@@ -609,7 +618,7 @@ public persistent let m_betterNetrunning_remoteBreachFailedTimestamps: array<Flo
 After Remote Breach success, nearby standalone devices are automatically unlocked:
 
 ```
-Implementation: RadialUnlock/Core/RemoteBreachNetworkUnlock.reds
+Implementation: RadialUnlock/RemoteBreachNetworkUnlock.reds (603 lines)
   ├─ UnlockNearbyStandaloneDevices() - Main logic
   ├─ FindNearbyDevices() - Search within 50m radius
   ├─ UnlockStandaloneDevices() - Filter standalone + unlock
@@ -664,7 +673,7 @@ REDscript Game Logic
 11. ProgressionEnemyRarity - Enemy rarity requirements per subnet
 12. Debug - Debug logging toggle
 
-**Total Settings:** 73 configuration options
+**Total Settings:** 76 configuration options
 
 ### Settings Affecting Each Breach Type
 
@@ -682,7 +691,10 @@ REDscript Game Logic
 | **RemoteBreachEnabledVehicle** | ❌ | ❌ | ✅ Control Vehicle RemoteBreach | `true` |
 | **RemoteBreachRAMCostPercent** | ❌ | ❌ | ✅ Control RAM cost | `50` |
 | **BreachFailurePenaltyEnabled** | ✅ Apply penalties on failure | ✅ Same | ✅ Same | `true` |
-| **RemoteBreachLockDurationMinutes** | ✅ RemoteBreach lock duration | ✅ Same | ✅ Same | `10` |
+| **APBreachFailurePenaltyEnabled** | ✅ Enable/disable AP Breach penalties | ❌ | ❌ | `true` |
+| **NPCBreachFailurePenaltyEnabled** | ❌ | ✅ Enable/disable NPC Breach penalties | ❌ | `true` |
+| **RemoteBreachFailurePenaltyEnabled** | ❌ | ❌ | ✅ Enable/disable RemoteBreach penalties | `true` |
+| **BreachPenaltyDurationMinutes** | ✅ Lock duration (all breach types) | ✅ Same | ✅ Same | `10` |
 
 ### Detailed Settings Explanation
 
@@ -744,6 +756,84 @@ true (default):
 false:
   - No auto-add
 ```
+
+#### BreachFailurePenaltyEnabled
+
+```
+true (default):
+  All breach types:
+    - On minigame failure (timeout or ESC skip):
+      1. Red VFX (2-3 seconds)
+      2. RemoteBreach Lock (10 minutes default)
+      3. Position Reveal Trace (optional, TracePositionOverhaul MOD)
+
+false:
+  - No penalties applied on failure
+  - Minigame failure has no consequences
+```
+
+**See Also:** [Breach Failure Penalties](#breach-failure-penalties) section for detailed implementation and penalty mechanics
+
+#### APBreachFailurePenaltyEnabled
+
+```
+true (default):
+  AP Breach:
+    - Apply all penalties on failure (Red VFX, RemoteBreach Lock, Trace)
+
+false:
+  AP Breach:
+    - No penalties applied on failure
+```
+
+**Note:** Works in conjunction with `BreachFailurePenaltyEnabled` (both must be true for penalties to apply)
+
+#### NPCBreachFailurePenaltyEnabled
+
+```
+true (default):
+  Unconscious NPC Breach:
+    - Apply all penalties on failure (Red VFX, RemoteBreach Lock, Trace)
+
+false:
+  Unconscious NPC Breach:
+    - No penalties applied on failure
+```
+
+**Note:** Works in conjunction with `BreachFailurePenaltyEnabled` (both must be true for penalties to apply)
+
+#### RemoteBreachFailurePenaltyEnabled
+
+```
+true (default):
+  Remote Breach:
+    - Apply all penalties on failure (Red VFX, RemoteBreach Lock, Trace)
+
+false:
+  Remote Breach:
+    - No penalties applied on failure
+```
+
+**Note:** Works in conjunction with `BreachFailurePenaltyEnabled` (both must be true for penalties to apply)
+
+#### BreachPenaltyDurationMinutes
+
+```
+Range: 1-60 minutes
+Default: 10 minutes
+
+Controls how long devices remain locked after breach failure (all breach types).
+Applies to RemoteBreach lock duration.
+```
+
+**Lock Mechanism:**
+- Timestamp stored on device PS (`m_betterNetrunningRemoteBreachFailedTimestamp`)
+- Checked when attempting RemoteBreach QuickHack
+- If `(currentTime - timestamp) <= lockDuration`, RemoteBreach actions removed from menu
+
+**Related Settings:**
+- Works with `BreachFailurePenaltyEnabled` (must be true for locking to occur)
+- Radial scan range configurable via RadialBreach MOD settings (10-50m, default 25m)
 
 #### (Deprecated Setting: AllowAllDaemonsOnAccessPoints)
 
@@ -1058,9 +1148,13 @@ All breach types support:
 - ⏸️ **Remote Breach:** Pending integration (`RemoteBreachNetworkUnlock.reds`)
 - ⏸️ **Unconscious NPC Breach:** Pending integration (`NPCBreachExperience.reds`)
 
-### BreachSessionStats Structure
+**Architecture:**
+- `Utils/BreachStatisticsCollector.reds` (276 lines) - Data collection (DTO pattern)
+- `Utils/BreachSessionLogger.reds` (397 lines) - Formatting & output with emoji icons
 
-**File:** `Debug/BreachSessionStats.reds` (260 lines)
+### BreachSessionStats Structure (DTO)
+
+**File:** `Utils/BreachStatisticsCollector.reds` (276 lines)
 
 **Field Categories (20+ fields):**
 
@@ -1257,7 +1351,7 @@ Unlock Status:
 **Optimized Files:**
 1. `betterNetrunning.reds` - 6 deletions + 3 TRACE conversions
 2. `Utils/BonusDaemonUtils.reds` - 3 deletions + 4 TRACE conversions
-3. `Breach/Processing/BreachProcessing.reds` - 3 TRACE conversions
+3. `Breach/BreachProcessing.reds` - 3 TRACE conversions
 4. `Minigame/ProgramInjection.reds` - 4 TRACE conversions
 5. `Devices/DeviceQuickhackFilters.reds` - 8 TRACE conversions
 6. `Utils/BreachSessionLogger.reds` - Emoji icons + DTO pattern
@@ -1272,7 +1366,7 @@ Unlock Status:
 **Benefits:**
 1. **Readability:** Structured output with visual icons vs. scattered text logs
 2. **Performance:** Reduced string operations, internal filtering optimization
-3. **Maintainability:** Statistics logic isolated in BreachSessionLogger.reds
+3. **Maintainability:** Statistics logic isolated in BreachStatisticsCollector.reds (DTO) + BreachSessionLogger.reds (formatting)
 4. **Debugging:**
    - INFO (default): Comprehensive summaries only
    - DEBUG: Major state changes
@@ -1313,21 +1407,22 @@ Unlock Status:
 
 ## Related Documents
 
-- `ARCHITECTURE_DESIGN_V2.md` - Better Netrunning overall architecture (Post-Phase 4A/4B/4C/5A)
+- `ARCHITECTURE_DESIGN.md` - Better Netrunning overall architecture (Version 2.4)
 - Source files:
   - `Devices/DeviceNetworkAccess.reds` - Network access relaxation
-  - `RadialUnlock/Core/RemoteBreachNetworkUnlock.reds` - Network unlock with nearby device support
-  - `Utils/BonusDaemonUtils.reds` - Auto PING/Datamine
-  - `Devices/DeviceProgressiveUnlock.reds` - Progressive unlock with diagnostic logging
-  - `NPCs/NPCLifecycle.reds` - Unconscious NPC breach
-  - `Minigame/ProgramInjection.reds` - Daemon injection logic
+  - `RadialUnlock/RemoteBreachNetworkUnlock.reds` (603 lines) - Network unlock with nearby device support
+  - `Utils/BonusDaemonUtils.reds` (385 lines) - Auto PING/Datamine
+  - `Devices/DeviceProgressiveUnlock.reds` (307 lines) - Progressive unlock with diagnostic logging
+  - `NPCs/NPCLifecycle.reds` (219 lines) - Unconscious NPC breach
+  - `Minigame/ProgramInjection.reds` (145 lines) - Daemon injection logic
   - `Minigame/ProgramFiltering*.reds` - Daemon filtering logic (Core/Rules)
-  - `Utils/BreachSessionLogger.reds` - Statistics collection with emoji icons
-  - `Core/Logger.reds` - Debug logging system (5-level logging, duplicate suppression)
-  - `Core/TimeUtils.reds` - Timestamp management utilities
+  - `Utils/BreachStatisticsCollector.reds` (276 lines) - Statistics collection (DTO pattern)
+  - `Utils/BreachSessionLogger.reds` (397 lines) - Statistics formatting with emoji icons
+  - `Core/Logger.reds` (204 lines) - Debug logging system (5-level logging, duplicate suppression)
+  - `Core/TimeUtils.reds` (57 lines) - Timestamp management utilities
   - `Core/Events.reds` - Persistent field definitions (unlock timestamps, breach state)
 
 ---
 
-**Last Updated:** 2025-10-19
+**Last Updated:** 2025-10-24
 

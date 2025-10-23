@@ -15,7 +15,7 @@ public class BetterNetrunningSettings {
 
     // RemoteBreach
     public static func RemoteBreachEnabledDevice() -> Bool { return true; }
-    public static func RemoteBreachEnabledComputer() -> Bool { return true; }
+    public static func RemoteBreachEnabledComputer() -> Bool { return false; }
     public static func RemoteBreachEnabledCamera() -> Bool { return true; }
     public static func RemoteBreachEnabledTurret() -> Bool { return true; }
     public static func RemoteBreachEnabledVehicle() -> Bool { return true; }
@@ -23,7 +23,10 @@ public class BetterNetrunningSettings {
 
     // Breach Failure Penalty
     public static func BreachFailurePenaltyEnabled() -> Bool { return true; }
-    public static func RemoteBreachLockDurationMinutes() -> Int32 { return 10; }
+    public static func APBreachFailurePenaltyEnabled() -> Bool { return true; }
+    public static func NPCBreachFailurePenaltyEnabled() -> Bool { return true; }
+    public static func RemoteBreachFailurePenaltyEnabled() -> Bool { return true; }
+    public static func BreachPenaltyDurationMinutes() -> Int32 { return 10; }
 
     // Access Points
     public static func UnlockIfNoAccessPoint() -> Bool { return false; }

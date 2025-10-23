@@ -6,8 +6,6 @@ import BetterNetrunning.Utils.*
 import BetterNetrunning.Systems.*
 import BetterNetrunning.Breach.*
 import BetterNetrunning.RemoteBreach.Core.*
-import BetterNetrunning.RemoteBreach.Actions.*
-import BetterNetrunning.RemoteBreach.UI.*
 import BetterNetrunning.RadialUnlock.*
 
 /*
@@ -180,12 +178,16 @@ private final func CalculateDevicePermissions(deviceInfo: DeviceBreachInfo) -> D
 @addMethod(ScriptableDeviceComponentPS)
 private final func ApplyPermissionsToActions(actions: script_ref<array<ref<DeviceAction>>>, deviceInfo: DeviceBreachInfo, permissions: DevicePermissions) -> Void {
   // Check if RemoteBreach is locked due to breach failure
-  let isRemoteBreachLocked: Bool = BreachLockUtils.IsDeviceLockedByBreachFailure(this);
+  let isRemoteBreachLocked: Bool = BreachLockUtils.IsDeviceLockedByRemoteBreachFailure(this);
+
+  // Check RemoteBreach RAM availability (centralized in RemoteBreachRAMUtils)
+  RemoteBreachRAMUtils.CheckAndLockRemoteBreachRAM(actions);
 
   let i: Int32 = 0;
   while i < ArraySize(Deref(actions)) {
     let sAction: ref<ScriptableDeviceAction> = (Deref(actions)[i] as ScriptableDeviceAction);
 
+    // Standard permission check
     if IsDefined(sAction) && !this.ShouldAllowAction(sAction, deviceInfo.isCamera, deviceInfo.isTurret, permissions.allowCameras, permissions.allowTurrets, permissions.allowBasicDevices, permissions.allowPing, permissions.allowDistraction) {
       sAction.SetInactive();
 
@@ -236,12 +238,6 @@ private final func ShouldAllowAction(action: ref<ScriptableDeviceAction>, isCame
 
 // ==================== Helper Methods: Device Lock State ====================
 
-/**
- * NOTE: IsDeviceLockedByBreachFailure() is now a static method in BreachLockUtils (Utils module)
- * MIGRATION: Use BreachLockUtils.IsDeviceLockedByBreachFailure(this) instead
- * FILE: Utils/BreachLockUtils.reds
- * RATIONALE: Proper separation of concerns (Utility helpers vs Breach domain logic)
- */
 
 /**
  * RemoveVanillaRemoteBreachActions - Remove only vanilla RemoteBreach actions
@@ -263,17 +259,6 @@ private final func RemoveVanillaRemoteBreachActions(outActions: script_ref<array
 
     i -= 1;
   }
-}
-
-/**
- * RemoveAllRemoteBreachActions - Remove all RemoteBreach actions (vanilla + custom)
- *
- * PURPOSE: Remove all RemoteBreach types when device is locked by breach failure
- * ARCHITECTURE: Delegate to RemoteBreachLockUtils static method (single source of truth)
- */
-@addMethod(ScriptableDeviceComponentPS)
-private final func RemoveAllRemoteBreachActions(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
-  RemoteBreachLockUtils.RemoveAllRemoteBreachActions(outActions);
 }
 
 // ==================== Quickhack Finalization ====================

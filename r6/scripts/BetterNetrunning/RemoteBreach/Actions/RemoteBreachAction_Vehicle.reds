@@ -124,7 +124,7 @@ protected func GetQuickHackActions(out actions: array<ref<DeviceAction>>, const 
     }
 
     // Guard 2: Check if RemoteBreach is locked due to breach failure
-    if BreachLockUtils.IsDeviceLockedByBreachFailure(this) {
+    if BreachLockUtils.IsDeviceLockedByRemoteBreachFailure(this) {
         return;
     }
 

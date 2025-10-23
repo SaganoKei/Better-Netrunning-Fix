@@ -15,6 +15,7 @@ module BetterNetrunning.RemoteBreach.Actions
 
 import BetterNetrunning.*
 import BetterNetrunning.Core.*
+import BetterNetrunning.Integration.*
 import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.Utils.*
 
@@ -38,7 +39,7 @@ public abstract class RemoteBreachProgramActionBase extends HackProgramAction {
         if !IsDefined(player) {
             return 50.0; // Fallback if player not available
         }
-        return DeviceTypeUtils.GetRadialBreachRange(player.GetGame());
+        return GetRadialBreachRange(player.GetGame());
     }
 
     protected func ExecuteProgramSuccess() -> Void {

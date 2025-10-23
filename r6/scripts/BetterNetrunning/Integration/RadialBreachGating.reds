@@ -38,15 +38,49 @@ import BetterNetrunning.Utils.*
 import RadialBreach.Config.*
 
 // ============================================================================
-// BREACH RANGE CONFIGURATION
+// RADIALBREACH INTEGRATION LAYER (External Dependency Isolation)
 // ============================================================================
 
-/// Gets the breach range from RadialBreach settings (or default 50m)
-/// Automatically syncs with RadialBreach user configuration via Native Settings UI
-/// Delegates to DeviceTypeUtils.GetRadialBreachRange() for centralized management
-@addMethod(AccessPointControllerPS)
-public final func GetRadialBreachRange() -> Float {
-  return DeviceTypeUtils.GetRadialBreachRange(this.GetGameInstance());
+/*
+ * GetRadialBreachRange - External dependency isolation function
+ *
+ * PURPOSE:
+ * Centralizes RadialBreach MOD integration logic in Integration/ layer
+ * Isolates external dependency (RadialBreachSettings) from Core/ layer
+ *
+ * ARCHITECTURE:
+ * - Single Responsibility: RadialBreach MOD configuration access
+ * - Design Principle: External dependencies must be isolated in Integration/
+ * - Delegation Pattern: Core/DeviceTypeUtils delegates to this function
+ *
+ * RATIONALE:
+ * Core/ modules should NOT depend on external MODs directly
+ * Integration/ layer provides conditional gating and fallback logic
+ *
+ * FUNCTIONALITY:
+ * - Reads config.breachRange from RadialBreach Native Settings (10-50m, default 25m)
+ * - Falls back to 50m if RadialBreach disabled or invalid
+ *
+ * USAGE:
+ * let range: Float = GetRadialBreachRange(gameInstance);
+ */
+@if(ModuleExists("RadialBreach"))
+public static func GetRadialBreachRange(gameInstance: GameInstance) -> Float {
+  let config: ref<RadialBreachSettings> = new RadialBreachSettings();
+
+  // Use RadialBreach user setting if enabled and valid
+  if config.enabled && config.breachRange > 0.0 {
+    return config.breachRange;
+  }
+
+  // Fallback: 50m when RadialBreach disabled or invalid
+  return 50.0;
+}
+
+// Fallback stub: Returns default 50m when RadialBreach MOD not installed
+@if(!ModuleExists("RadialBreach"))
+public static func GetRadialBreachRange(gameInstance: GameInstance) -> Float {
+  return 50.0;
 }
 
 // ============================================================================
@@ -75,25 +109,6 @@ public final func GetBreachPosition() -> Vector4 {
 }
 
 // ============================================================================
-// PHYSICAL DISTANCE FILTERING
-// ============================================================================
-
-/// Checks if a device is within breach radius (physical proximity-based filtering)
-/// Only used when RadialBreach MOD is installed
-@addMethod(AccessPointControllerPS)
-public final func IsDeviceWithinBreachRadius(device: ref<DeviceComponentPS>, breachPosition: Vector4, maxDistance: Float) -> Bool {
-  let deviceEntity: wref<GameObject> = device.GetOwnerEntityWeak() as GameObject;
-  if !IsDefined(deviceEntity) {
-    return true; // Fallback: allow unlock if entity not found
-  }
-
-  let devicePosition: Vector4 = deviceEntity.GetWorldPosition();
-  let distance: Float = Vector4.Distance(breachPosition, devicePosition);
-
-  return distance <= maxDistance;
-}
-
-// ============================================================================
 // DEVICE UNLOCK APPLICATION (CONDITIONAL COMPILATION)
 // ============================================================================
 
@@ -105,7 +120,7 @@ public final func IsDeviceWithinBreachRadius(device: ref<DeviceComponentPS>, bre
 public final func ApplyBreachUnlockToDevices(const devices: script_ref<array<ref<DeviceComponentPS>>>, unlockFlags: BreachUnlockFlags) -> Void {
   // RadialBreach Integration - Physical Distance Filtering
   let breachPosition: Vector4 = this.GetBreachPosition();
-  let maxDistance: Float = this.GetRadialBreachRange();
+  let maxDistance: Float = GetRadialBreachRange(this.GetGameInstance());
   let shouldUseRadialFiltering: Bool = breachPosition.X >= -999000.0;
 
   let i: Int32 = 0;
@@ -114,7 +129,7 @@ public final func ApplyBreachUnlockToDevices(const devices: script_ref<array<ref
 
     // Physical distance check (RadialBreach integration)
     let withinRadius: Bool = !shouldUseRadialFiltering ||
-                             this.IsDeviceWithinBreachRadius(device, breachPosition, maxDistance);
+                             DeviceDistanceUtils.IsDeviceWithinRadius(device, breachPosition, maxDistance, this.GetGameInstance());
 
     if withinRadius {
       // Process device unlock
@@ -165,34 +180,8 @@ private final func ProcessSingleDeviceUnlock(device: ref<DeviceComponentPS>, unl
 // REMOTEBREACH INTEGRATION
 // ============================================================================
 
-/// Gets RadialBreach range for RemoteBreach filtering (PlayerPuppet version)
-/// Syncs with RadialBreach user configuration
-/// Delegates to DeviceTypeUtils.GetRadialBreachRange() for centralized management
-@addMethod(PlayerPuppet)
-public final func GetRadialBreachRangeForRemote() -> Float {
-  return DeviceTypeUtils.GetRadialBreachRange(this.GetGame());
-}
-
-/// Checks if device is within RemoteBreach radius (physical distance check)
-/// Used by RemoteBreach network unlock logic
-@addMethod(PlayerPuppet)
-public final func IsDeviceWithinRemoteBreachRadius(
-  device: ref<DeviceComponentPS>,
-  breachPosition: Vector4,
-  maxDistance: Float
-) -> Bool {
-  let deviceEntity: wref<GameObject> = device.GetOwnerEntityWeak() as GameObject;
-
-  if !IsDefined(deviceEntity) {
-    // Fallback: allow unlock if entity not found
-    return true;
-  }
-
-  let devicePosition: Vector4 = deviceEntity.GetWorldPosition();
-  let distance: Float = Vector4.Distance(breachPosition, devicePosition);
-
-  return distance <= maxDistance;
-}
+// Direct API calls for clarity and minimal indirection
+// Uses: GetRadialBreachRange(gameInstance), DeviceDistanceUtils.IsDeviceWithinRadius(...)
 
 // ============================================================================
 // SHARED HELPER METHODS
@@ -257,7 +246,7 @@ public final func ApplyRemoteBreachNetworkUnlock(
   }
 
   let breachPosition: Vector4 = targetEntity.GetWorldPosition();
-  let maxDistance: Float = this.GetRadialBreachRangeForRemote();
+  let maxDistance: Float = GetRadialBreachRange(this.GetGame());
   let shouldUseRadialFiltering: Bool = breachPosition.X >= -999000.0;
 
   let i: Int32 = 0;
@@ -267,7 +256,7 @@ public final func ApplyRemoteBreachNetworkUnlock(
     if IsDefined(device) {
       // Physical distance check (RadialBreach integration)
       let withinRadius: Bool = !shouldUseRadialFiltering ||
-                               this.IsDeviceWithinRemoteBreachRadius(device, breachPosition, maxDistance);
+                               DeviceDistanceUtils.IsDeviceWithinRadius(device, breachPosition, maxDistance, this.GetGame());
 
       if withinRadius {
         // Apply unlock using shared helper

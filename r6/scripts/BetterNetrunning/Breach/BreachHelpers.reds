@@ -122,12 +122,23 @@ protected cb func OnAccessPointMiniGameStatus(evt: ref<AccessPointMiniGameStatus
   }
 
   // BREACH PENALTY: Apply failure penalty if breach failed
+  // NOTE: Uses ApplyFailurePenalty(player, npcPuppet, gameInstance) overload
+  // because PuppetDeviceLinkPS and ScriptableDeviceComponentPS are sibling classes
+  // and cannot be cast to each other.
   if Equals(evt.minigameState, HackingMinigameState.Failed) && BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
     let player: ref<PlayerPuppet> = GetPlayer(this.GetGame());
-    if IsDefined(player) {
-      // Use unified penalty function (GameObject overload)
+
+    if IsDefined(player) && IsDefined(this) {
+      // Use NPC-specific overload: ApplyFailurePenalty(player, npcPuppet, gameInstance)
       ApplyFailurePenalty(player, this, this.GetGame());
-      BNInfo("OnAccessPointMiniGameStatus", "Unconscious NPC breach failed - penalty applied");
+      BNInfo("OnAccessPointMiniGameStatus", "Unconscious NPC breach failed - penalty applied via overload");
+    } else {
+      if !IsDefined(player) {
+        BNError("OnAccessPointMiniGameStatus", "Player not found - cannot apply penalty");
+      }
+      if !IsDefined(this) {
+        BNError("OnAccessPointMiniGameStatus", "ScriptedPuppet not found - cannot apply penalty");
+      }
     }
   }
 

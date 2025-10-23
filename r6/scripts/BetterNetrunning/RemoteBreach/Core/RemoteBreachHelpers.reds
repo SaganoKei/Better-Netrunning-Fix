@@ -21,10 +21,13 @@
 module BetterNetrunning.RemoteBreach.Core
 
 import BetterNetrunning.*
+import BetterNetrunning.Breach.*
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
+import BetterNetrunning.Integration.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.RadialUnlock.*
+import BetterNetrunning.RemoteBreach.Common.*
 
 @if(ModuleExists("HackingExtensions"))
 import HackingExtensions.*
@@ -57,6 +60,63 @@ public abstract class StateSystemUtils {
     public static func GetCustomHackingSystem(gameInstance: GameInstance) -> ref<CustomHackingSystem> {
         return GameInstance.GetScriptableSystemsContainer(gameInstance).Get(BNConstants.CLASS_CUSTOM_HACKING_SYSTEM()) as CustomHackingSystem;
     }
+}
+
+// ============================================================================
+// RemoteBreachRAMUtils - RAM Availability Check for RemoteBreach Actions
+// ============================================================================
+//
+// PURPOSE:
+// Centralized RAM availability check for RemoteBreach actions to avoid code duplication
+//
+// FUNCTIONALITY:
+// - Iterates device actions to find RemoteBreach actions
+// - Checks player RAM availability via CanPayCost()
+// - Applies SetInactive() + "Insufficient RAM" message if RAM < cost
+//
+// ARCHITECTURE:
+// - Static utility method (DRY principle)
+// - Single implementation used by multiple callers
+// - HackingExtensions dependency isolated in RemoteBreach module
+//
+// USAGE:
+// - ApplyPermissionsToActions() (Progressive Mode permission system)
+// - GetRemoteActions() (Sequencer Lock special case)
+// ============================================================================
+@if(ModuleExists("HackingExtensions"))
+public abstract class RemoteBreachRAMUtils {
+  /*
+   * Check and lock RemoteBreach actions when player lacks RAM
+   *
+   * RATIONALE: Consolidates RAM checking logic to ensure consistent behavior
+   * ARCHITECTURE: Single responsibility - RAM availability check only
+   */
+  public static func CheckAndLockRemoteBreachRAM(
+    actions: script_ref<array<ref<DeviceAction>>>
+  ) -> Void {
+    let i: Int32 = 0;
+    while i < ArraySize(Deref(actions)) {
+      let action: ref<DeviceAction> = Deref(actions)[i];
+      if !IsDefined(action) {
+        i += 1;
+      } else {
+        let className: CName = action.GetClassName();
+        if !IsCustomRemoteBreachAction(className) {
+          i += 1;
+        } else {
+          let remoteBreachAction: ref<CustomAccessBreach> = action as CustomAccessBreach;
+          if IsDefined(remoteBreachAction) && !remoteBreachAction.CanPayCost() {
+            let sAction: ref<ScriptableDeviceAction> = action as ScriptableDeviceAction;
+            if IsDefined(sAction) {
+              sAction.SetInactive();
+              sAction.SetInactiveReason(BNConstants.LOCKEY_RAM_INSUFFICIENT());
+            }
+          }
+          i += 1;
+        }
+      }
+    }
+  }
 }
 
 @if(ModuleExists("HackingExtensions"))
@@ -212,7 +272,7 @@ public abstract class RemoteBreachUtils {
     private static func SetupDeviceTargeting(sourceEntity: wref<GameObject>, gameInstance: GameInstance) -> TargetingSetup {
         let setup: TargetingSetup;
         setup.isValid = false;
-        setup.breachRadius = DeviceTypeUtils.GetRadialBreachRange(gameInstance);
+        setup.breachRadius = GetRadialBreachRange(gameInstance);
         setup.sourcePos = sourceEntity.GetWorldPosition();
 
         setup.player = GetPlayer(gameInstance);
@@ -610,10 +670,10 @@ public abstract class RemoteBreachActionHelper {
         // Calling it again here might cause issues
     }
 
-    // Get current game difficulty (placeholder - expand if difficulty detection needed)
+    // Get current game difficulty
+    // NOTE: Always returns Medium - game difficulty detection not currently needed
+    // Can be extended in future if difficulty-based behavior is required
     public static func GetCurrentDifficulty() -> GameplayDifficulty {
-        // TODO: Implement difficulty detection from game settings
-        // For now, default to Medium
         return GameplayDifficulty.Medium;
     }
 
@@ -782,8 +842,8 @@ public class OnRemoteBreachSucceeded extends OnCustomHackingSucceeded {
         // Grant vanilla hacking rewards
         RPGManager.GiveReward(GetGameInstance(), t"RPGActionRewards.Hacking", Cast<StatsObjectID>(device.GetMyEntityID()));
 
-        // Disable JackIn interaction
-        DisableJackInInteractionForAccessPoint(device);
+        // Disable JackIn interaction (delegates to DeviceInteractionUtils)
+        DeviceInteractionUtils.DisableJackInInteractionForAccessPoint(device);
 
         // Collect radial unlock statistics using unified collector
         BreachStatisticsCollector.CollectRadialUnlockStats(device, unlockFlags, stats, GetGameInstance());
@@ -880,89 +940,153 @@ public class OnRemoteBreachFailed extends OnCustomHackingFailed {
 }
 
 // ============================================================================
-// DisableJackInInteractionForAccessPoint - JackIn Interaction Disabling
+// RemoteBreachLockUtils - RemoteBreach Lock Management
 // ============================================================================
 //
 // PURPOSE:
-// Disable JackIn interaction for devices after successful RemoteBreach
+// RemoteBreach-specific lock check and action filtering utilities
 //
 // FUNCTIONALITY:
-// - Checks if device supports JackIn (AccessPoint, Computer, Terminal)
-// - Sets m_hasPersonalLinkSlot = false (vanilla JackIn disabling mechanism)
-// - Same behavior as SpiderbotEnableAccessPoint (vanilla approach)
+// - RemoteBreach action removal from device action lists
+// - RAM cost validation combined with breach failure lock checks
+// - Inactive reason LocKey generation for UI display
 //
 // ARCHITECTURE:
-// - Early return pattern for unsupported devices
-// - Direct field modification (m_hasPersonalLinkSlot)
-// - Vanilla-compatible approach (uses existing mechanism)
+// - Static utility class (no instantiation)
+// - Integrates with BreachLockSystem for position-based lock checks
 //
 // DEPENDENCIES:
-// - AccessPointControllerPS: Vanilla AccessPoint device class
-// - ComputerControllerPS: Vanilla Computer device class (extends TerminalControllerPS)
-// - TerminalControllerPS: Vanilla Terminal device class (extends MasterControllerPS)
-// - m_hasPersonalLinkSlot: Vanilla JackIn control flag
-//
-// DESIGN DECISION:
-// - Uses vanilla flag instead of custom persistent field
-// - Prevents duplicate breach (RemoteBreach + JackIn on same device)
-// - Matches vanilla behavior: AP breach disables JackIn, NPC breach disables breach
-// - Supports Computer/Terminal devices (they also support JackIn via MasterControllerPS)
+// - BetterNetrunning.Breach.BreachLockSystem: Position lock validation
+// - BetterNetrunning.Core.BNConstants: LocKey constants
 // ============================================================================
-@if(ModuleExists("HackingExtensions"))
-public static func DisableJackInInteractionForAccessPoint(device: ref<ScriptableDeviceComponentPS>) -> Void {
-    if !IsDefined(device) {
-        BNError("RemoteBreach", "Device PS is undefined - cannot disable JackIn");
-        return;
+
+public abstract class RemoteBreachLockUtils {
+  /**
+   * Remove all RemoteBreach actions from device action list
+   *
+   * FUNCTIONALITY:
+   * - Removes CustomAccessBreach-based actions (RemoteBreachAction, DeviceRemoteBreachAction, VehicleRemoteBreachAction)
+   * - Removes vanilla RemoteBreach actions
+   * - Type-based detection using class name check and interface casting
+   *
+   * USE CASES:
+   * - Breach failure penalty (device locked by position)
+   * - Device already breached (RemoteBreach redundant)
+   * - HackingExtensions integration (CustomHackingSystem menu)
+   *
+   * ARCHITECTURE:
+   * - Reverse iteration for safe array element removal
+   * - Combines class name check with interface casting
+   */
+  public static func RemoveAllRemoteBreachActions(
+    outActions: script_ref<array<ref<DeviceAction>>>
+  ) -> Void {
+    let i: Int32 = ArraySize(Deref(outActions)) - 1;
+
+    while i >= 0 {
+      let action: ref<DeviceAction> = Deref(outActions)[i];
+      let className: CName = action.GetClassName();
+
+      if IsCustomRemoteBreachAction(className) || IsDefined(action as RemoteBreach) {
+        ArrayErase(Deref(outActions), i);
+      }
+
+      i -= 1;
+    }
+  }
+
+  /**
+   * Check if RemoteBreach action can execute (RAM + position lock validation)
+   *
+   * FUNCTIONALITY:
+   * - Validates RAM cost affordability
+   * - Checks breach failure penalty settings
+   * - Validates position-based lock status
+   *
+   * RATIONALE:
+   * DEPRECATED: Use GetRemoteBreachInactiveReason() for LocKey support.
+   * This method returns Bool only - new code should use the LocKey variant.
+   *
+   * ARCHITECTURE:
+   * - Multi-stage validation with early returns
+   * - Delegates to BreachLockSystem for position checks
+   */
+  public static func CanExecuteRemoteBreachAction(
+    action: ref<BaseScriptableAction>,
+    devicePS: ref<ScriptableDeviceComponentPS>,
+    player: ref<PlayerPuppet>
+  ) -> Bool {
+    // Check 1: RAM affordability
+    if !action.CanPayCost(player) {
+      return false;
     }
 
-    // Check if device is MasterControllerPS (base class for AccessPoint, Computer, Terminal)
-    // All MasterControllerPS devices support JackIn via m_hasPersonalLinkSlot
-    let masterController: ref<MasterControllerPS> = device as MasterControllerPS;
-    if !IsDefined(masterController) {
-        // Not a master controller device - no JackIn interaction to disable
-        return;
+    // Check 2: Breach failure penalty enabled
+    if !BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
+      return true;
     }
 
-    // Disable JackIn interaction (vanilla approach - same as SpiderbotEnableAccessPoint)
-    masterController.SetHasPersonalLinkSlot(false);
+    // Check 3: Timestamp-based lock check
+    if RemoteBreachLockSystem.IsRemoteBreachLockedByTimestamp(devicePS, devicePS.GetGameInstance()) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Get RemoteBreach inactive reason with vanilla-compatible LocKeys
+   *
+   * FUNCTIONALITY:
+   * - Validates RAM cost and returns appropriate LocKey
+   * - Checks position penalty and returns LocKey
+   * - Supports SetInactiveWithReason() for UI display
+   *
+   * RETURNS:
+   * - "" (empty) if canExecute=true
+   * - "LocKey#27398" if RAM insufficient (Vanilla: "RAM insufficient")
+   * - "LocKey#7021" if position penalty (Vanilla: "Network breach failure")
+   *
+   * ARCHITECTURE:
+   * - Priority-based validation (RAM > Position)
+   * - Output parameter pattern for dual return (Bool + String)
+   * - Integrates with BNConstants for LocKey management
+   *
+   * USAGE:
+   * ```redscript
+   * let canExecute: Bool;
+   * let reason: String = RemoteBreachLockUtils.GetRemoteBreachInactiveReason(
+   *   action, this, player, canExecute
+   * );
+   * action.SetInactiveWithReason(canExecute, reason);
+   * ```
+   */
+  public static func GetRemoteBreachInactiveReason(
+    action: ref<BaseScriptableAction>,
+    devicePS: ref<ScriptableDeviceComponentPS>,
+    player: ref<PlayerPuppet>,
+    out canExecute: Bool
+  ) -> String {
+    canExecute = true;
+
+    // Check 1: RAM insufficient (highest priority)
+    if !action.CanPayCost(player) {
+      canExecute = false;
+      return BNConstants.LOCKEY_RAM_INSUFFICIENT();
+    }
+
+    // Check 2: Breach failure penalty (only if enabled in settings)
+    if !BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
+      return "";
+    }
+
+    // Check 3: Timestamp-based lock (RemoteBreach failure penalty)
+    if RemoteBreachLockSystem.IsRemoteBreachLockedByTimestamp(devicePS, devicePS.GetGameInstance()) {
+      canExecute = false;
+      return BNConstants.LOCKEY_NO_NETWORK_ACCESS();
+    }
+
+    return "";
+  }
 }
 
-// ============================================================================
-// EnableJackInInteractionForAccessPoint - JackIn Interaction Re-enabling
-// ============================================================================
-//
-// PURPOSE:
-// Re-enables JackIn interaction on devices after unlock expiration.
-// Used when temporary unlock expires and device should be re-lockable.
-//
-// FUNCTIONALITY:
-// - Re-enables JackIn on MasterControllerPS devices (AccessPoint, Computer, Terminal)
-// - Restores ability to perform physical breach after remote breach expires
-// - Complements DisableJackInInteractionForAccessPoint for temporary unlock feature
-//
-// PARAMETERS:
-// - device: Device PS to re-enable JackIn on
-//
-// DESIGN DECISION:
-// - Uses vanilla flag restoration (SetHasPersonalLinkSlot(true))
-// - Allows re-breaching expired devices via physical JackIn
-// - Supports Computer/Terminal devices (they also support JackIn via MasterControllerPS)
-// ============================================================================
-@if(ModuleExists("HackingExtensions"))
-public static func EnableJackInInteractionForAccessPoint(device: ref<ScriptableDeviceComponentPS>) -> Void {
-    if !IsDefined(device) {
-        BNError("RemoteBreach", "Device PS is undefined - cannot enable JackIn");
-        return;
-    }
-
-    // Check if device is MasterControllerPS (base class for AccessPoint, Computer, Terminal)
-    // All MasterControllerPS devices support JackIn via m_hasPersonalLinkSlot
-    let masterController: ref<MasterControllerPS> = device as MasterControllerPS;
-    if !IsDefined(masterController) {
-        // Not a master controller device - no JackIn interaction to enable
-        return;
-    }
-
-    // Re-enable JackIn interaction
-    masterController.SetHasPersonalLinkSlot(true);
-}

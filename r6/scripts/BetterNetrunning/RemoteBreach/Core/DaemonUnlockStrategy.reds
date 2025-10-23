@@ -26,6 +26,7 @@ module BetterNetrunning.RemoteBreach.Core
 
 import BetterNetrunning.*
 import BetterNetrunning.Core.*
+import BetterNetrunning.Integration.*
 import BetterNetrunning.Utils.*
 
 // ==================== Strategy Interface ====================
@@ -182,15 +183,12 @@ public class DeviceUnlockStrategy extends IDaemonUnlockStrategy {
     unlockCameras: Bool,
     unlockTurrets: Bool
   ) -> Void {
-    let sharedPS: ref<SharedGameplayPS> = devicePS;
-    if !IsDefined(sharedPS) {
-      return;
-    }
+    // Use shared GetNetworkDevices() function for DRY principle
+    // excludeSource=false: Include source device in unlock (may have been locked previously)
+    let networkDevices: array<ref<ScriptableDeviceComponentPS>> = RemoteBreachLockSystem.GetNetworkDevices(devicePS, false);
 
-    let apControllers: array<ref<AccessPointControllerPS>> = sharedPS.GetAccessPoints();
-
-    // If no AccessPoints, use radial unlock instead
-    if ArraySize(apControllers) == 0 {
+    // If no network devices found, use radial unlock fallback
+    if ArraySize(networkDevices) == 0 {
       let deviceEntity: wref<GameObject> = devicePS.GetOwnerEntityWeak() as GameObject;
       let gameInstance: GameInstance = devicePS.GetGameInstance();
       RemoteBreachUtils.UnlockNearbyNetworkDevices(
@@ -208,22 +206,12 @@ public class DeviceUnlockStrategy extends IDaemonUnlockStrategy {
     // Get gameInstance once for all devices
     let gameInstance: GameInstance = devicePS.GetGameInstance();
 
-    // Unlock via AccessPoint children
+    // Apply unlock to all network devices
     let i: Int32 = 0;
-    while i < ArraySize(apControllers) {
-      let apPS: ref<AccessPointControllerPS> = apControllers[i];
-      if IsDefined(apPS) {
-        let networkDevices: array<ref<DeviceComponentPS>>;
-        apPS.GetChildren(networkDevices);
-
-        let j: Int32 = 0;
-        while j < ArraySize(networkDevices) {
-          let device: ref<DeviceComponentPS> = networkDevices[j];
-          if IsDefined(device) {
-            this.ApplyUnlockToDevice(device, gameInstance, unlockBasic, unlockNPCs, unlockCameras, unlockTurrets);
-          }
-          j += 1;
-        }
+    while i < ArraySize(networkDevices) {
+      let device: ref<ScriptableDeviceComponentPS> = networkDevices[i];
+      if IsDefined(device) {
+        this.ApplyUnlockToDevice(device, gameInstance, unlockBasic, unlockNPCs, unlockCameras, unlockTurrets);
       }
       i += 1;
     }
@@ -327,7 +315,7 @@ public class VehicleUnlockStrategy extends IDaemonUnlockStrategy {
     }
 
     let vehiclePos: Vector4 = vehicleEntity.GetWorldPosition();
-    let breachRadius: Float = DeviceTypeUtils.GetRadialBreachRange(gameInstance);
+    let breachRadius: Float = GetRadialBreachRange(gameInstance);
 
     let player: ref<PlayerPuppet> = GetPlayer(gameInstance);
     if !IsDefined(player) {

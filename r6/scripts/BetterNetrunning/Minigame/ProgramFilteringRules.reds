@@ -320,12 +320,12 @@ public struct DeviceTypesInRange {
  *
  * ARCHITECTURE:
  * - Network Scan: Uses AccessPointControllerPS.GetChildren()
- * - Radial Scan: Uses AccessPointControllerPS.GetRadialBreachTargets() when RadialBreach MOD exists
+ * - Radial Scan: Uses AccessPointControllerPS.GetAllNearbyObjects() when RadialBreach MOD exists
  * - Composed Method: Delegates to helper functions for each scan type
  *
  * BREACH RADIUS:
- * - Uses DeviceTypeUtils.GetRadialBreachRange() (default 50m, configurable)
- * - Syncs with RadialBreach MOD settings when installed
+ * - Configurable via RadialBreach MOD settings (default 25m, range 10-50m)
+ * - Falls back to 50m when RadialBreach not installed
  *
  * @param gameInstance - The game instance
  * @param breachPosition - The breach position (for logging)
@@ -479,19 +479,6 @@ private func ClassifyDeviceByType(
   else {
     result.hasBasicDevices = true;
   }
-}
-
-/*
- * Gets RadialBreach range from settings (or default 50m)
- *
- * NOTE: This function delegates to DeviceTypeUtils.GetRadialBreachRange()
- * for centralized range management across all modules
- *
- * @param gameInstance - The game instance
- * @return Breach range in meters
- */
-private func GetRadialBreachRange(gameInstance: GameInstance) -> Float {
-  return DeviceTypeUtils.GetRadialBreachRange(gameInstance);
 }
 
 // ==================== NETWORK CONNECTIVITY FILTERING (VANILLA RULE 5) ====================

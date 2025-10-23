@@ -18,6 +18,7 @@
 module BetterNetrunning.RadialUnlock
 
 import BetterNetrunning.Core.*
+import BetterNetrunning.Integration.*
 import BetterNetrunning.Utils.*
 import BetterNetrunningConfig.*
 
@@ -152,7 +153,7 @@ public func ShouldUnlockStandaloneDevice(device: ref<ScriptableDeviceComponentPS
 /// @param gameInstance Current game instance
 /// @return true if position is within breach radius of any recorded AccessPoint
 private func IsWithinBreachedAccessPointRadius(position: Vector4, player: ref<PlayerPuppet>, gameInstance: GameInstance) -> Bool {
-  let breachRadius: Float = DeviceTypeUtils.GetRadialBreachRange(gameInstance);
+  let breachRadius: Float = GetRadialBreachRange(gameInstance);
   let breachRadiusSq: Float = breachRadius * breachRadius; // Use squared distance for performance
 
   let idx: Int32 = 0;
@@ -268,7 +269,7 @@ public func GetLastBreachPosition(apPosition: Vector4, gameInstance: GameInstanc
 /// @return true if device is within breach radius of any recorded breach
 public func IsDeviceWithinBreachRadius(devicePosition: Vector4, gameInstance: GameInstance, opt maxDistance: Float) -> Bool {
   if maxDistance == 0.0 {
-    maxDistance = DeviceTypeUtils.GetRadialBreachRange(gameInstance);
+    maxDistance = GetRadialBreachRange(gameInstance);
   }
 
   let player: ref<PlayerPuppet> = GetPlayer(gameInstance);

@@ -29,10 +29,10 @@
 module BetterNetrunning.RadialUnlock
 
 import BetterNetrunning.Core.*
+import BetterNetrunning.Integration.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.RemoteBreach.Actions.*
-import BetterNetrunning.RemoteBreach.UI.*
 import BetterNetrunningConfig.*
 
 // NOTE: RadialBreach integration is handled by RadialBreachGating.reds
@@ -414,15 +414,6 @@ private func ApplyRemoteBreachDeviceUnlockWithStats(
 }
 
 // ============================================================================
-// ============================================================================
-// LOOT REWARD SYSTEM
-// ============================================================================
-
-// NOTE: ProcessRemoteBreachLoot() and related helpers consolidated (2025-10-12)
-// RATIONALE: Datamine reward processing moved to MinigameProgramUtils.reds (shared utility)
-// CURRENT IMPLEMENTATION: ProcessMinigamePrograms() in MinigameProgramUtils.reds
-
-// ============================================================================
 // RADIAL UNLOCK INTEGRATION
 // ============================================================================
 
@@ -471,9 +462,11 @@ private func UnlockNearbyStandaloneDevices(breachPosition: Vector4, unlockFlags:
   this.UnlockStandaloneDevices(nearbyDevices, unlockFlags);
 }
 
-// Helper: Find all devices within RadialBreach radius
+/// Finds all devices within RadialBreach radius using TargetingSystem
+/// Visibility: Public (used by RemoteBreachLockSystem for Option C implementation)
+/// Returns: Mixed array (network + standalone devices)
 @addMethod(PlayerPuppet)
-private func FindNearbyDevices(
+public func FindNearbyDevices(
   targetingSystem: ref<TargetingSystem>
 ) -> array<ref<ScriptableDeviceComponentPS>> {
   let devices: array<ref<ScriptableDeviceComponentPS>>;
@@ -482,7 +475,7 @@ private func FindNearbyDevices(
   let query: TargetSearchQuery;
   query.searchFilter = TSF_All(TSFMV.Obj_Device);
   query.testedSet = TargetingSet.Complete;
-  query.maxDistance = DeviceTypeUtils.GetRadialBreachRange(this.GetGame()); // Syncs with RadialBreach range
+  query.maxDistance = GetRadialBreachRange(this.GetGame()); // Syncs with RadialBreach range
   query.filterObjectByDistance = true;
   query.includeSecondaryTargets = false;
   query.ignoreInstigator = true;
@@ -509,6 +502,48 @@ private func FindNearbyDevices(
   }
 
   return devices;
+}
+
+/// Finds all vehicles within RadialBreach radius using TargetingSystem
+/// RATIONALE: TSF_All(TSFMV.Obj_Device) excludes VehicleObject, requires no searchFilter
+/// Visibility: Public (used by RemoteBreachLockSystem for failure penalty)
+/// Returns: Array of VehicleComponentPS (extends ScriptableDeviceComponentPS)
+@addMethod(PlayerPuppet)
+public func FindNearbyVehicles(
+  targetingSystem: ref<TargetingSystem>
+) -> array<ref<VehicleComponentPS>> {
+  let vehicles: array<ref<VehicleComponentPS>>;
+
+  // Setup vehicle search query (no searchFilter = all entity types)
+  let query: TargetSearchQuery;
+  query.testedSet = TargetingSet.Complete;
+  query.maxDistance = GetRadialBreachRange(this.GetGame());
+  query.filterObjectByDistance = true;
+  query.includeSecondaryTargets = false;
+  query.ignoreInstigator = true;
+
+  let parts: array<TS_TargetPartInfo>;
+  targetingSystem.GetTargetParts(this, query, parts);
+
+  // Extract VehicleComponentPS from target parts
+  let i: Int32 = 0;
+  while i < ArraySize(parts) {
+    let entity: wref<GameObject> = TS_TargetPartInfo.GetComponent(parts[i]).GetEntity() as GameObject;
+
+    if IsDefined(entity) {
+      let vehicle: ref<VehicleObject> = entity as VehicleObject;
+      if IsDefined(vehicle) {
+        let vehiclePS: ref<VehicleComponentPS> = vehicle.GetVehiclePS();
+        if IsDefined(vehiclePS) {
+          ArrayPush(vehicles, vehiclePS);
+        }
+      }
+    }
+
+    i += 1;
+  }
+
+  return vehicles;
 }
 
 // Helper: Filter for standalone devices and unlock them

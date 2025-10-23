@@ -20,6 +20,7 @@
 
 module BetterNetrunning.Core
 
+import BetterNetrunning.Integration.*
 import BetterNetrunning.Utils.*
 
 // Helper struct for targeting setup
@@ -79,7 +80,7 @@ public abstract class DeviceUnlockUtils {
         }
 
         let origin: Vector4 = deviceEntity.GetWorldPosition();
-        let radius: Float = DeviceTypeUtils.GetRadialBreachRange(gameInstance);
+        let radius: Float = GetRadialBreachRange(gameInstance);
 
         // Cast to AccessPointControllerPS for hybrid collection
         let accessPoint: ref<AccessPointControllerPS> = devicePS as AccessPointControllerPS;
@@ -142,7 +143,7 @@ public abstract class DeviceUnlockUtils {
         }
 
         let origin: Vector4 = deviceEntity.GetWorldPosition();
-        let radius: Float = DeviceTypeUtils.GetRadialBreachRange(gameInstance);
+        let radius: Float = GetRadialBreachRange(gameInstance);
 
         // Cast to AccessPointControllerPS for hybrid collection
         let accessPoint: ref<AccessPointControllerPS> = devicePS as AccessPointControllerPS;
@@ -296,7 +297,7 @@ public abstract class DeviceUnlockUtils {
     private static func SetupDeviceTargeting(sourceEntity: wref<GameObject>, gameInstance: GameInstance) -> TargetingSetup {
         let setup: TargetingSetup;
         setup.isValid = false;
-        setup.breachRadius = DeviceTypeUtils.GetRadialBreachRange(gameInstance);
+        setup.breachRadius = GetRadialBreachRange(gameInstance);
         setup.sourcePos = sourceEntity.GetWorldPosition();
 
         setup.player = GetPlayer(gameInstance);
@@ -332,7 +333,7 @@ public abstract class DeviceUnlockUtils {
         }
 
         setup.sourcePos = deviceEntity.GetWorldPosition();
-        setup.breachRadius = DeviceTypeUtils.GetRadialBreachRange(gameInstance);
+        setup.breachRadius = GetRadialBreachRange(gameInstance);
 
         setup.player = GetPlayer(gameInstance);
         if !IsDefined(setup.player) {
