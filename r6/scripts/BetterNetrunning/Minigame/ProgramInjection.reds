@@ -2,6 +2,7 @@ module BetterNetrunning.Minigame
 
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Utils.*
 
 /*
@@ -16,12 +17,12 @@ import BetterNetrunning.Utils.*
  * FUNCTIONALITY:
  * - Adds unlock programs for un-breached device types
  * - Determines appropriate programs based on breach point (Access Point, Computer, Backdoor, NPC)
- * - Supports remote breach integration (CustomHackingSystem)
+ * - Supports RemoteBreach quickhack integration
  * - Respects progressive unlock state (m_betterNetrunningBreached* flags)
  *
  * BREACH POINT TYPES:
  * - Access Points: Full network access (all unlock programs)
- * - Computers: Full network access (treated same as Access Points via Remote Breach)
+ * - Computers: Full network access (treated same as Access Points via RemoteBreach)
  * - Backdoor Devices: Limited access (Root + Camera programs only)
  * - Netrunner NPCs: Full network access (all systems)
  * - Regular NPCs: Limited access (NPC programs only when unconscious)
@@ -79,13 +80,12 @@ public final func InjectBetterNetrunningPrograms(programs: script_ref<array<Mini
   // Check if the NPC is a netrunner (full network access)
   let isNetrunner: Bool = isUnconsciousNPC && (this.m_entity as ScriptedPuppet).IsNetrunnerPuppet();
 
-  // CRITICAL FIX: Remote breach support (CustomHackingSystem integration)
-  // Remote breach should behave like Access Point breach (full network access)
+  // Remote breach support: Behaves like Access Point breach (full network access)
   // PRIORITY: Check isComputer BEFORE isBackdoor to avoid misclassification
   let devicePS: ref<ScriptableDeviceComponentPS> = (this.m_entity as Device).GetDevicePS();
   let isComputer: Bool = IsDefined(devicePS) && DaemonFilterUtils.IsComputer(devicePS);
 
-  // CRITICAL FIX: Backdoor check must EXCLUDE Computers
+  // CRITICAL: Backdoor check must EXCLUDE Computers
   // Computers can be connected to backdoor network, but should NOT be treated as backdoor breach points
   let isBackdoor: Bool = !isAccessPoint && !isComputer && IsDefined(this.m_entity as Device) && (this.m_entity as Device).GetDevicePS().IsConnectedToBackdoorDevice();
 

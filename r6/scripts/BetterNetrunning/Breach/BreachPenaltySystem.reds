@@ -33,7 +33,7 @@
 //
 // DEPENDENCIES:
 // - BetterNetrunningConfig: Settings control (Enabled, LockDuration)
-// - Common/TimeUtils: Timestamp management
+// - Core/DeviceUnlockUtils: Timestamp management
 // - Breach/BreachLockSystem: Lock checking infrastructure
 // - Integration/TracePositionOverhaulGating: Position reveal trace
 // ============================================================================
@@ -41,10 +41,10 @@
 module BetterNetrunning.Breach
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.Integration.*
-import BetterNetrunning.RemoteBreach.Common.*
-import BetterNetrunning.RemoteBreach.Core.*
+import BetterNetrunning.RemoteBreach.*
 
 // ============================================================================
 // Breach Type Enum
@@ -299,33 +299,45 @@ private func IsRemoteBreachingAnyDevice() -> Bool {
     return false;
   }
 
+  // Check 0: RemoteBreach (RemoteBreachStateSystem)
+  let remoteBreachSystem: ref<RemoteBreachStateSystem> = container.Get(
+    n"BetterNetrunning.RemoteBreach.RemoteBreachStateSystem"
+  ) as RemoteBreachStateSystem;
+  if IsDefined(remoteBreachSystem) && remoteBreachSystem.HasPendingRemoteBreach() {
+    let target: wref<ScriptableDeviceComponentPS> = remoteBreachSystem.GetRemoteBreachTarget();
+    if IsDefined(target) && target == this {
+      return true;
+    }
+  }
+
   // Check 1: Computer RemoteBreach (RemoteBreachStateSystem)
   let computerPS: ref<ComputerControllerPS> = this as ComputerControllerPS;
   if IsDefined(computerPS) {
     let computerSystem: ref<RemoteBreachStateSystem> = container.Get(BNConstants.CLASS_REMOTE_BREACH_STATE_SYSTEM()) as RemoteBreachStateSystem;
     if IsDefined(computerSystem) {
-      let currentComputer: wref<ComputerControllerPS> = computerSystem.GetCurrentComputer();
+      let currentComputer: wref<ComputerControllerPS> = computerSystem.GetRemoteBreachTarget() as ComputerControllerPS;
       if IsDefined(currentComputer) && currentComputer == computerPS {
         return true;
       }
     }
   }
 
-  // Check 2: Terminal/Camera/Turret/Other RemoteBreach (DeviceRemoteBreachStateSystem)
-  let deviceSystem: ref<DeviceRemoteBreachStateSystem> = container.Get(BNConstants.CLASS_DEVICE_REMOTE_BREACH_STATE_SYSTEM()) as DeviceRemoteBreachStateSystem;
+  // Check 2: Terminal/Camera/Turret/Other RemoteBreach (RemoteBreachStateSystem)
+  let deviceSystem: ref<RemoteBreachStateSystem> = container.Get(BNConstants.CLASS_DEVICE_REMOTE_BREACH_STATE_SYSTEM()) as RemoteBreachStateSystem;
   if IsDefined(deviceSystem) {
-    let currentDevice: wref<ScriptableDeviceComponentPS> = deviceSystem.GetCurrentDevice();
+    let currentDevice: wref<ScriptableDeviceComponentPS> = deviceSystem.GetRemoteBreachTarget();
     if IsDefined(currentDevice) && currentDevice == this {
       return true;
     }
   }
 
-  // Check 3: Vehicle RemoteBreach (VehicleRemoteBreachStateSystem)
+  // Check 3: Vehicle RemoteBreach
+  // ARCHITECTURE: Uses unified RemoteBreachStateSystem (VehicleComponentPS extends ScriptableDeviceComponentPS)
   let vehiclePS: ref<VehicleComponentPS> = this as VehicleComponentPS;
   if IsDefined(vehiclePS) {
-    let vehicleSystem: ref<VehicleRemoteBreachStateSystem> = container.Get(BNConstants.CLASS_VEHICLE_REMOTE_BREACH_STATE_SYSTEM()) as VehicleRemoteBreachStateSystem;
-    if IsDefined(vehicleSystem) {
-      let currentVehicle: wref<VehicleComponentPS> = vehicleSystem.GetCurrentVehicle();
+    let deviceSystem: ref<RemoteBreachStateSystem> = container.Get(BNConstants.CLASS_DEVICE_REMOTE_BREACH_STATE_SYSTEM()) as RemoteBreachStateSystem;
+    if IsDefined(deviceSystem) {
+      let currentVehicle: wref<VehicleComponentPS> = deviceSystem.GetRemoteBreachTarget() as VehicleComponentPS;
       if IsDefined(currentVehicle) && currentVehicle == vehiclePS {
         return true;
       }
@@ -409,7 +421,7 @@ public static func ApplyFailurePenalty(
     // AP: record device timestamp for specific device lock
     if RecordBreachFailureTimestamp(devicePS, gameInstance) {
       // Disable JackIn interaction immediately after recording lock
-      DeviceInteractionUtils.DisableJackInInteractionForAccessPoint(devicePS);
+      BreachLockUtils.SetJackInInteractionState(devicePS, false);
       BNDebug("BreachPenalty", "Disabled JackIn interaction for failed AP breach");
     }
   }
@@ -521,7 +533,7 @@ private static func RecordBreachFailureTimestamp(
     return false;
   }
 
-  let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
+  let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(gameInstance);
   sharedPS.m_betterNetrunningAPBreachFailedTimestamp = currentTime;
   BNDebug("BreachPenalty", "Recorded AP breach failure timestamp: " + ToString(currentTime));
   return true;
@@ -558,7 +570,7 @@ private static func RecordBreachFailureTimestamp(
     return false;
   }
 
-  let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
+  let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(gameInstance);
   npcPS.m_betterNetrunningNPCBreachFailedTimestamp = currentTime;
   BNDebug("BreachPenalty", "Recorded NPC breach failure timestamp: " + ToString(currentTime));
   return true;

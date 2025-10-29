@@ -28,10 +28,11 @@
 // - DeviceUnlockUtils: Radial unlock execution
 // -----------------------------------------------------------------------------
 
-module BetterNetrunning.Utils
+module BetterNetrunning.Logging
 
 import BetterNetrunning.*
 import BetterNetrunning.Core.*
+import BetterNetrunning.Utils.*
 
 public abstract class BreachStatisticsCollector {
     // ============================================================================

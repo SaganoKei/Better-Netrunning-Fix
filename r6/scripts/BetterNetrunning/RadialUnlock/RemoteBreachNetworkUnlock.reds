@@ -1,8 +1,8 @@
 // ============================================================================
 // BetterNetrunning - RemoteBreach Network Unlock Integration
 // ============================================================================
-// Extends RemoteBreach (CustomHackingSystem) to apply network effects similar
-// to AccessPoint breach. Provides target device unlock + Radial Unlock support.
+// Extends RemoteBreach quickhack to apply network effects similar to
+// AccessPoint breach. Provides target device unlock + Radial Unlock support.
 //
 // FUNCTIONALITY:
 // - Target device unlock: Immediate unlock of breached device
@@ -29,10 +29,10 @@
 module BetterNetrunning.RadialUnlock
 
 import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Integration.*
 import BetterNetrunning.Utils.*
-import BetterNetrunning.RemoteBreach.Core.*
-import BetterNetrunning.RemoteBreach.Actions.*
+import BetterNetrunning.RemoteBreach.*
 import BetterNetrunningConfig.*
 
 // NOTE: RadialBreach integration is handled by RadialBreachGating.reds
@@ -91,8 +91,8 @@ private func ApplyUnconsciousNPCNetworkUnlockWithStats(
         let sharedPS: ref<SharedGameplayPS> = device as SharedGameplayPS;
         if IsDefined(sharedPS) {
           // Apply device-type-specific unlock timestamp
-          let currentTime: Float = TimeUtils.GetCurrentTimestamp(this.GetGame());
-          TimeUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
+          let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(this.GetGame());
+          DeviceUnlockUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
 
           // DEBUG: Log timestamp application
           BNTrace("UnconsciousNPCUnlock", "Applied unlock timestamp: " +
@@ -131,28 +131,26 @@ private func IsRemoteBreachMinigame() -> Bool {
   // Check Computer RemoteBreach
   let computerSystem: ref<RemoteBreachStateSystem> = container.Get(BNConstants.CLASS_REMOTE_BREACH_STATE_SYSTEM()) as RemoteBreachStateSystem;
   if IsDefined(computerSystem) {
-    let currentComputer: wref<ComputerControllerPS> = computerSystem.GetCurrentComputer();
+    let currentComputer: wref<ComputerControllerPS> = computerSystem.GetRemoteBreachTarget() as ComputerControllerPS;
     if IsDefined(currentComputer) {
       return true;
     }
   }
 
   // Check Device RemoteBreach
-  let deviceSystem: ref<DeviceRemoteBreachStateSystem> = container.Get(BNConstants.CLASS_DEVICE_REMOTE_BREACH_STATE_SYSTEM()) as DeviceRemoteBreachStateSystem;
+  let deviceSystem: ref<RemoteBreachStateSystem> = container.Get(BNConstants.CLASS_DEVICE_REMOTE_BREACH_STATE_SYSTEM()) as RemoteBreachStateSystem;
   if IsDefined(deviceSystem) {
-    let currentDevice: wref<ScriptableDeviceComponentPS> = deviceSystem.GetCurrentDevice();
+    let currentDevice: wref<ScriptableDeviceComponentPS> = deviceSystem.GetRemoteBreachTarget();
     if IsDefined(currentDevice) {
       return true;
     }
   }
 
   // Check Vehicle RemoteBreach
-  let vehicleSystem: ref<VehicleRemoteBreachStateSystem> = container.Get(BNConstants.CLASS_VEHICLE_REMOTE_BREACH_STATE_SYSTEM()) as VehicleRemoteBreachStateSystem;
-  if IsDefined(vehicleSystem) {
-    let currentVehicle: wref<VehicleComponentPS> = vehicleSystem.GetCurrentVehicle();
-    if IsDefined(currentVehicle) {
-      return true;
-    }
+  // ARCHITECTURE: Uses unified RemoteBreachStateSystem (VehicleComponentPS extends ScriptableDeviceComponentPS)
+  let currentVehicle: wref<VehicleComponentPS> = deviceSystem.GetRemoteBreachTarget() as VehicleComponentPS;
+  if IsDefined(currentVehicle) {
+    return true;
   }
 
   return false;
@@ -218,8 +216,8 @@ private func ApplyRemoteBreachNetworkUnlockWithStats(
           let sharedPS: ref<SharedGameplayPS> = scriptableDevice;
           if IsDefined(sharedPS) {
             // Apply device-type-specific unlock timestamp
-            let currentTime: Float = TimeUtils.GetCurrentTimestamp(this.GetGame());
-            TimeUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
+            let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(this.GetGame());
+            DeviceUnlockUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
           }
         }
       }
@@ -274,28 +272,26 @@ private func GetRemoteBreachTargetDevice() -> ref<ScriptableDeviceComponentPS> {
   // Try Computer RemoteBreach
   let computerSystem: ref<RemoteBreachStateSystem> = container.Get(BNConstants.CLASS_REMOTE_BREACH_STATE_SYSTEM()) as RemoteBreachStateSystem;
   if IsDefined(computerSystem) {
-    let currentComputer: wref<ComputerControllerPS> = computerSystem.GetCurrentComputer();
+    let currentComputer: wref<ComputerControllerPS> = computerSystem.GetRemoteBreachTarget() as ComputerControllerPS;
     if IsDefined(currentComputer) {
       return currentComputer;
     }
   }
 
   // Try Device RemoteBreach
-  let deviceSystem: ref<DeviceRemoteBreachStateSystem> = container.Get(BNConstants.CLASS_DEVICE_REMOTE_BREACH_STATE_SYSTEM()) as DeviceRemoteBreachStateSystem;
+  let deviceSystem: ref<RemoteBreachStateSystem> = container.Get(BNConstants.CLASS_DEVICE_REMOTE_BREACH_STATE_SYSTEM()) as RemoteBreachStateSystem;
   if IsDefined(deviceSystem) {
-    let currentDevice: wref<ScriptableDeviceComponentPS> = deviceSystem.GetCurrentDevice();
+    let currentDevice: wref<ScriptableDeviceComponentPS> = deviceSystem.GetRemoteBreachTarget();
     if IsDefined(currentDevice) {
       return currentDevice;
     }
   }
 
   // Try Vehicle RemoteBreach
-  let vehicleSystem: ref<VehicleRemoteBreachStateSystem> = container.Get(BNConstants.CLASS_VEHICLE_REMOTE_BREACH_STATE_SYSTEM()) as VehicleRemoteBreachStateSystem;
-  if IsDefined(vehicleSystem) {
-    let currentVehicle: wref<VehicleComponentPS> = vehicleSystem.GetCurrentVehicle();
-    if IsDefined(currentVehicle) {
-      return currentVehicle;
-    }
+  // ARCHITECTURE: Uses unified RemoteBreachStateSystem (VehicleComponentPS extends ScriptableDeviceComponentPS)
+  let currentVehicle: wref<VehicleComponentPS> = deviceSystem.GetRemoteBreachTarget() as VehicleComponentPS;
+  if IsDefined(currentVehicle) {
+    return currentVehicle;
   }
 
   return null;
@@ -389,8 +385,8 @@ private func ApplyRemoteBreachDeviceUnlockWithStats(
   dummyAPPS.QueuePSEvent(targetDevice, dummyAPPS.ActionSetExposeQuickHacks());
 
   // Set breach timestamp
-  let currentTime: Float = TimeUtils.GetCurrentTimestamp(this.GetGame());
-  TimeUtils.SetDeviceUnlockTimestamp(targetDevice, deviceType, currentTime);
+  let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(this.GetGame());
+  DeviceUnlockUtils.SetDeviceUnlockTimestamp(targetDevice, deviceType, currentTime);
 
   // Set breached subnet event (propagate unlock timestamps to device)
   let setBreachedSubnetEvent: ref<SetBreachedSubnet> = new SetBreachedSubnet();
@@ -595,8 +591,8 @@ private func UnlockSingleDevice(
   }
 
   // Prepare timestamp and set device unlock
-  let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
-  TimeUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
+  let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(gameInstance);
+  DeviceUnlockUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
 
   return true;
 }

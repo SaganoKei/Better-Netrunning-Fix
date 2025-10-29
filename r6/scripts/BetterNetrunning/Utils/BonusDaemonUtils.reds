@@ -29,6 +29,7 @@
 module BetterNetrunning.Utils
 
 import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Utils.DaemonFilterUtils
 import BetterNetrunningConfig.*
 
@@ -51,14 +52,12 @@ public func ApplyBonusDaemons(
 ) -> Void {
   let successCount: Int32 = ArraySize(Deref(activePrograms));
 
-  if NotEquals(logContext, "") {
-    // Log all programs BEFORE bonus daemon processing with readable names
-    let i: Int32 = 0;
-    while i < successCount {
-      let programName: String = DaemonFilterUtils.GetDaemonDisplayName(Deref(activePrograms)[i]);
-      BNTrace(logContext, "[BEFORE] Program " + ToString(i + 1) + ": " + programName + " (" + TDBID.ToStringDEBUG(Deref(activePrograms)[i]) + ")");
-      i += 1;
-    }
+  // Log all programs BEFORE bonus daemon processing with readable names
+  let i: Int32 = 0;
+  while i < successCount {
+    let programName: String = DaemonFilterUtils.GetDaemonDisplayName(Deref(activePrograms)[i]);
+    BNTrace(logContext, "[BEFORE] Program " + ToString(i + 1) + ": " + programName + " (" + TDBID.ToStringDEBUG(Deref(activePrograms)[i]) + ")");
+    i += 1;
   }
 
   if successCount == 0 {
@@ -79,7 +78,7 @@ public func ApplyBonusDaemons(
       minigameBB.GetVariant(GetAllBlackboardDefs().HackingMinigame.Entity)
     );
 
-    if NotEquals(logContext, "") && IsDefined(targetEntity) {
+    if IsDefined(targetEntity) {
       BNTrace(logContext, "[PING] Found target entity: " + NameToString(targetEntity.GetClassName()));
 
       // Check if target is NPC or Device
@@ -107,9 +106,7 @@ public func ApplyBonusDaemons(
     let nonDatamineCount: Int32 = CountNonDataminePrograms(Deref(activePrograms));
     let hasDatamine: Bool = HasAnyDatamineProgram(Deref(activePrograms));
 
-    if NotEquals(logContext, "") {
-      BNTrace(logContext, "Non-Datamine daemon count: " + ToString(nonDatamineCount) + ", Has Datamine: " + ToString(hasDatamine));
-    }
+    BNTrace(logContext, "Non-Datamine daemon count: " + ToString(nonDatamineCount) + ", Has Datamine: " + ToString(hasDatamine));
 
     if nonDatamineCount > 0 && !hasDatamine {
       let datamineToAdd: TweakDBID;
@@ -128,23 +125,19 @@ public func ApplyBonusDaemons(
 
       ArrayPush(Deref(activePrograms), datamineToAdd);
 
-      if NotEquals(logContext, "") {
-        BNDebug(logContext, "Bonus Daemon: Auto-added " + logMessage);
-      }
+      BNDebug(logContext, "Bonus Daemon: Auto-added " + logMessage);
     }
   }
 
   // Log all programs AFTER bonus daemon processing
-  if NotEquals(logContext, "") {
-    let finalCount: Int32 = ArraySize(Deref(activePrograms));
-    BNTrace(logContext, "Final program count: " + ToString(finalCount));
+  let finalCount: Int32 = ArraySize(Deref(activePrograms));
+  BNTrace(logContext, "Final program count: " + ToString(finalCount));
 
-    let i: Int32 = 0;
-    while i < finalCount {
-      let programName: String = DaemonFilterUtils.GetDaemonDisplayName(Deref(activePrograms)[i]);
-      BNTrace(logContext, "[AFTER] Program " + ToString(i + 1) + ": " + programName + " (" + TDBID.ToStringDEBUG(Deref(activePrograms)[i]) + ")");
-      i += 1;
-    }
+  let i: Int32 = 0;
+  while i < finalCount {
+    let programName: String = DaemonFilterUtils.GetDaemonDisplayName(Deref(activePrograms)[i]);
+    BNTrace(logContext, "[AFTER] Program " + ToString(i + 1) + ": " + programName + " (" + TDBID.ToStringDEBUG(Deref(activePrograms)[i]) + ")");
+    i += 1;
   }
 }
 
@@ -211,23 +204,17 @@ public func HasAnyDatamineProgram(programs: array<TweakDBID>) -> Bool {
 // Works for all breach types: Access Point, Unconscious NPC, RemoteBreach (Computer/Device/Vehicle)
 public func ExecutePingQuickHackOnTarget(targetEntity: wref<Entity>, gi: GameInstance, opt logContext: String) -> Void {
   if !IsDefined(targetEntity) {
-    if NotEquals(logContext, "") {
-      BNError(logContext, "[PING] Target entity not defined");
-    }
+    BNError(logContext, "[PING] Target entity not defined");
     return;
   }
 
   // DEBUG: Log target entity details
-  if NotEquals(logContext, "") {
-    BNTrace(logContext, "[PING] Target entity class: " + NameToString(targetEntity.GetClassName()) + ", ID: " + EntityID.ToDebugString(targetEntity.GetEntityID()));
-  }
+  BNTrace(logContext, "[PING] Target entity class: " + NameToString(targetEntity.GetClassName()) + ", ID: " + EntityID.ToDebugString(targetEntity.GetEntityID()));
 
   // Get player for executor context
   let player: ref<PlayerPuppet> = GetPlayer(gi);
   if !IsDefined(player) {
-    if NotEquals(logContext, "") {
-      BNError(logContext, "[PING] Player not found");
-    }
+    BNError(logContext, "[PING] Player not found");
     return;
   }
 
@@ -236,19 +223,13 @@ public func ExecutePingQuickHackOnTarget(targetEntity: wref<Entity>, gi: GameIns
   let targetNPC: ref<ScriptedPuppet> = targetEntity as ScriptedPuppet;
 
   if IsDefined(targetDevice) {
-    if NotEquals(logContext, "") {
-      BNDebug(logContext, "[PING] Executing PING on Device: " + NameToString(targetDevice.GetClassName()));
-    }
+    BNDebug(logContext, "[PING] Executing PING on Device: " + NameToString(targetDevice.GetClassName()));
     ExecutePingQuickHackOnDevice(targetDevice, player, logContext);
   } else if IsDefined(targetNPC) {
-    if NotEquals(logContext, "") {
-      BNDebug(logContext, "[PING] Executing PING on NPC: " + NameToString(targetNPC.GetClassName()));
-    }
+    BNDebug(logContext, "[PING] Executing PING on NPC: " + NameToString(targetNPC.GetClassName()));
     ExecutePingQuickHackOnNPC(targetNPC, player, logContext);
   } else {
-    if NotEquals(logContext, "") {
-      BNError(logContext, "[PING] Unknown target type (not Device or NPC)");
-    }
+    BNError(logContext, "[PING] Unknown target type (not Device or NPC)");
   }
 }
 
@@ -256,18 +237,14 @@ public func ExecutePingQuickHackOnTarget(targetEntity: wref<Entity>, gi: GameIns
 private func ExecutePingQuickHackOnDevice(targetDevice: ref<Device>, player: ref<PlayerPuppet>, opt logContext: String) -> Void {
   let devicePS: ref<ScriptableDeviceComponentPS> = targetDevice.GetDevicePS();
   if !IsDefined(devicePS) {
-    if NotEquals(logContext, "") {
-      BNError(logContext, "[PING] Device PS not found");
-    }
+    BNError(logContext, "[PING] Device PS not found");
     return;
   }
 
   // Get PING action from device
   let pingAction: ref<ScriptableDeviceAction> = devicePS.ActionPing();
   if !IsDefined(pingAction) {
-    if NotEquals(logContext, "") {
-      BNDebug(logContext, "[PING] PING quickhack not available on this device");
-    }
+    BNDebug(logContext, "[PING] PING quickhack not available on this device");
     return;
   }
 
@@ -278,32 +255,26 @@ private func ExecutePingQuickHackOnDevice(targetDevice: ref<Device>, player: ref
   // Execute PING action via ProcessRPGAction (Vanilla-compliant flow)
   let gi: GameInstance = targetDevice.GetGame();
 
-  if NotEquals(logContext, "") {
-    BNTrace(logContext, "[PING] Executing auto-PING on device via ProcessRPGAction: " + NameToString(targetDevice.GetClassName()));
-  }
+  BNTrace(logContext, "[PING] Executing auto-PING on device via ProcessRPGAction: " + NameToString(targetDevice.GetClassName()));
 
   // Enable cost skipping for auto-PING (free execution)
   // WARNING: ProcessRPGAction still grants QuickHack experience (Vanilla API limitation)
   pingAction.SetCanSkipPayCost(true);
 
   // Execute via ProcessRPGAction (complete Vanilla flow)
-  // For Devices, this should trigger OnActionPing() → PulseNetwork() → RevealNetworkGridOnPulse
+  // For Devices, this should trigger OnActionPing() ↁEPulseNetwork() ↁERevealNetworkGridOnPulse
   // Therefore, manual RevealNetworkGridOnPulse is likely redundant for Devices (but harmless)
   // NOTE: Device does not have GetGameplayRoleComponent(), so we call ProcessRPGAction without it
   pingAction.ProcessRPGAction(gi);
 
-  if NotEquals(logContext, "") {
-    BNDebug(logContext, "[PING] Auto-PING completed on device");
-  }
+  BNDebug(logContext, "[PING] Auto-PING completed on device");
 }
 
 // Execute PING quickhack on NPC (Unconscious NPC breach)
 private func ExecutePingQuickHackOnNPC(targetNPC: ref<ScriptedPuppet>, player: ref<PlayerPuppet>, opt logContext: String) -> Void {
   let npcPS: ref<ScriptedPuppetPS> = targetNPC.GetPuppetPS();
   if !IsDefined(npcPS) {
-    if NotEquals(logContext, "") {
-      BNError(logContext, "[PING] NPC PS not found");
-    }
+    BNError(logContext, "[PING] NPC PS not found");
     return;
   }
 
@@ -322,32 +293,24 @@ private func ExecutePingQuickHackOnNPC(targetNPC: ref<ScriptedPuppet>, player: r
   targetNPC.GetRecord().ObjectActions(actionRecords);
   npcPS.GetAllChoices(actionRecords, context, puppetActions);
 
-  if NotEquals(logContext, "") {
-    BNTrace(logContext, "[PING] Total puppet actions available: " + ToString(ArraySize(puppetActions)));
-  }
+  BNTrace(logContext, "[PING] Total puppet actions available: " + ToString(ArraySize(puppetActions)));
 
   // Find PING action
   let pingAction: ref<PuppetAction>;
   let i: Int32 = 0;
   while i < ArraySize(puppetActions) {
-    if NotEquals(logContext, "") {
-      BNTrace(logContext, "[PING] Checking action " + ToString(i) + ": " + TDBID.ToStringDEBUG(puppetActions[i].GetObjectActionID()));
-    }
+    BNTrace(logContext, "[PING] Checking action " + ToString(i) + ": " + TDBID.ToStringDEBUG(puppetActions[i].GetObjectActionID()));
 
     if Equals(puppetActions[i].GetObjectActionID(), t"QuickHack.BasePingHack") {
       pingAction = puppetActions[i];
-      if NotEquals(logContext, "") {
-        BNTrace(logContext, "[PING] Found BasePingHack action!");
-      }
+      BNTrace(logContext, "[PING] Found BasePingHack action!");
       break;
     }
     i += 1;
   }
 
   if !IsDefined(pingAction) {
-    if NotEquals(logContext, "") {
-      BNDebug(logContext, "[PING] PING quickhack not available on this NPC");
-    }
+    BNDebug(logContext, "[PING] PING quickhack not available on this NPC");
     return;
   }
 
@@ -358,9 +321,7 @@ private func ExecutePingQuickHackOnNPC(targetNPC: ref<ScriptedPuppet>, player: r
   // Execute PING action via ProcessRPGAction (Vanilla-compliant flow)
   let gi: GameInstance = targetNPC.GetGame();
 
-  if NotEquals(logContext, "") {
-    BNTrace(logContext, "[PING] Executing auto-PING via ProcessRPGAction - Target: " + ToString(targetNPC.GetEntityID()) + ", Action: " + TDBID.ToStringDEBUG(pingAction.GetObjectActionID()));
-  }
+  BNTrace(logContext, "[PING] Executing auto-PING via ProcessRPGAction - Target: " + ToString(targetNPC.GetEntityID()) + ", Action: " + TDBID.ToStringDEBUG(pingAction.GetObjectActionID()));
 
   // Enable cost skipping for auto-PING (free execution)
   // NOTE: SetCanSkipPayCost(true) prevents RAM consumption
@@ -379,7 +340,5 @@ private func ExecutePingQuickHackOnNPC(targetNPC: ref<ScriptedPuppet>, player: r
   //   6. Network reveal (via internal RevealNetworkGridOnPulse)
   pingAction.ProcessRPGAction(gi, targetNPC.GetGameplayRoleComponent());
 
-  if NotEquals(logContext, "") {
-    BNDebug(logContext, "[PING] Auto-PING completed via ProcessRPGAction");
-  }
+  BNDebug(logContext, "[PING] Auto-PING completed via ProcessRPGAction");
 }

@@ -5,8 +5,7 @@ import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.Systems.*
 import BetterNetrunning.Breach.*
-import BetterNetrunning.RemoteBreach.Core.*
-import BetterNetrunning.RemoteBreach.Actions.*
+import BetterNetrunning.RemoteBreach.*
 import BetterNetrunning.RadialUnlock.*
 
 
@@ -33,37 +32,6 @@ public final func GetRemoteActions(out outActions: array<ref<DeviceAction>>, con
 
   // Get quickhack actions from device
   this.GetQuickHackActions(outActions, context);
-
-  // CRITICAL FIX: Some devices (Jukebox, NetrunnerChair, DisposalDevice) override GetQuickHackActions()
-  // without calling wrappedMethod(), causing TweakDB RemoteBreach to not be removed.
-  // Remove ALL vanilla RemoteBreach actions here as a final cleanup step.
-  let i: Int32 = ArraySize(outActions) - 1;
-  let hasCustomRemoteBreach: Bool = false;
-
-  while i >= 0 {
-    let action: ref<DeviceAction> = outActions[i];
-    // Use constant instead of magic string
-    if IsDefined(action) && Equals(action.actionName, BNConstants.ACTION_REMOTE_BREACH()) {
-      let className: CName = action.GetClassName();
-
-      if IsCustomRemoteBreachAction(className) {
-        hasCustomRemoteBreach = true;
-      } else {
-        ArrayErase(outActions, i);
-      }
-    }
-    i -= 1;
-  }
-
-  // CRITICAL FIX: Add Custom RemoteBreach if not present (for devices that don't call wrappedMethod)
-  // This ensures NetrunnerChair, Jukebox, DisposalDevice, TV, etc. get Custom RemoteBreach
-  if !hasCustomRemoteBreach && !BetterNetrunningSettings.UnlockIfNoAccessPoint() {
-    this.TryAddMissingCustomRemoteBreachWrapper(outActions);
-  }
-
-  // NEW REQUIREMENT: Remove Custom RemoteBreach if device is already unlocked (except Vehicles)
-  // Vehicles always show RemoteBreach regardless of unlock state
-  this.RemoveCustomRemoteBreachIfUnlocked(outActions);
 
   // Check if network has no access points (unsecured network)
   let sharedPS: ref<SharedGameplayPS> = this;
@@ -92,8 +60,6 @@ public final func GetRemoteActions(out outActions: array<ref<DeviceAction>>, con
     } else {
       ScriptableDeviceComponentPS.SetActionsInactiveAll(outActions, LocKeyToString(BNConstants.LOCKEY_QUICKHACKS_LOCKED()), BNConstants.ACTION_REMOTE_BREACH());
     }
-    // Sequencer Lock: Apply RAM check to RemoteBreach (SetActionsInactiveAll doesn't check RAM)
-    RemoteBreachRAMUtils.CheckAndLockRemoteBreachRAM(outActions);
   } else if !BetterNetrunningSettings.EnableClassicMode() && !isUnsecuredNetwork {
     // Progressive Mode: apply device-type-specific unlock restrictions (unless unsecured network)
     this.SetActionsInactiveUnbreached(outActions);
@@ -105,7 +71,6 @@ public final func GetRemoteActions(out outActions: array<ref<DeviceAction>>, con
 /*
  * Allows quickhack menu to open when devices are not connected to an access point
  * VANILLA DIFF: Simplified from branching logic - equivalent to vanilla when QuickHacksExposedByDefault() is true
- * Removes the IsConnectedToBackdoorDevice() check that vanilla uses when QuickHacksExposedByDefault() is false
  */
 @replaceMethod(Device)
 public const func CanRevealRemoteActionsWheel() -> Bool {

@@ -31,6 +31,7 @@
 module BetterNetrunning.Integration
 
 import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Utils.*
 
 // Conditional import: Only load RadialBreach settings when MOD exists
@@ -162,11 +163,11 @@ private final func ProcessSingleDeviceUnlock(device: ref<DeviceComponentPS>, unl
 
   // REMOVED: ProcessMinigameNetworkActions(device)
   // REASON: Vanilla ProcessMinigameNetworkActions() unlocks ALL devices without checking unlockFlags
-  // This caused Problem ② - vehicles were re-unlocked after RollbackIncorrectVanillaUnlocks()
+  // This caused vehicles to be re-unlocked after RollbackIncorrectVanillaUnlocks()
   // ApplyDeviceTypeUnlock() already handles device unlocking with proper flag checks
 
   // Queue SetBreachedSubnet event with timestamps
-  let currentTime: Float = TimeUtils.GetCurrentTimestamp(this.GetGameInstance());
+  let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(this.GetGameInstance());
 
   let evt: ref<SetBreachedSubnet> = new SetBreachedSubnet();
   evt.unlockTimestampBasic = unlockFlags.unlockBasic ? currentTime : 0.0;
@@ -211,8 +212,8 @@ private final func ApplyRemoteBreachDeviceUnlockInternal(
   dummyAPPS.QueuePSEvent(device, dummyAPPS.ActionSetExposeQuickHacks());
 
   // Set breach timestamp (device type-specific)
-  let currentTime: Float = TimeUtils.GetCurrentTimestamp(this.GetGame());
-  TimeUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
+  let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(this.GetGame());
+  DeviceUnlockUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
 
   // Set breached subnet event with timestamps
   let setBreachedSubnetEvent: ref<SetBreachedSubnet> = new SetBreachedSubnet();

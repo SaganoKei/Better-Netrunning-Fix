@@ -23,23 +23,6 @@ import BetterNetrunning.Integration.*
  * - Device type availability (remove programs for unavailable device types)
  * - Datamine V1/V2 removal (based on user settings)
  *
- * CRITICAL LIMITATION - CustomHackingSystem RemoteBreach:
- * This filtering applies ONLY to vanilla Access Point and NPC breaches that
- * use MinigameGenerationRuleScalingPrograms.FilterPlayerPrograms().
- *
- * CustomHackingSystem RemoteBreach uses a completely separate pipeline:
- *   - Daemon lists are statically defined in remoteBreach.lua at initialization
- *   - CustomHackingSystem.StartNewHackInstance() bypasses FilterPlayerPrograms()
- *   - Daemon availability is determined by target type (Computer/Device/Vehicle),
- *     NOT by actual network composition
- *   - PhysicalRangeFilter and other dynamic filters do NOT apply to RemoteBreach
- *
- * DESIGN RATIONALE:
- * RemoteBreach daemons represent the CAPABILITIES granted by breaching that
- * target type, not the devices present in the network. This is by design and
- * cannot be changed without modifying CustomHackingSystem API or creating
- * multiple minigame variants per device composition (48+ definitions).
- *
  * MOD COMPATIBILITY:
  * These functions are called from FilterPlayerPrograms() @wrapMethod,
  * ensuring compatibility with other mods that modify breach programs.
@@ -110,7 +93,7 @@ public func ShouldRemoveAccessPointPrograms(actionID: TweakDBID, miniGameActionR
  *
  * @param actionID - The program's TweakDB ID
  * @param miniGameActionRecord - The program's record data
- * @param isRemoteBreach - Whether this is a remote breach
+ * @param isRemoteBreach - Whether this is a RemoteBreach quickhack
  * @param entity - The target entity
  * @return True if the program should be removed
  */

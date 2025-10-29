@@ -4,23 +4,29 @@
 // Provides radius-based device/vehicle/NPC unlock logic shared across breach types.
 //
 // DESIGN RATIONALE:
-// - Single Responsibility: Targeting system radius search
+// - Single Responsibility: Targeting system radius search + timestamp management
 // - DRY Principle: Eliminates duplicate unlock logic between AP Breach and RemoteBreach
 // - Module Independence: Both breach types can use without coupling to RemoteBreach
 //
 // ARCHITECTURE:
 // This module extracts common unlock logic previously in RemoteBreachUtils,
 // making it available to both AccessPoint Breach and RemoteBreach implementations.
+// Time utilities (GetCurrentTimestamp, SetDeviceUnlockTimestamp) migrated from
+// TimeUtils.reds (single-method file consolidation).
 //
 // USAGE:
 // DeviceUnlockUtils.UnlockDevicesInRadius(devicePS, gameInstance);
 // DeviceUnlockUtils.UnlockVehiclesInRadius(devicePS, gameInstance);
 // DeviceUnlockUtils.UnlockNPCsInRadius(devicePS, gameInstance);
+// DeviceUnlockUtils.GetCurrentTimestamp(gameInstance);
+// DeviceUnlockUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, timestamp);
 // -----------------------------------------------------------------------------
 
 module BetterNetrunning.Core
 
 import BetterNetrunning.Integration.*
+import BetterNetrunning.Logging.*
+import BetterNetrunning.RadialUnlock.*
 import BetterNetrunning.Utils.*
 
 // Helper struct for targeting setup
@@ -45,6 +51,19 @@ public struct UnlockFlags {
 public struct VehicleProcessResult {
     public let vehicleFound: Bool;
     public let unlocked: Bool;
+}
+
+// Radial unlock statistics result
+// Tracks device counts and unlock success for 50m radius breach operations
+public struct RadialUnlockResult {
+    public let basicCount: Int32;
+    public let cameraCount: Int32;
+    public let turretCount: Int32;
+    public let npcCount: Int32;
+    public let basicUnlocked: Int32;
+    public let cameraUnlocked: Int32;
+    public let turretUnlocked: Int32;
+    public let npcUnlocked: Int32;
 }
 
 public abstract class DeviceUnlockUtils {
@@ -488,7 +507,7 @@ public abstract class DeviceUnlockUtils {
 
         // Prepare timestamp recording
         let gameInstance: GameInstance = devicePS.GetGameInstance();
-        let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
+        let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(gameInstance);
 
         // Unlock based on device type - set timestamp directly
         if DaemonFilterUtils.IsCamera(devicePS) {
@@ -580,7 +599,7 @@ public abstract class DeviceUnlockUtils {
             return false;
         }
 
-        let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
+        let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(gameInstance);
         vehSharedPS.m_betterNetrunningUnlockTimestampBasic = currentTime;
         return true;
     }
@@ -614,7 +633,7 @@ public abstract class DeviceUnlockUtils {
         }
 
         let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(device);
-        let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
+        let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(gameInstance);
 
         switch deviceType {
             case DeviceType.NPC:
@@ -805,6 +824,268 @@ public abstract class DeviceUnlockUtils {
         }
 
         return result;
+    }
+
+    // ============================================================================
+    // RemoteBreach Position Recording & Network Unlock
+    // ============================================================================
+    // Migrated from RemoteBreachHelpers.reds (RemoteBreachUtils class)
+    // Purpose: Support RemoteBreach radial unlock functionality
+    // ============================================================================
+
+    /*
+     * Records breach position for radial unlock tracking
+     * Overload for ScriptableDeviceComponentPS
+     */
+    public static func RecordBreachPosition(devicePS: ref<ScriptableDeviceComponentPS>, gameInstance: GameInstance) -> Void {
+        let deviceEntity: wref<GameObject> = devicePS.GetOwnerEntityWeak() as GameObject;
+        if !IsDefined(deviceEntity) {
+            return;
+        }
+
+        let devicePos: Vector4 = deviceEntity.GetWorldPosition();
+        RecordAccessPointBreachByPosition(devicePos, gameInstance);
+    }
+
+    /*
+     * Records breach position for radial unlock tracking
+     * Overload for VehicleComponentPS
+     */
+    public static func RecordBreachPosition(vehiclePS: ref<VehicleComponentPS>, gameInstance: GameInstance) -> Void {
+        let vehicleEntity: wref<GameObject> = vehiclePS.GetOwnerEntityWeak() as GameObject;
+        if !IsDefined(vehicleEntity) {
+            return;
+        }
+
+        let vehiclePos: Vector4 = vehicleEntity.GetWorldPosition();
+        RecordAccessPointBreachByPosition(vehiclePos, gameInstance);
+    }
+
+    /*
+     * Unlocks nearby network-connected devices within radius
+     * Shared logic for Device and Vehicle RemoteBreach
+     *
+     * @param sourceEntity - Entity initiating unlock (typically player)
+     * @param gameInstance - Game instance
+     * @param unlockBasic - Unlock basic devices
+     * @param unlockNPCs - Unlock NPC quickhacks
+     * @param unlockCameras - Unlock camera devices
+     * @param unlockTurrets - Unlock turret devices
+     * @param logPrefix - Prefix for debug logging
+     * @return RadialUnlockResult with device counts and unlock statistics
+     */
+    public static func UnlockNearbyNetworkDevices(
+        sourceEntity: wref<GameObject>,
+        gameInstance: GameInstance,
+        unlockBasic: Bool,
+        unlockNPCs: Bool,
+        unlockCameras: Bool,
+        unlockTurrets: Bool,
+        logPrefix: String
+    ) -> RadialUnlockResult {
+        let result: RadialUnlockResult;
+
+        if !IsDefined(sourceEntity) {
+            return result;
+        }
+
+        let targetingSetup: TargetingSetup = DeviceUnlockUtils.SetupDeviceTargeting(sourceEntity, gameInstance);
+        if !targetingSetup.isValid {
+            return result;
+        }
+
+        let parts: array<TS_TargetPartInfo>;
+        targetingSetup.targetingSystem.GetTargetParts(targetingSetup.player, targetingSetup.query, parts);
+
+        let unlockFlags: UnlockFlags;
+        unlockFlags.unlockBasic = unlockBasic;
+        unlockFlags.unlockNPCs = unlockNPCs;
+        unlockFlags.unlockCameras = unlockCameras;
+        unlockFlags.unlockTurrets = unlockTurrets;
+
+        let i: Int32 = 0;
+        while i < ArraySize(parts) {
+            let deviceResult: RadialUnlockResult = DeviceUnlockUtils.ProcessNetworkDevice(parts[i], targetingSetup, unlockFlags);
+            result.basicCount += deviceResult.basicCount;
+            result.cameraCount += deviceResult.cameraCount;
+            result.turretCount += deviceResult.turretCount;
+            result.npcCount += deviceResult.npcCount;
+            result.basicUnlocked += deviceResult.basicUnlocked;
+            result.cameraUnlocked += deviceResult.cameraUnlocked;
+            result.turretUnlocked += deviceResult.turretUnlocked;
+            result.npcUnlocked += deviceResult.npcUnlocked;
+            i += 1;
+        }
+
+        return result;
+    }
+
+    /*
+     * Setup targeting for device search (internal helper)
+     * Configures TargetingSystem query for network device detection
+     */
+    private static func SetupDeviceTargeting(sourceEntity: wref<GameObject>, gameInstance: GameInstance) -> TargetingSetup {
+        let setup: TargetingSetup;
+        setup.isValid = false;
+        setup.breachRadius = GetRadialBreachRange(gameInstance);
+        setup.sourcePos = sourceEntity.GetWorldPosition();
+
+        setup.player = GetPlayer(gameInstance);
+        if !IsDefined(setup.player) {
+            return setup;
+        }
+
+        setup.targetingSystem = GameInstance.GetTargetingSystem(gameInstance);
+        if !IsDefined(setup.targetingSystem) {
+            return setup;
+        }
+
+        setup.query.searchFilter = TSF_All(TSFMV.Obj_Device);
+        setup.query.testedSet = TargetingSet.Complete;
+        setup.query.maxDistance = setup.breachRadius * 2.0;
+        setup.query.filterObjectByDistance = true;
+        setup.query.includeSecondaryTargets = false;
+        setup.query.ignoreInstigator = true;
+
+        setup.isValid = true;
+        return setup;
+    }
+
+    /*
+     * Process network-connected device (reduce nesting in UnlockNearbyNetworkDevices)
+     * Returns device type counts and unlock success
+     */
+    private static func ProcessNetworkDevice(part: TS_TargetPartInfo, setup: TargetingSetup, flags: UnlockFlags) -> RadialUnlockResult {
+        let result: RadialUnlockResult;
+
+        let entity: wref<GameObject> = TS_TargetPartInfo.GetComponent(part).GetEntity() as GameObject;
+        if !IsDefined(entity) {
+            return result;
+        }
+
+        let device: ref<Device> = entity as Device;
+        if !IsDefined(device) {
+            return result;
+        }
+
+        let devicePS: ref<ScriptableDeviceComponentPS> = device.GetDevicePS();
+        if !IsDefined(devicePS) {
+            return result;
+        }
+
+        let sharedPS: ref<SharedGameplayPS> = devicePS;
+        if !IsDefined(sharedPS) {
+            return result;
+        }
+
+        // Check if network-connected
+        let apControllers: array<ref<AccessPointControllerPS>> = sharedPS.GetAccessPoints();
+        if ArraySize(apControllers) == 0 {
+            return result;  // Not network-connected
+        }
+
+        // Check distance
+        let distance: Float = Vector4.Distance(setup.sourcePos, entity.GetWorldPosition());
+        if distance > setup.breachRadius {
+            return result;
+        }
+
+        // Determine device type and update counts
+        let isCamera: Bool = DeviceTypeUtils.IsCameraDevice(devicePS);
+        let isTurret: Bool = DeviceTypeUtils.IsTurretDevice(devicePS);
+        let isNPC: Bool = DeviceTypeUtils.IsNPCDevice(devicePS);
+
+        if isCamera {
+            result.cameraCount = 1;
+        } else if isTurret {
+            result.turretCount = 1;
+        } else if isNPC {
+            result.npcCount = 1;
+        } else {
+            result.basicCount = 1;
+        }
+
+        // Unlock based on device type
+        let unlocked: Bool = DeviceUnlockUtils.UnlockDeviceByType(devicePS, flags);
+
+        // Update unlocked counts if successful
+        if unlocked {
+            if isCamera {
+                result.cameraUnlocked = 1;
+            } else if isTurret {
+                result.turretUnlocked = 1;
+            } else if isNPC {
+                result.npcUnlocked = 1;
+            } else {
+                result.basicUnlocked = 1;
+            }
+        }
+
+        return result;
+    }
+
+    /*
+     * Unlock device by type with flags (reduce nesting)
+     * Returns true if device was unlocked, false if skipped
+     */
+    private static func UnlockDeviceByType(devicePS: ref<ScriptableDeviceComponentPS>, flags: UnlockFlags) -> Bool {
+        let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(devicePS);
+
+        // Check if device should be unlocked based on flags
+        let unlockFlags: BreachUnlockFlags;
+        unlockFlags.unlockBasic = flags.unlockBasic;
+        unlockFlags.unlockNPCs = flags.unlockNPCs;
+        unlockFlags.unlockCameras = flags.unlockCameras;
+        unlockFlags.unlockTurrets = flags.unlockTurrets;
+
+        if !DeviceTypeUtils.ShouldUnlockByFlags(deviceType, unlockFlags) {
+            return false;  // Device type not allowed by flags
+        }
+
+        // Use centralized timestamp unlock logic from DeviceUnlockUtils
+        DeviceUnlockUtils.ApplyTimestampUnlock(
+            devicePS,
+            devicePS.GetGameInstance(),
+            flags.unlockBasic,
+            flags.unlockNPCs,
+            flags.unlockCameras,
+            flags.unlockTurrets
+        );
+
+        return true;  // Successfully unlocked
+    }
+
+    // ==================== Time Utilities ====================
+    // (Migrated from TimeUtils.reds - single-method file consolidation)
+
+    // Get current game timestamp
+    // Replaces scattered "let timeSystem: ref<TimeSystem> = GameInstance.GetTimeSystem(gi); timeSystem.GetGameTimeStamp()"
+    public static func GetCurrentTimestamp(gameInstance: GameInstance) -> Float {
+        let timeSystem: ref<TimeSystem> = GameInstance.GetTimeSystem(gameInstance);
+        return timeSystem.GetGameTimeStamp();
+    }
+
+    // Set unlock timestamp for device based on device type
+    // Centralized logic to avoid switch statement duplication
+    public static func SetDeviceUnlockTimestamp(
+        sharedPS: ref<SharedGameplayPS>,
+        deviceType: DeviceType,
+        timestamp: Float
+    ) -> Void {
+        switch deviceType {
+            case DeviceType.NPC:
+                sharedPS.m_betterNetrunningUnlockTimestampNPCs = timestamp;
+                break;
+            case DeviceType.Camera:
+                sharedPS.m_betterNetrunningUnlockTimestampCameras = timestamp;
+                break;
+            case DeviceType.Turret:
+                sharedPS.m_betterNetrunningUnlockTimestampTurrets = timestamp;
+                break;
+            default: // DeviceType.Basic
+                sharedPS.m_betterNetrunningUnlockTimestampBasic = timestamp;
+                break;
+        }
     }
 
 }

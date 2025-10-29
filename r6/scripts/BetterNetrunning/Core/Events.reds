@@ -18,7 +18,6 @@
 // ============================================================================
 
 module BetterNetrunning.Core
-import BetterNetrunning.Core.TimeUtils
 import BetterNetrunningConfig.*
 
 // ==================== Persistent Field Definitions ====================
@@ -158,7 +157,7 @@ public abstract class BreachStatusUtils {
     }
 
     // Temporary unlock - check expiration
-    let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
+    let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(gameInstance);
     let elapsedTime: Float = currentTime - unlockTimestamp;
     let durationSeconds: Float = Cast<Float>(unlockDurationHours) * 3600.0;
 
@@ -183,69 +182,4 @@ public abstract class BreachStatusUtils {
   public static func IsTurretsBreached(sharedPS: ref<SharedGameplayPS>) -> Bool {
     return BreachStatusUtils.IsBreached(sharedPS.m_betterNetrunningUnlockTimestampTurrets);
   }
-}
-
-// =============================================================================
-// CustomRemoteBreach Action Detection (Single Source of Truth)
-// =============================================================================
-
-/*
- * Returns true if className is a CustomRemoteBreach action class
- *
- * PURPOSE:
- * Centralized detection for all BetterNetrunning CustomRemoteBreach actions.
- * Used by DeviceQuickhacks, RemoteBreachVisibility, and CustomHackingIntegration.
- *
- * SUPPORTED ACTION TYPES (only when HackingExtensions MOD installed):
- * - RemoteBreachAction: Computer breach (AccessPoint, Laptop)
- * - DeviceRemoteBreachAction: Generic device breach (Door, Camera, Turret)
- * - VehicleRemoteBreachAction: Vehicle breach
- *
- * ARCHITECTURE:
- * - Self-contained implementation (no imports of feature modules)
- * - Circular imports are harmless in REDscript (tested and verified)
- * - Single source of truth (DRY principle)
- * - Conditional compilation (@if(ModuleExists("HackingExtensions")))
- *
- * RATIONALE:
- * Delegates to BNConstants.IsRemoteBreachAction() for centralized constant management.
- * All class names defined in Common/Constants.reds (Single Source of Truth).
- * Class definitions are in CustomHacking/RemoteBreachAction_*.reds files.
- *
- * CRITICAL:
- * No @if(ModuleExists("HackingExtensions")) guard needed here.
- * RemoteBreachAction classes have @if guards in their definitions,
- * so this function will return false when HackingExtensions is not installed.
- *
- * CLASS NAME PATTERN:
- * MUST use fully qualified names (n"Module.Path.ClassName") - defined in Constants.reds.
- * Short names (n"ClassName") do NOT work for cross-module references.
- *
- * TECHNICAL REQUIREMENTS:
- * - Circular imports are safe (tested and verified)
- * - Fully qualified names are required (n"Module.Path.ClassName")
- * - Centralized constants prevent typos and enable easy refactoring
- */
-public func IsCustomRemoteBreachAction(className: CName) -> Bool {
-  // ✓ Use centralized constants (Single Source of Truth)
-  // Defined in: Common/Constants.reds
-  // Class definitions: CustomHacking/RemoteBreachAction_*.reds
-  return BNConstants.IsRemoteBreachAction(className);
-}/*
- * Overload for ref<DeviceAction> parameter (convenience method)
- *
- * PURPOSE:
- * Allows direct checking of DeviceAction instances without manual GetClassName() calls.
- *
- * USAGE:
- * - if (IsCustomRemoteBreachAction(action)) { ... }
- * Instead of:
- * - if (IsCustomRemoteBreachAction(action.GetClassName())) { ... }
- */
-
-public func IsCustomRemoteBreachAction(action: ref<DeviceAction>) -> Bool {
-  if !IsDefined(action) {
-    return false;
-  }
-  return IsCustomRemoteBreachAction(action.GetClassName());
 }

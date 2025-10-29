@@ -29,8 +29,10 @@
 module BetterNetrunning.Utils
 
 import BetterNetrunningConfig.*
+import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Breach.*
-import BetterNetrunning.RemoteBreach.Core.*
+import BetterNetrunning.RemoteBreach.*
 
 // ============================================================================
 // BreachLockUtils - High-level breach lock check utilities
@@ -125,7 +127,6 @@ public abstract class BreachLockUtils {
    *
    * FUNCTIONALITY:
    * - Checks if JackIn should be disabled due to AP breach failure
-   * - Used by DeviceInteractionUtils.EnableJackInInteractionForAccessPoint()
    * - Only affects MasterControllerPS devices (AccessPoint, Computer, Terminal)
    *
    * ARCHITECTURE:
@@ -149,5 +150,50 @@ public abstract class BreachLockUtils {
 
     let sharedPS: ref<SharedGameplayPS> = devicePS;
     return BreachLockSystem.IsAPBreachLockedByTimestamp(sharedPS, devicePS.GetGameInstance());
+  }
+
+  /*
+   * Set JackIn interaction state (unified implementation)
+   *
+   * PURPOSE: Single implementation for JackIn enable/disable logic (DRY compliance)
+   * ARCHITECTURE: Unified implementation with guard clauses, delegates to MasterControllerPS
+   * USAGE: AccessPoint breach failure, unlock expiration handler
+   *
+   * FUNCTIONALITY:
+   * - Type check: Verifies devicePS is MasterControllerPS (AccessPoint/Computer)
+   * - State update: Calls SetHasPersonalLinkSlot(enabled) on target device
+   * - Null-safe: Guard clause for invalid devicePS
+   *
+   * RATIONALE:
+   * Centralized JackIn state management eliminates duplicate enable/disable logic
+   * Single boolean parameter controls both enable and disable operations
+   *
+   * @param devicePS - Target device (must be MasterControllerPS for AccessPoint/Computer)
+   * @param enabled - true = Enable JackIn interaction, false = Disable JackIn interaction
+   */
+  public static func SetJackInInteractionState(
+    devicePS: ref<ScriptableDeviceComponentPS>,
+    enabled: Bool
+  ) -> Void {
+    // Guard clause: Validate devicePS
+    if !IsDefined(devicePS) {
+      BNError("BreachLockUtils", "SetJackInInteractionState - devicePS is null");
+      return;
+    }
+
+    // Type check: Cast to MasterControllerPS (AccessPoint/Computer)
+    let masterController: ref<MasterControllerPS> = devicePS as MasterControllerPS;
+    if !IsDefined(masterController) {
+      BNDebug("BreachLockUtils",
+        "SetJackInInteractionState - devicePS is not MasterControllerPS (skipping)");
+      return;
+    }
+
+    // Update JackIn interaction state
+    masterController.SetHasPersonalLinkSlot(enabled);
+
+    BNDebug("BreachLockUtils",
+      "JackIn interaction " + (enabled ? "enabled" : "disabled") +
+      " for device: " + ToString(masterController.GetID()));
   }
 }

@@ -32,9 +32,10 @@
 //   - Performance neutral (stats collection is negligible overhead)
 // ============================================================================
 
-module BetterNetrunning.Utils
+module BetterNetrunning.Logging
 
 import BetterNetrunning.Core.*
+import BetterNetrunning.Utils.*
 
 // ============================================================================
 // STATISTICS DATA CLASS
@@ -225,7 +226,7 @@ public static func LogBreachSummary(stats: ref<BreachSessionStats>) -> Void {
     );
     LogDeviceTypeBreakdown(
       stats.vehicleCount, stats.vehicleUnlocked, stats.vehicleSkipped,
-      "Vehicles", BNConstants.PROGRAM_ACTION_BN_UNLOCK_VEHICLE()
+      "Vehicles", BNConstants.PROGRAM_UNLOCK_QUICKHACKS()
     );
     LogDeviceTypeBreakdown(
       stats.npcStandaloneCount, stats.npcStandaloneUnlocked, stats.npcStandaloneSkipped,
@@ -366,29 +367,21 @@ private static func LogNormalDaemons(stats: ref<BreachSessionStats>) -> Void {
 // FUNCTIONALITY: Maps TweakDBID to icon (🔌 Basic, 📷 Camera, 🔫 Turret, 👤 NPC)
 // ARCHITECTURE: Simple lookup table
 private static func GetSubnetDaemonIcon(programID: TweakDBID) -> String {
-  // Basic Subnet (AccessPoint/UnconsciousNPC Breach + RemoteBreach variants)
-  if Equals(programID, BNConstants.PROGRAM_UNLOCK_QUICKHACKS())
-      || Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_BASIC()) {
+  // Basic Subnet
+  if Equals(programID, BNConstants.PROGRAM_UNLOCK_QUICKHACKS()) {
     return "🔌";
   }
   // Camera Subnet
-  else if Equals(programID, BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS())
-      || Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_CAMERA()) {
+  else if Equals(programID, BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS()) {
     return "📷";
   }
   // Turret Subnet
-  else if Equals(programID, BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS())
-      || Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_TURRET()) {
+  else if Equals(programID, BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS()) {
     return "🔫";
   }
   // NPC Subnet
-  else if Equals(programID, BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS())
-      || Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_NPC()) {
+  else if Equals(programID, BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS()) {
     return "👤";
-  }
-  // Vehicle (treated same as Basic devices - difficulty-independent)
-  else if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_VEHICLE()) {
-    return "🚗";
   }
   // Fallback: no icon
   else {

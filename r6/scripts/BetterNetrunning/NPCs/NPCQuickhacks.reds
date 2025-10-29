@@ -2,6 +2,7 @@ module BetterNetrunning.NPCs
 
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.Systems.*
 import BetterNetrunning.Breach.*
@@ -26,7 +27,7 @@ import BetterNetrunning.Breach.*
  * - Shallow nesting (max 2 levels) using Extract Method pattern
  * - Continue Pattern for cleaner control flow
  *
- * BUG FIX (2025-10-19):
+ * VANILLA BEHAVIOR:
  * - Issue: Basic Daemon success sets m_quickHacksExposed = true for NPCs
  * - Root Cause: Vanilla SetExposeQuickHacks event fires unconditionally
  * - Solution: Event interception - block event if NPC Subnet not unlocked
@@ -35,7 +36,7 @@ import BetterNetrunning.Breach.*
  */
 
 /*
- * Prevent vanilla from setting m_quickHacksExposed when NPC Subnet not unlocked (Problem ③ fix)
+ * Prevent vanilla from setting m_quickHacksExposed when NPC Subnet not unlocked
  * ARCHITECTURE: Event interception before vanilla processing
  *
  * LOGIC:
@@ -79,7 +80,7 @@ public func OnSetExposeQuickHacks(evt: ref<SetExposeQuickHacks>) -> EntityNotifi
  * - Base Game Processing: Generate all quickhacks with base game logic (76-line black box)
  * - Post-processing: Remove AccessBreach + Apply Progressive Unlock filter
  *
- * ARCHITECTURE: 3-step workflow (Pre → Base Game → Post) with Extract Method pattern
+ * ARCHITECTURE: 3-step workflow (Pre ↁEBase Game ↁEPost) with Extract Method pattern
  * - Preserves base game behavior for better mod compatibility
  * - Better Netrunning logic applied as post-processing filter
  */

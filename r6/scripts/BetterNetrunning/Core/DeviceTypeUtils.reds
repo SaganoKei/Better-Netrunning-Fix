@@ -200,4 +200,36 @@ public abstract class DeviceTypeUtils {
       default: return "Basic";
     }
   }
+
+  // ==================== RemoteBreach Support ====================
+
+  // Determines device type from GameObject entity (for RemoteBreach cost calculation)
+  // Centralizes entity-based type detection for RAM cost multipliers
+  public static func GetDeviceTypeForRemoteBreach(entity: wref<GameObject>) -> DeviceType {
+    if IsDefined(entity as SurveillanceCamera) {
+      return DeviceType.Camera;
+    }
+    if IsDefined(entity as SecurityTurret) {
+      return DeviceType.Turret;
+    }
+    if IsDefined(entity as ScriptedPuppet) {
+      return DeviceType.NPC;
+    }
+    return DeviceType.Basic;
+  }
+
+  // Gets RAM cost multiplier based on device type (for RemoteBreach dynamic cost)
+  // Camera/Turret: 1.5x, NPC: 2.0x, Basic: 1.0x
+  public static func GetRemoteBreachCostMultiplier(deviceType: DeviceType) -> Float {
+    switch deviceType {
+      case DeviceType.Camera:
+        return 1.5;
+      case DeviceType.Turret:
+        return 1.5;
+      case DeviceType.NPC:
+        return 2.0;
+      default: // DeviceType.Basic
+        return 1.0;
+    }
+  }
 }

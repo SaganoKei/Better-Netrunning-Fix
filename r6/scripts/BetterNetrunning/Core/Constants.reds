@@ -27,31 +27,6 @@ module BetterNetrunning.Core
 
 public abstract class BNConstants {
 
-  // ==================== RemoteBreach Action Class Names ====================
-  //
-  // Fully qualified class names for RemoteBreach actions.
-  // CRITICAL: Must use complete module path (n"Module.Path.ClassName")
-  // Short names (n"ClassName") do NOT work for cross-module references.
-  //
-  // Module: BetterNetrunning.RemoteBreach.Actions
-  // See: RemoteBreach/Actions/RemoteBreachAction_*.reds for class definitions
-  // ========================================================================
-
-  // Computer RemoteBreach (AccessPoint, Laptop)
-  public static func CLASS_REMOTE_BREACH_COMPUTER() -> CName {
-    return n"BetterNetrunning.RemoteBreach.Actions.RemoteBreachAction";
-  }
-
-  // Device RemoteBreach (Door, Camera, Turret, generic devices)
-  public static func CLASS_REMOTE_BREACH_DEVICE() -> CName {
-    return n"BetterNetrunning.RemoteBreach.Actions.DeviceRemoteBreachAction";
-  }
-
-  // Vehicle RemoteBreach
-  public static func CLASS_REMOTE_BREACH_VEHICLE() -> CName {
-    return n"BetterNetrunning.RemoteBreach.Actions.VehicleRemoteBreachAction";
-  }
-
   // ==================== ScriptableSystem Class Names ====================
   //
   // Fully qualified class names for BetterNetrunning ScriptableSystems.
@@ -63,22 +38,12 @@ public abstract class BNConstants {
 
   // Computer RemoteBreach state tracking (AccessPoint, Laptop)
   public static func CLASS_REMOTE_BREACH_STATE_SYSTEM() -> CName {
-    return n"BetterNetrunning.RemoteBreach.Core.RemoteBreachStateSystem";
+    return n"BetterNetrunning.RemoteBreach.RemoteBreachStateSystem";
   }
 
   // Device RemoteBreach state tracking (Door, Camera, Turret, generic devices)
   public static func CLASS_DEVICE_REMOTE_BREACH_STATE_SYSTEM() -> CName {
-    return n"BetterNetrunning.RemoteBreach.Core.DeviceRemoteBreachStateSystem";
-  }
-
-  // Vehicle RemoteBreach state tracking
-  public static func CLASS_VEHICLE_REMOTE_BREACH_STATE_SYSTEM() -> CName {
-    return n"BetterNetrunning.RemoteBreach.Core.VehicleRemoteBreachStateSystem";
-  }
-
-  // HackingExtensions CustomHackingSystem (external dependency)
-  public static func CLASS_CUSTOM_HACKING_SYSTEM() -> CName {
-    return n"HackingExtensions.CustomHackingSystem";
+    return n"BetterNetrunning.RemoteBreach.RemoteBreachStateSystem";
   }
 
   // ==================== Action Names ====================
@@ -100,6 +65,25 @@ public abstract class BNConstants {
 
   public static func ACTION_DISTRACTION() -> CName {
     return n"QuickHackDistraction";
+  }
+
+  // ==================== Breach Type Identifiers ====================
+  //
+  // String identifiers for breach session types
+  // Used in statistics logging, breach state tracking, and debug output
+  // Also serves as log channel name for BNDebug/BNInfo/BNError functions
+  // ========================================================================
+
+  public static func BREACH_TYPE_ACCESS_POINT() -> String {
+    return "AccessPoint";
+  }
+
+  public static func BREACH_TYPE_REMOTE_BREACH() -> String {
+    return "RemoteBreach";
+  }
+
+  public static func BREACH_TYPE_UNCONSCIOUS_NPC() -> String {
+    return "UnconsciousNPC";
   }
 
   // ==================== Vanilla Breach Action Names ====================
@@ -145,6 +129,7 @@ public abstract class BNConstants {
   // ==================== Log Channel Names ====================
   //
   // Standardized log channel names for debug output
+  // Used as first parameter in BNDebug/BNInfo/BNError logging functions
   // ========================================================================
 
   public static func LOG_CHANNEL_DEBUG() -> CName {
@@ -317,115 +302,8 @@ public abstract class BNConstants {
     return t"MinigameAction.NetworkContagion_AP";
   }
 
-  // Quest-specific programs
-  public static func PROGRAM_NETWORK_LOOT_Q003() -> TweakDBID {
-    return t"MinigameAction.NetworkLootQ003";
-  }
-
-  // ----- Custom BN RemoteBreach Programs (MinigameProgramAction.*) -----
-  // BetterNetrunning-specific daemon programs registered via CET
-
-  public static func PROGRAM_ACTION_BN_UNLOCK_BASIC() -> TweakDBID {
-    return t"MinigameProgramAction.BN_RemoteBreach_UnlockBasic";
-  }
-
-  public static func PROGRAM_ACTION_BN_UNLOCK_NPC() -> TweakDBID {
-    return t"MinigameProgramAction.BN_RemoteBreach_UnlockNPC";
-  }
-
-  public static func PROGRAM_ACTION_BN_UNLOCK_CAMERA() -> TweakDBID {
-    return t"MinigameProgramAction.BN_RemoteBreach_UnlockCamera";
-  }
-
-  public static func PROGRAM_ACTION_BN_UNLOCK_TURRET() -> TweakDBID {
-    return t"MinigameProgramAction.BN_RemoteBreach_UnlockTurret";
-  }
-
-  public static func PROGRAM_ACTION_BN_UNLOCK_VEHICLE() -> TweakDBID {
-    return t"MinigameProgramAction.BN_RemoteBreach_UnlockVehicle";
-  }
-
-  public static func PROGRAM_ACTION_REMOTE_BREACH_EASY() -> TweakDBID {
-    return t"MinigameProgramAction.RemoteBreachEasy";
-  }
-
-  public static func PROGRAM_ACTION_REMOTE_BREACH_MEDIUM() -> TweakDBID {
-    return t"MinigameProgramAction.RemoteBreachMedium";
-  }
-
-  public static func PROGRAM_ACTION_REMOTE_BREACH_HARD() -> TweakDBID {
-    return t"MinigameProgramAction.RemoteBreachHard";
-  }
-
-  // ----- Minigame Difficulty Presets (Minigame.*) -----
-  // Define breach minigame parameters (duration, buffer size, program count)
-
-  public static func MINIGAME_COMPUTER_BREACH_EASY() -> TweakDBID {
-    return t"Minigame.ComputerRemoteBreachEasy";
-  }
-
-  public static func MINIGAME_COMPUTER_BREACH_MEDIUM() -> TweakDBID {
-    return t"Minigame.ComputerRemoteBreachMedium";
-  }
-
-  public static func MINIGAME_COMPUTER_BREACH_HARD() -> TweakDBID {
-    return t"Minigame.ComputerRemoteBreachHard";
-  }
-
-  public static func MINIGAME_DEVICE_BREACH_MEDIUM() -> TweakDBID {
-    return t"Minigame.DeviceRemoteBreachMedium";
-  }
-
-  public static func MINIGAME_VEHICLE_BREACH() -> TweakDBID {
-    return t"Minigame.VehicleRemoteBreach";
-  }
-
   // ----- Device Actions (DeviceAction.*) -----
   public static func DEVICE_ACTION_REMOTE_BREACH() -> TweakDBID {
     return t"DeviceAction.RemoteBreach";
-  }
-
-  // ==================== Helper Methods ====================
-  //
-  // Convenience methods for common constant operations
-  // ========================================================================
-
-  /**
-   * Returns all RemoteBreach action class names as array
-   *
-   * @return Array containing all RemoteBreach class name constants
-   */
-  public static func GetAllRemoteBreachClassNames() -> array<CName> {
-    let result: array<CName>;
-    ArrayPush(result, BNConstants.CLASS_REMOTE_BREACH_COMPUTER());
-    ArrayPush(result, BNConstants.CLASS_REMOTE_BREACH_DEVICE());
-    ArrayPush(result, BNConstants.CLASS_REMOTE_BREACH_VEHICLE());
-    return result;
-  }
-
-  /**
-   * Check if className is any RemoteBreach action class
-   *
-   * PURPOSE:
-   * Centralized RemoteBreach action detection.
-   * Automatically includes all current and future RemoteBreach types.
-   *
-   * @param className - The class name to check
-   * @return True if className matches any RemoteBreach action class
-   */
-  public static func IsRemoteBreachAction(className: CName) -> Bool {
-    return Equals(className, BNConstants.CLASS_REMOTE_BREACH_COMPUTER())
-        || Equals(className, BNConstants.CLASS_REMOTE_BREACH_DEVICE())
-        || Equals(className, BNConstants.CLASS_REMOTE_BREACH_VEHICLE());
-  }
-
-  /**
-   * Check if actionName is RemoteBreach
-   *
-   * @param actionName - The action name to check
-   * @return True if actionName is RemoteBreach
-   */
-  public static func IsRemoteBreachActionName(actionName: CName) -> Bool {
-    return Equals(actionName, BNConstants.ACTION_REMOTE_BREACH());
   }
 }

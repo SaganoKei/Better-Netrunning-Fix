@@ -26,15 +26,16 @@
 //
 // DEPENDENCIES:
 // - BetterNetrunningConfig: Settings control (BreachPenaltyDurationMinutes)
-// - Core/TimeUtils.reds: Timestamp management
+// - Core/DeviceUnlockUtils: Timestamp management
 // - Core/DeviceTypeUtils.reds: Radial breach range configuration
 // - Core/Logger.reds: Debug logging
 // - Utils/DeviceInteractionUtils.reds: JackIn interaction management
 // ============================================================================
 
-module BetterNetrunning.RemoteBreach.Core
+module BetterNetrunning.RemoteBreach
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Integration.*
 import BetterNetrunning.Breach.*
 
@@ -215,17 +216,17 @@ public class RemoteBreachLockSystem {
   // FUNCTIONALITY:
   // Records RemoteBreach failure on device PS (persistent timestamp).
   // Applies hybrid locking using network hierarchy + spatial radius:
-  // - Phase 1: Lock failed device itself
-  // - Phase 2: Lock network-connected devices (via GetNetworkDevices, NO distance limit)
-  // - Phase 3: Lock standalone/network devices in radius (via TargetingSystem, configurable range)
-  // - Phase 3B: Lock vehicles in radius (via TargetingSystem, configurable range)
+  // - Step 1: Lock failed device itself
+  // - Step 2: Lock network-connected devices (via GetNetworkDevices, NO distance limit)
+  // - Step 3: Lock standalone/network devices in radius (via TargetingSystem, configurable range)
+  // - Step 3B: Lock vehicles in radius (via TargetingSystem, configurable range)
   //
   // CONSISTENCY WITH UNLOCK (DaemonUnlockStrategy):
-  // - Phase 2 (Network): Uses shared GetNetworkDevices() function
+  // - Network Lock: Uses shared GetNetworkDevices() function
   //   - Iterates ALL AccessPoints (not just first)
   //   - No distance filtering (network hierarchy only)
-  //   - Unlock affects entire network → Lock must affect entire network
-  // - Phase 3/3B (Standalone/Network/Vehicle): Distance-limited (range depends on RadialBreach MOD)
+  //   - Unlock affects entire network ↁELock must affect entire network
+  // - Radial Lock (Standalone/Network/Vehicle): Distance-limited (range depends on RadialBreach MOD)
   //   - Standalone devices: Lock them
   //   - Network-connected devices in range: Lock them (handles standalone failure + nearby network devices)
   //   - Vehicles: Lock them
@@ -239,7 +240,7 @@ public class RemoteBreachLockSystem {
   // ARCHITECTURE:
   // - Guard Clause pattern (max nesting: 2 levels)
   // - DRY principle: Reuses FindNearbyDevices() and FindNearbyVehicles()
-  // - Mathematical guarantee: Network ∩ Standalone ∩ Vehicles = ∅ (mutually exclusive)
+  // - Mathematical guarantee: Network ∩ Standalone ∩ Vehicles = ∁E(mutually exclusive)
   // - Minimal deduplication: Only check failed device PersistentID (O(1))
   //
   // PARAMETERS:
@@ -264,14 +265,14 @@ public class RemoteBreachLockSystem {
       return;
     }
 
-    let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
+    let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(gameInstance);
     let failedDeviceID: PersistentID = failedDevicePS.GetID();
 
-    // Phase 1: Lock failed device itself (guaranteed)
+    // Step 1: Lock failed device itself (guaranteed)
     if IsDefined(failedDevicePS) {
       failedDevicePS.m_betterNetrunningRemoteBreachFailedTimestamp = currentTime;
       let entityID: EntityID = PersistentID.ExtractEntityID(failedDeviceID);
-      BNDebug("RemoteBreachLock", "Phase 1: Locked failed device: " + EntityID.ToDebugString(entityID));
+      BNDebug("RemoteBreachLock", "Step 1: Locked failed device: " + EntityID.ToDebugString(entityID));
     } else {
       BNError("RemoteBreachLock", "Failed device is not SharedGameplayPS - cannot lock");
       return;
@@ -281,12 +282,11 @@ public class RemoteBreachLockSystem {
     let networkLockedCount: Int32 = 0;
     let standaloneLockedCount: Int32 = 0;
 
-    // Phase 2: Lock network-connected devices (entire network, NO distance limit)
-    // Uses shared GetNetworkDevices() - excludeSource=true to skip failed device (already locked in Phase 1)
-    // Note: networkLockedCount also includes network devices discovered in Phase 3 radial scan
+    // Step 2: Lock network-connected devices (entire network, NO distance limit)
+    // Uses shared GetNetworkDevices() - excludeSource=true to skip failed device (already locked in Step 1)
     let networkDevices: array<ref<ScriptableDeviceComponentPS>> = RemoteBreachLockSystem.GetNetworkDevices(
       failedDevicePS,
-      true  // excludeSource: Failed device is locked separately in Phase 1
+      true  // excludeSource: Failed device is locked separately in Step 1
     );
 
     let i: Int32 = 0;
@@ -301,7 +301,7 @@ public class RemoteBreachLockSystem {
       i += 1;
     }
 
-    // Phase 3: Lock devices in radius (TargetingSystem spatial scan)
+    // Step 3: Lock devices in radius (TargetingSystem spatial scan)
     // Locks both standalone and network-connected devices within configurable range
     let targetingSystem: ref<TargetingSystem> = GameInstance.GetTargetingSystem(gameInstance);
     if IsDefined(targetingSystem) {
@@ -334,7 +334,7 @@ public class RemoteBreachLockSystem {
       }
     }
 
-    // Phase 3B: Lock vehicles in radius (VehicleObject-specific scan)
+    // Step 3B: Lock vehicles in radius (VehicleObject-specific scan)
     let vehicleLockedCount: Int32 = 0;
     if IsDefined(targetingSystem) {
       let nearbyVehicles: array<ref<VehicleComponentPS>> = player.FindNearbyVehicles(targetingSystem);
@@ -356,9 +356,9 @@ public class RemoteBreachLockSystem {
     }
 
     // Final summary log
-    // - Network: Phase 2 (connected network) + Phase 3 (network devices in radius)
-    // - Standalone: Phase 3 (standalone devices in radius)
-    // - Vehicles: Phase 3B (vehicles in radius)
+    // - Network: Step 2 (connected network) + Step 3 (network devices in radius)
+    // - Standalone: Step 3 (standalone devices in radius)
+    // - Vehicles: Step 3B (vehicles in radius)
     let totalLocked: Int32 = 1 + networkLockedCount + standaloneLockedCount + vehicleLockedCount; // 1 = failed device
     BNInfo("RemoteBreachLock", "Locked " + IntToString(totalLocked) + " devices " +
            "(Network: " + IntToString(networkLockedCount) + " [connected network], " +

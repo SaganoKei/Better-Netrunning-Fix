@@ -33,13 +33,6 @@ registerForEvent("onInit", function()
     TweakDBSetup.SetupUnconsciousBreach()
     TweakDBSetup.ApplyBreachingHotkey(SettingsManager.Get("BreachingHotkey"))
 
-    -- Setup Remote Breach feature
-    if RemoteBreach and RemoteBreach.Setup then
-        local success = RemoteBreach.Setup()
-        if success then
-            print("[Better Netrunning] Remote Breach enabled")
-        end
-    end
     print("[Better Netrunning] Initialization complete")
 end)
 

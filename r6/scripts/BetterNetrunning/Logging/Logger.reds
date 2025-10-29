@@ -40,7 +40,7 @@
 //   Framework Layer (RED4ext.ModLog)
 // ============================================================================
 
-module BetterNetrunning.Core
+module BetterNetrunning.Logging
 
 import BetterNetrunningConfig.*
 

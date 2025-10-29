@@ -2,6 +2,7 @@ module BetterNetrunning.NPCs
 
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Utils.*
 
 /*
@@ -18,6 +19,7 @@ import BetterNetrunning.Utils.*
  * - Disconnects NPCs from network upon death (vanilla behavior)
  * - Adds breach action to unconscious NPC interaction menu
  * - Checks physical access point connection for radial unlock mode
+ * - Provides UnconsciousNPCBreach action class with OfficerBreach flag
  *
  * VANILLA DIFF:
  * - OnIncapacitated(): Removes this.RemoveLink() call to keep network connection active
@@ -29,6 +31,34 @@ import BetterNetrunning.Utils.*
  *
  * ============================================================================
  */
+
+// ============================================================================
+// UnconsciousNPCBreach - Custom AccessBreach for Unconscious NPCs
+// ============================================================================
+//
+// FUNCTIONALITY:
+// Custom AccessBreach implementation for unconscious NPCs that sets
+// OfficerBreach flag before breach processing to enable type-specific logic.
+//
+// ARCHITECTURE:
+// - Sets OfficerBreach flag BEFORE super.CompleteAction()
+// - super.CompleteAction() calls FinalizeNetrunnerDive() ↁERefreshSlaves()
+// - RefreshSlaves() detects OfficerBreach flag and applies NPC-specific processing
+// ============================================================================
+
+public class UnconsciousNPCBreach extends AccessBreach {
+    protected func CompleteAction(gameInstance: GameInstance) -> Void {
+        // Set OfficerBreach flag before vanilla processing
+        // RefreshSlaves() checks this flag to apply NPC-specific breach processing
+        this.GetNetworkBlackboard(gameInstance).SetBool(
+            this.GetNetworkBlackboardDef().OfficerBreach,
+            true
+        );
+
+        // Execute vanilla CompleteAction logic (calls RefreshSlaves() internally)
+        super.CompleteAction(gameInstance);
+    }
+}
 
 // ==================== Incapacitation Handling ====================
 
@@ -76,13 +106,9 @@ protected func OnIncapacitated() -> Void {
 
 /*
  * Disconnects NPCs from network upon death
- * VANILLA DIFF: Identical to vanilla behavior (removed @replaceMethod for better mod compatibility)
  *
- * MOD COMPATIBILITY: This method is no longer overridden as it's identical to vanilla.
- * Better Netrunning now delegates death handling to vanilla logic.
+ * MOD COMPATIBILITY: Delegates death handling to vanilla logic
  */
-// @replaceMethod(ScriptedPuppet)
-// REMOVED: This override is unnecessary (100% identical to vanilla)
 
 // ==================== Network Connection Checks ====================
 

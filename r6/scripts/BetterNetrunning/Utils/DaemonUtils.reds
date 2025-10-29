@@ -8,6 +8,7 @@
 module BetterNetrunning.Utils
 
 import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 
 // ============================================================================
 // DaemonFilterUtils - Common filtering utilities for daemon display logic
@@ -139,16 +140,6 @@ public abstract class DaemonFilterUtils {
             } else if Equals(programID, BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS()) {
                 flags.unlockTurrets = true;
             }
-            // RemoteBreach programs (BN_RemoteBreach_* series)
-            else if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_BASIC()) {
-                flags.unlockBasic = true;
-            } else if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_NPC()) {
-                flags.unlockNPCs = true;
-            } else if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_CAMERA()) {
-                flags.unlockCameras = true;
-            } else if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_TURRET()) {
-                flags.unlockTurrets = true;
-            }
 
             i += 1;
         }
@@ -245,12 +236,6 @@ public abstract class DaemonFilterUtils {
         if Equals(programID, BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS()) { return true; }
         if Equals(programID, BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS()) { return true; }
 
-        // RemoteBreach subnet daemons (BN_RemoteBreach_* series)
-        if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_BASIC()) { return true; }
-        if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_CAMERA()) { return true; }
-        if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_TURRET()) { return true; }
-        if Equals(programID, BNConstants.PROGRAM_ACTION_BN_UNLOCK_NPC()) { return true; }
-
         return false;
     }
 
@@ -272,7 +257,7 @@ public abstract class DaemonFilterUtils {
             return TDBID.ToStringDEBUG(programID);
         }
 
-        // Get localized display name directly from record (CName → String via GetLocalizedTextByKey)
+        // Get localized display name directly from record (CName ↁEString via GetLocalizedTextByKey)
         return GetLocalizedTextByKey(record.ObjectActionUI().Caption());
     }
 }

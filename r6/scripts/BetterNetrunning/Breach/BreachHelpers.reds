@@ -2,6 +2,7 @@ module BetterNetrunning.Breach
 
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.Breach.*
 
@@ -161,4 +162,81 @@ private final func ClearNetworkBlackboardState() -> Void {
 private final func RestoreTimeDilation() -> Void {
   let easeOutCurve: CName = TweakDBInterface.GetCName(t"timeSystem.nanoWireBreach.easeOutCurve", n"DiveEaseOut");
   GameInstance.GetTimeSystem(this.GetGame()).UnsetTimeDilation(n"NetworkBreach", easeOutCurve);
+}
+
+// ============================================================================
+// Section 3: Breach Extension Processing
+// ============================================================================
+
+public abstract class BreachHelpers {
+
+  /*
+  * Execute radius-based device/NPC unlocks after successful breach
+  *
+  * PURPOSE:
+  * Centralized breach extension logic for AccessPoint/RemoteBreach/UnconsciousNPC breach types
+  *
+  * FUNCTIONALITY:
+  * - Radius unlock: Unlocks devices/vehicles within 50m radius
+  * - NPC unlock: Unlocks unconscious NPCs in network
+  * - Position tracking: Records breach position for RadialUnlockSystem integration
+  *
+  * ARCHITECTURE:
+  * - Template Method Pattern: Common flow with caller-specific network unlock
+  * - Shallow nesting (max 2 levels) using guard clauses
+  * - Single Responsibility: Shared extensions only, network unlock delegated to callers
+  *
+  * DEPENDENCIES:
+  * - DeviceUnlockUtils: Radius/NPC unlock + position tracking
+  * - BreachStatisticsCollector: Optional statistics collection (null-safe)
+  *
+  * RATIONALE:
+  * DRY compliance - eliminates 60 lines of duplicate code (30 lines × 2 implementations)
+  * Single point of change for common breach extension logic
+  *
+  * @param devicePS - Target device (breached AccessPoint/Computer/Device/Vehicle/NPC)
+  * @param unlockFlags - Unlock configuration (unlockBasic/unlockNPCs/recordPosition)
+  * @param stats - Optional statistics collector (null = no collection)
+  * @param gameInstance - Game instance for system access
+  */
+  public static func ExecuteRadiusUnlocks(
+    devicePS: ref<ScriptableDeviceComponentPS>,
+    unlockFlags: BreachUnlockFlags,
+    stats: ref<BreachSessionStats>,
+    gameInstance: GameInstance
+  ) -> Void {
+    // Guard clause: Validate required parameters
+    if !IsDefined(devicePS) {
+      BNError("BreachHelpers", "Invalid parameters - devicePS is null");
+      return;
+    }
+
+    BNDebug("BreachHelpers",
+      "Applying breach extensions - unlockBasic: " + ToString(unlockFlags.unlockBasic) +
+      ", unlockNPCs: " + ToString(unlockFlags.unlockNPCs));
+
+    // Step 1: Radius unlock (devices + vehicles)
+    if unlockFlags.unlockBasic {
+      DeviceUnlockUtils.UnlockDevicesInRadius(devicePS, gameInstance);
+      DeviceUnlockUtils.UnlockVehiclesInRadius(devicePS, gameInstance);
+
+      // Optional statistics collection
+      if IsDefined(stats) {
+        BreachStatisticsCollector.CollectRadialUnlockStats(devicePS, unlockFlags, stats, gameInstance);
+      }
+
+      BNDebug("BreachHelpers", "Radius unlock (devices + vehicles) completed");
+    }
+
+    // Step 2: NPC unlock
+    if unlockFlags.unlockNPCs {
+      DeviceUnlockUtils.UnlockNPCsInRadius(devicePS, gameInstance);
+    }
+
+    // Step 3: Position tracking (RadialUnlockSystem integration)
+    DeviceUnlockUtils.RecordBreachPosition(devicePS, gameInstance);
+
+    BNDebug("BreachHelpers", "Breach extensions completed");
+  }
+
 }

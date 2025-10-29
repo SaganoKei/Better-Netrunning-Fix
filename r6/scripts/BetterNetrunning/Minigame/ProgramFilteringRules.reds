@@ -2,6 +2,7 @@ module BetterNetrunning.Minigame
 
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.Integration.*
 
@@ -22,23 +23,6 @@ import BetterNetrunning.Integration.*
  * - Already-breached program removal (prevent re-breach of same type)
  * - Device type availability (remove programs for unavailable device types)
  * - Datamine V1/V2 removal (based on user settings)
- *
- * CRITICAL LIMITATION - CustomHackingSystem RemoteBreach:
- * This filtering applies ONLY to vanilla Access Point and NPC breaches that
- * use MinigameGenerationRuleScalingPrograms.FilterPlayerPrograms().
- *
- * CustomHackingSystem RemoteBreach uses a completely separate pipeline:
- *   - Daemon lists are statically defined in remoteBreach.lua at initialization
- *   - CustomHackingSystem.StartNewHackInstance() bypasses FilterPlayerPrograms()
- *   - Daemon availability is determined by target type (Computer/Device/Vehicle),
- *     NOT by actual network composition
- *   - PhysicalRangeFilter and other dynamic filters do NOT apply to RemoteBreach
- *
- * DESIGN RATIONALE:
- * RemoteBreach daemons represent the CAPABILITIES granted by breaching that
- * target type, not the devices present in the network. This is by design and
- * cannot be changed without modifying CustomHackingSystem API or creating
- * multiple minigame variants per device composition (48+ definitions).
  *
  * MOD COMPATIBILITY:
  * These functions are called from FilterPlayerPrograms() @wrapMethod,
@@ -78,7 +62,7 @@ public func ShouldRemoveBreachedPrograms(actionID: TweakDBID, entity: wref<GameO
 
   // Check if temporary unlock is enabled
   let unlockDurationHours: Int32 = BetterNetrunningSettings.QuickhackUnlockDurationHours();
-  let currentTime: Float = TimeUtils.GetCurrentTimestamp(devicePS.GetGameInstance());
+  let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(devicePS.GetGameInstance());
 
   // Convert hours to seconds (0 = permanent unlock)
   let unlockDurationSeconds: Float = Cast<Float>(unlockDurationHours) * 3600.0;
@@ -166,8 +150,19 @@ private func HandleTemporaryUnlock(
   let elapsedTime: Float = currentTime - unlockTimestamp;
 
   if elapsedTime > durationSeconds {
-    // Expired - reset timestamp
+    // Expired - reset timestamp and restore JackIn interaction
     ResetDeviceTimestamp(sharedPS, daemonType);
+
+    // JackIn restoration: Only for MasterControllerPS devices
+    // This allows re-breach attempts after unlock expiration
+    let devicePS: ref<ScriptableDeviceComponentPS> = sharedPS as ScriptableDeviceComponentPS;
+    let masterController: ref<MasterControllerPS> = devicePS as MasterControllerPS;
+
+    if IsDefined(masterController) {
+      BreachLockUtils.SetJackInInteractionState(devicePS, true);
+      BNDebug("ProgramFiltering", "Unlock expired for " + daemonType + " - JackIn restored");
+    }
+
     return false; // Show program (allow re-breach)
   }
 
@@ -508,6 +503,88 @@ public static func IsBetterNetrunningSubnetDaemon(actionID: TweakDBID) -> Bool {
   return false;
 }
 
+// ==================== REMOTEBREACH DAEMON FILTERING ====================
+
+/*
+ * Determines if a daemon should be removed from RemoteBreach minigame
+ *
+ * PURPOSE:
+ * Filters daemons for RemoteBreach based on target device type,
+ * enabling dynamic daemon availability instead of static daemon lists.
+ *
+ * ARCHITECTURE:
+ * Mirrors AccessPoint's ShouldRemoveBreachedPrograms() pattern:
+ * - Device type detection (Computer/Camera/Turret/Device/Vehicle)
+ * - TweakDBID-based filtering (keeps only relevant daemons)
+ * - Integration with FilterPlayerPrograms() pipeline
+ *
+ * DEVICE TYPE DAEMON MAPPING:
+ * - Computer: Basic + Camera (network access devices)
+ * - Device: Basic only (generic hackable devices)
+ * - Camera: Basic + Camera (surveillance devices)
+ * - Turret: Basic + Turret (combat devices)
+ * - Vehicle: Basic only (no network unlock for vehicles)
+ *
+ * @param actionID - The daemon's TweakDB ID
+ * @param breachEntity - The entity being breached (Computer/Device/Camera/Turret/Vehicle)
+ * @return True if daemon should be removed (not applicable to this target type)
+ */
+public func ShouldRemoveRemoteBreachPrograms(
+  actionID: TweakDBID,
+  breachEntity: wref<GameObject>
+) -> Bool {
+  // Only applies to RemoteBreach (not AccessPoint or NPC breach)
+  // Caller must verify breach type before calling this function
+
+  if !IsDefined(breachEntity) {
+    return false;
+  }
+
+  // Get device PS for type detection
+  let device: ref<Device> = breachEntity as Device;
+  if !IsDefined(device) {
+    // Not a device (might be puppet) - allow all daemons
+    return false;
+  }
+
+  let devicePS: ref<ScriptableDeviceComponentPS> = device.GetDevicePS();
+  if !IsDefined(devicePS) {
+    return false;
+  }
+
+  // Determine device type and filter accordingly
+  let isComputer: Bool = DaemonFilterUtils.IsComputer(devicePS);
+  let isCamera: Bool = DaemonFilterUtils.IsCamera(devicePS);
+  let isTurret: Bool = DaemonFilterUtils.IsTurret(devicePS);
+  let isVehicle: Bool = IsDefined(devicePS as VehicleComponentPS);
+
+  // Computer: Allow Basic + Camera daemons only
+  if isComputer {
+    return !(Equals(actionID, BNConstants.PROGRAM_UNLOCK_QUICKHACKS())
+          || Equals(actionID, BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS()));
+  }
+
+  // Camera: Allow Basic + Camera daemons only
+  if isCamera {
+    return !(Equals(actionID, BNConstants.PROGRAM_UNLOCK_QUICKHACKS())
+          || Equals(actionID, BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS()));
+  }
+
+  // Turret: Allow Basic + Turret daemons only
+  if isTurret {
+    return !(Equals(actionID, BNConstants.PROGRAM_UNLOCK_QUICKHACKS())
+          || Equals(actionID, BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS()));
+  }
+
+  // Vehicle: Allow Basic daemon only (no network unlock)
+  if isVehicle {
+    return !Equals(actionID, BNConstants.PROGRAM_UNLOCK_QUICKHACKS());
+  }
+
+  // Generic Device: Allow Basic daemon only
+  return !Equals(actionID, BNConstants.PROGRAM_UNLOCK_QUICKHACKS());
+}
+
 /*
  * Apply vanilla Rule 5 (network connectivity) to BN subnet daemons
  *
@@ -570,8 +647,8 @@ public static func ApplyNetworkConnectivityFilter(
  *
  * FUNCTIONALITY:
  * - Uses vanilla pattern from hackingMinigameUtils.script:875-887
- * - Puppets: Cast to ScriptedPuppet → GetMasterConnectedClassTypes()
- * - Devices: Cast to Device → GetDevicePS().CheckMasterConnectedClassTypes()
+ * - Puppets: Cast to ScriptedPuppet ↁEGetMasterConnectedClassTypes()
+ * - Devices: Cast to Device ↁEGetDevicePS().CheckMasterConnectedClassTypes()
  * - Returns struct with camera/turret/puppet flags
  *
  * @param entity - Target entity (Device or ScriptedPuppet)
@@ -616,10 +693,10 @@ private static func GetNetworkTopology(entity: wref<Entity>) -> ConnectedClassTy
  * - MinigameAction.NPC: (No vanilla examples, BN uses for UnlockNPCQuickhacks)
  *
  * BN SUBNET DAEMON MAPPING:
- * - UnlockCameraQuickhacks → category="MinigameAction.CameraAccess"
- * - UnlockTurretQuickhacks → category="MinigameAction.TurretAccess"
- * - UnlockNPCQuickhacks → category="MinigameAction.NPC"
- * - UnlockQuickhacks → category="MinigameAction.DataAccess" (Basic devices)
+ * - UnlockCameraQuickhacks ↁEcategory="MinigameAction.CameraAccess"
+ * - UnlockTurretQuickhacks ↁEcategory="MinigameAction.TurretAccess"
+ * - UnlockNPCQuickhacks ↁEcategory="MinigameAction.NPC"
+ * - UnlockQuickhacks ↁEcategory="MinigameAction.DataAccess" (Basic devices)
  *
  * @param program - Program to check
  * @param networkInfo - Network topology from CheckConnectedClassTypes()

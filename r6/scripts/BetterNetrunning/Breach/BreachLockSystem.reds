@@ -27,13 +27,14 @@
 //
 // DEPENDENCIES:
 // - BetterNetrunningConfig: Settings control (BreachPenaltyDurationMinutes)
-// - Core/TimeUtils.reds: Timestamp management
+// - Core/DeviceUnlockUtils.reds: Timestamp management
 // - Core/Logger.reds: Debug logging
 // ============================================================================
 
 module BetterNetrunning.Breach
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Utils.*
 
 // ============================================================================
@@ -106,7 +107,7 @@ public class BreachLockSystem {
       return false;
     }
 
-    let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
+    let currentTime: Float = DeviceUnlockUtils.GetCurrentTimestamp(gameInstance);
     let lockDurationSeconds: Float = Cast<Float>(BetterNetrunningSettings.BreachPenaltyDurationMinutes() * 60);
     if currentTime - timestamp > lockDurationSeconds {
       shouldClear = true;

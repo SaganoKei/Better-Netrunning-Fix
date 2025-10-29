@@ -53,14 +53,10 @@ protected func ExposeQuickHakcsIfNotConnnectedToAP() -> Bool {
  * 1. QuickHack icon display: DetermineInitialPlaystyle() (desired ✅)
  * 2. Door QuickHack menu: Door.IsNetrunner() (desired ✅)
  * 3. Network prerequisites: ConnectedToBackdoorPrereq (desired ✅)
- * 4. Vanilla RemoteBreach addition: FinalizeGetQuickHackActions() (undesired ❌)
+ * 4. RemoteBreach addition: FinalizeGetQuickHackActions() (desired ✅)
  *
- * NOTE: Side effect #4 is intentionally reversed by ReplaceVanillaRemoteBreachWithCustom()
- * which removes vanilla RemoteBreach and adds BetterNetrunning's CustomRemoteBreach.
- * This two-stage approach (enable → replace) is necessary because:
- * - We need side effects #1-3 for QuickHack system to work on standalone devices
- * - We cannot selectively disable side effect #4 without @replaceMethod on 290-line function
- * - Current approach maintains modularity and MOD compatibility via @wrapMethod
+ * NOTE: All side effects are desired for standalone device support.
+ * This two-stage approach maintains modularity and MOD compatibility via @wrapMethod.
  */
 // CRITICAL FIX (v0.6.0 Softlock Bug):
 // @wrapMethod(SharedGameplayPS)

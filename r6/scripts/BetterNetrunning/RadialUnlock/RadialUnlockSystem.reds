@@ -18,6 +18,7 @@
 module BetterNetrunning.RadialUnlock
 
 import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Integration.*
 import BetterNetrunning.Utils.*
 import BetterNetrunningConfig.*
@@ -36,15 +37,6 @@ public persistent let m_betterNetrunning_breachTimestamps: array<Uint64>;
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
-
-/// Default breach radius (meters) - fetched from RadialBreach settings or default 50m
-/// Automatically syncs with RadialBreach user configuration via Native Settings UI
-/// @return Breach radius in meters (from RadialBreach settings or default 50m)
-public func GetDefaultBreachRadius() -> Float {
-  // Note: GetGame() is not available in standalone function
-  // This function is deprecated - use DeviceTypeUtils.GetRadialBreachRange(gameInstance) instead
-  return 50.0; // Fallback for legacy compatibility
-}
 
 /// Maximum stored breach records (prevents save bloat)
 /// @return Maximum number of breach records to store
@@ -67,7 +59,7 @@ public func GetPruneCount() -> Int32 {
 /// Uses position-based tracking since EntityID retrieval is unreliable
 /// @param apPosition World position of the breached AccessPoint
 /// @param gameInstance Current game instance
-public func RecordAccessPointBreachByPosition(apPosition: Vector4, gameInstance: GameInstance) -> Void {
+public static func RecordAccessPointBreachByPosition(apPosition: Vector4, gameInstance: GameInstance) -> Void {
   let player: ref<PlayerPuppet> = GetPlayer(gameInstance);
   if !IsDefined(player) {
     return;
@@ -223,7 +215,7 @@ private func PruneOldestBreachRecords(player: ref<PlayerPuppet>) -> Void {
 /// @param gameInstance Current game instance
 /// @return Current game time as Uint64
 private func GetCurrentTimestamp(gameInstance: GameInstance) -> Uint64 {
-  return Cast<Uint64>(TimeUtils.GetCurrentTimestamp(gameInstance));
+  return Cast<Uint64>(DeviceUnlockUtils.GetCurrentTimestamp(gameInstance));
 }
 
 // ============================================================================
@@ -290,29 +282,6 @@ public func IsDeviceWithinBreachRadius(devicePosition: Vector4, gameInstance: Ga
   }
 
   return false;
-}
-
-/// OPTIONAL: Alternative API - Gets last breach position by AccessPoint PersistentID
-/// This is provided for API completeness and future extensibility.
-/// Currently not used by the integration code (direct entity position is used instead).
-/// @param apID PersistentID of the AccessPoint
-/// @param gameInstance Current game instance
-/// @return Recorded breach position, or error signal if not found
-public func GetLastBreachPositionByID(apID: PersistentID, gameInstance: GameInstance) -> Vector4 {
-  // Convert PersistentID to EntityID
-  let entityID: EntityID = PersistentID.ExtractEntityID(apID);
-
-  // Get GameObject from EntityID
-  let apEntity: wref<GameObject> = GameInstance.FindEntityByID(gameInstance, entityID) as GameObject;
-
-  if IsDefined(apEntity) {
-    // Use the Vector4-based API with entity position
-    let apPosition: Vector4 = apEntity.GetWorldPosition();
-    return GetLastBreachPosition(apPosition, gameInstance);
-  }
-
-  // Error: Could not find entity
-  return Vector4(-999999.0, -999999.0, -999999.0, 1.0);
 }
 
 // ============================================================================
