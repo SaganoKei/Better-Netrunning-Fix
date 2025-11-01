@@ -3,40 +3,31 @@ module BetterNetrunning.Minigame
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
+import BetterNetrunning.Logging.*
 
-/*
- * ============================================================================
- * PROGRAM INJECTION MODULE
- * ============================================================================
- *
- * PURPOSE:
- * Injects progressive unlock programs into the breach minigame based on
- * device state and breach point type.
- *
- * FUNCTIONALITY:
- * - Adds unlock programs for un-breached device types
- * - Determines appropriate programs based on breach point (Access Point, Computer, Backdoor, NPC)
- * - Supports remote breach integration (CustomHackingSystem)
- * - Respects progressive unlock state (m_betterNetrunningBreached* flags)
- *
- * BREACH POINT TYPES:
- * - Access Points: Full network access (all unlock programs)
- * - Computers: Full network access (treated same as Access Points via Remote Breach)
- * - Backdoor Devices: Limited access (Root + Camera programs only)
- * - Netrunner NPCs: Full network access (all systems)
- * - Regular NPCs: Limited access (NPC programs only when unconscious)
- *
- * CRITICAL FIXES:
- * - Computers are checked BEFORE backdoor to avoid misclassification
- * - Computers are EXCLUDED from backdoor check (full network access)
- * - Remote breach integration ensures proper daemon availability
- *
- * MOD COMPATIBILITY:
- * This function is called from FilterPlayerPrograms() @wrapMethod,
- * ensuring compatibility with other mods that modify breach programs.
- *
- * ============================================================================
- */
+// ============================================================================
+// Program Injection Module
+// ============================================================================
+//
+// PURPOSE:
+//   Injects progressive unlock programs into the breach minigame based on
+//   device state and breach point type
+//
+// FUNCTIONALITY:
+//   - Adds unlock programs for un-breached device types
+//   - Determines appropriate programs based on breach point (Access Point,
+//     Computer, Backdoor, NPC)
+//   - Supports remote breach integration (CustomHackingSystem)
+//   - Respects progressive unlock state (m_betterNetrunningBreached* flags)
+//   - Breach point classification: Access Points (full), Computers (full),
+//     Backdoor Devices (limited), Netrunner NPCs (full), Regular NPCs (limited)
+//
+// ARCHITECTURE:
+//   - Called from FilterPlayerPrograms() @wrapMethod for mod compatibility
+//   - Computer classification priority: Checked BEFORE backdoor to avoid misclassification
+//   - Computers EXCLUDED from backdoor check (full network access)
+//   - Remote breach integration ensures proper daemon availability
+//
 
 /*
  * Injects progressive unlock programs into breach minigame
@@ -94,6 +85,12 @@ public final func InjectBetterNetrunningPrograms(programs: script_ref<array<Mini
   // Add unlock programs for un-breached device types
   // Programs are inserted at the beginning of the array (highest priority)
 
+  // Track which programs were added
+  let turretAdded: Bool = false;
+  let cameraAdded: Bool = false;
+  let npcAdded: Bool = false;
+  let basicAdded: Bool = false;
+
   // TURRETS: Access Points, Computers, or Netrunners
   // Backdoor devices do NOT have turret access (security restriction)
   if !BreachStatusUtils.IsTurretsBreached(device) && (isAccessPoint || isComputer || isNetrunner) {
@@ -101,9 +98,7 @@ public final func InjectBetterNetrunningPrograms(programs: script_ref<array<Mini
     turretAccessProgram.actionID = BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS();
     turretAccessProgram.programName = BNConstants.LOCKEY_ACCESS();
     ArrayInsert(Deref(programs), 0, turretAccessProgram);
-    BNTrace("ProgramInjection", "Turret program added (isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isNetrunner=" + ToString(isNetrunner) + ")");
-  } else {
-    BNTrace("ProgramInjection", "Turret program SKIPPED (breached=" + ToString(BreachStatusUtils.IsTurretsBreached(device)) + ", isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isNetrunner=" + ToString(isNetrunner) + ")");
+    turretAdded = true;
   }
 
   // CAMERAS: Access Points, Computers, Backdoors, or Netrunners
@@ -113,9 +108,7 @@ public final func InjectBetterNetrunningPrograms(programs: script_ref<array<Mini
     cameraAccessProgram.actionID = BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS();
     cameraAccessProgram.programName = BNConstants.LOCKEY_ACCESS();
     ArrayInsert(Deref(programs), 0, cameraAccessProgram);
-    BNTrace("ProgramInjection", "Camera program added (isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isBackdoor=" + ToString(isBackdoor) + ", isNetrunner=" + ToString(isNetrunner) + ")");
-  } else {
-    BNTrace("ProgramInjection", "Camera program SKIPPED (breached=" + ToString(BreachStatusUtils.IsCamerasBreached(device)) + ", isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isBackdoor=" + ToString(isBackdoor) + ", isNetrunner=" + ToString(isNetrunner) + ")");
+    cameraAdded = true;
   }
 
   // NPCs: Access Points, Computers, Unconscious NPCs, or Netrunners
@@ -125,9 +118,7 @@ public final func InjectBetterNetrunningPrograms(programs: script_ref<array<Mini
     npcAccessProgram.actionID = BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS();
     npcAccessProgram.programName = BNConstants.LOCKEY_ACCESS();
     ArrayInsert(Deref(programs), 0, npcAccessProgram);
-    BNTrace("ProgramInjection", "NPC program added (isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isUnconsciousNPC=" + ToString(isUnconsciousNPC) + ", isNetrunner=" + ToString(isNetrunner) + ")");
-  } else {
-    BNTrace("ProgramInjection", "NPC program SKIPPED (breached=" + ToString(BreachStatusUtils.IsNPCsBreached(device)) + ", isAP=" + ToString(isAccessPoint) + ", isComp=" + ToString(isComputer) + ", isUnconsciousNPC=" + ToString(isUnconsciousNPC) + ", isNetrunner=" + ToString(isNetrunner) + ")");
+    npcAdded = true;
   }
 
   // BASIC: All breach points (always available)
@@ -137,9 +128,10 @@ public final func InjectBetterNetrunningPrograms(programs: script_ref<array<Mini
     basicAccessProgram.actionID = BNConstants.PROGRAM_UNLOCK_QUICKHACKS();
     basicAccessProgram.programName = BNConstants.LOCKEY_ACCESS();
     ArrayInsert(Deref(programs), 0, basicAccessProgram);
-    BNTrace("ProgramInjection", "Basic program added");
-  } else {
-    BNTrace("ProgramInjection", "Basic program SKIPPED (breached=" + ToString(BreachStatusUtils.IsBasicBreached(device)) + ")");
+    basicAdded = true;
   }
+
+  // Log summary of injected programs (debug mode only)
+  BNDebug("ProgramInjection", s"Program injection complete: Turret=\(turretAdded), Camera=\(cameraAdded), NPC=\(npcAdded), Basic=\(basicAdded)");
 
 }

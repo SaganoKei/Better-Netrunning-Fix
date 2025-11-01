@@ -15,10 +15,6 @@
 // - Strategy Pattern: Device type-specific expiration logic
 // - Shallow nesting (max 2 levels) using Extract Method pattern
 //
-// DEPENDENCIES:
-// - BetterNetrunning.Common.TimeUtils (current timestamp)
-// - BetterNetrunningConfig.* (unlock duration settings)
-// ============================================================================
 
 module BetterNetrunning.RemoteBreach.Common
 
@@ -31,9 +27,9 @@ import BetterNetrunningConfig.*
 // ============================================================================
 
 /*
- * Result of unlock expiration check for a device
+ * Result of unlock expiration check for a device.
  *
- * FUNCTIONALITY:
+ * Fields:
  * - isUnlocked: Device is currently unlocked (timestamp valid + within duration)
  * - wasExpired: Device timestamp expired during this check (one-time transition)
  * - expiredDeviceType: Type of device that expired (for logging/debugging)
@@ -51,15 +47,15 @@ public struct UnlockExpirationResult {
 public abstract class UnlockExpirationUtils {
 
   /*
-   * Checks unlock expiration for device and resets timestamp if expired
+   * Checks unlock expiration for device and resets timestamp if expired.
    *
-   * FUNCTIONALITY:
+   * Processing steps:
    * - Reads device type-specific timestamp field
    * - Calculates elapsed time vs configured duration
    * - Resets timestamp to 0.0 on expiration (one-time state mutation)
    * - Returns structured result for caller orchestration
    *
-   * ARCHITECTURE: Strategy Pattern with 4 device type branches
+   * Uses Strategy Pattern with 4 device type branches.
    */
   public static func CheckUnlockExpiration(devicePS: ref<ScriptableDeviceComponentPS>) -> UnlockExpirationResult {
     let result: UnlockExpirationResult;
@@ -91,9 +87,8 @@ public abstract class UnlockExpirationUtils {
   }
 
   /*
-   * Checks vehicle unlock expiration (UnlockQuickhacks daemon)
-   *
-   * ARCHITECTURE: Early return pattern with timestamp validation
+   * Checks vehicle unlock expiration (UnlockQuickhacks daemon).
+   * Uses early return pattern with timestamp validation.
    */
   private static func CheckVehicleExpiration(
     devicePS: ref<ScriptableDeviceComponentPS>,
@@ -128,9 +123,8 @@ public abstract class UnlockExpirationUtils {
   }
 
   /*
-   * Checks camera unlock expiration (UnlockCameraQuickhacks daemon)
-   *
-   * ARCHITECTURE: Early return pattern with timestamp validation
+   * Checks camera unlock expiration (UnlockCameraQuickhacks daemon).
+   * Uses early return pattern with timestamp validation.
    */
   private static func CheckCameraExpiration(
     devicePS: ref<ScriptableDeviceComponentPS>,
@@ -165,9 +159,8 @@ public abstract class UnlockExpirationUtils {
   }
 
   /*
-   * Checks turret unlock expiration (UnlockTurretQuickhacks daemon)
-   *
-   * ARCHITECTURE: Early return pattern with timestamp validation
+   * Checks turret unlock expiration (UnlockTurretQuickhacks daemon).
+   * Uses early return pattern with timestamp validation.
    */
   private static func CheckTurretExpiration(
     devicePS: ref<ScriptableDeviceComponentPS>,
@@ -202,9 +195,8 @@ public abstract class UnlockExpirationUtils {
   }
 
   /*
-   * Checks basic device unlock expiration (UnlockQuickhacks daemon)
-   *
-   * ARCHITECTURE: Early return pattern with timestamp validation
+   * Checks basic device unlock expiration (UnlockQuickhacks daemon).
+   * Uses early return pattern with timestamp validation.
    */
   private static func CheckBasicDeviceExpiration(
     devicePS: ref<ScriptableDeviceComponentPS>,

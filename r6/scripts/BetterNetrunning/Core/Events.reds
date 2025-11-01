@@ -3,31 +3,34 @@
 // ============================================================================
 //
 // PURPOSE:
-// Defines custom events and persistent fields used across Better Netrunning modules
+//   Defines custom events and persistent fields used across Better Netrunning modules
 //
-// EVENTS:
-// - SetBreachedSubnet: Propagates breach state across network devices
+// FUNCTIONALITY:
+//   - SetBreachedSubnet event: Propagates breach state across network devices
+//   - Persistent fields: Timestamp-based breach state tracking
+//   - Direct breach tracking: Flags for NPC breach detection
 //
-// PERSISTENT FIELDS:
-// - m_betterNetrunningWasDirectlyBreached (ScriptedPuppetPS): Tracks if NPC was directly breached
-// - m_betterNetrunningUnlockTimestamp*: Timestamp-based breach state (0.0 = never unlocked or expired)
+// ARCHITECTURE:
+//   - Events: Custom events for cross-module communication
+//   - Persistent fields: @addField annotations for save game persistence
+//   - Timestamp system: 0.0 = never unlocked or expired
 //
-// USAGE:
-// - Import this module in any script that needs to use these events/fields
-// - Events are used by RadialBreachGating, betterNetrunning, etc.
-// ============================================================================
 
 module BetterNetrunning.Core
 import BetterNetrunning.Core.TimeUtils
 import BetterNetrunningConfig.*
 
-// ==================== Persistent Field Definitions ====================
+// ============================================================================
+// Persistent Field Definitions
+// ============================================================================
 
 // Persistent field for tracking direct breach on NPCs
 @addField(ScriptedPuppetPS)
 public persistent let m_betterNetrunningWasDirectlyBreached: Bool;
 
-// ==================== Unlock Timestamp Fields ====================
+// ============================================================================
+// Unlock Timestamp Fields
+// ============================================================================
 // Tracks when each device type was last unlocked (for temporary unlock feature)
 // Value: Float timestamp from TimeSystem.GetGameTimeStamp()
 // 0.0 = never unlocked or expired
@@ -44,7 +47,9 @@ public persistent let m_betterNetrunningUnlockTimestampTurrets: Float;
 @addField(SharedGameplayPS)
 public persistent let m_betterNetrunningUnlockTimestampNPCs: Float;
 
-// ==================== Breach Failure Penalty Timestamps ====================
+// ============================================================================
+// Breach Failure Penalty Timestamps
+// ============================================================================
 // Records breach failure timestamps for penalty system (10 minutes lock duration)
 // Value: Float timestamp from TimeSystem.GetGameTimeStamp()
 // 0.0 = never failed or penalty expired
@@ -61,7 +66,9 @@ public persistent let m_betterNetrunningNPCBreachFailedTimestamp: Float;
 @addField(SharedGameplayPS)
 public persistent let m_betterNetrunningRemoteBreachFailedTimestamp: Float;
 
-// ==================== Breach State Event System ====================
+// ============================================================================
+// Breach State Event System
+// ============================================================================
 
 /*
  * Custom event for propagating breach state across network devices
@@ -119,9 +126,13 @@ public func OnSetBreachedSubnet(evt: ref<SetBreachedSubnet>) -> EntityNotificati
   return EntityNotificationType.DoNotNotifyEntity;
 }
 
-// ==================== Utility Functions ====================
+// ============================================================================
+// Utility Functions
+// ============================================================================
 
-// ==================== Breach Status Utilities ====================
+// ============================================================================
+// Breach Status Utilities
+// ============================================================================
 
 /*
  * Checks if a device type is breached based on unlock timestamp
@@ -185,67 +196,36 @@ public abstract class BreachStatusUtils {
   }
 }
 
-// =============================================================================
-// CustomRemoteBreach Action Detection (Single Source of Truth)
-// =============================================================================
-
 /*
- * Returns true if className is a CustomRemoteBreach action class
+ * IsCustomRemoteBreachAction() - Convenience wrapper for DeviceAction type checking.
  *
- * PURPOSE:
- * Centralized detection for all BetterNetrunning CustomRemoteBreach actions.
- * Used by DeviceQuickhacks, RemoteBreachVisibility, and CustomHackingIntegration.
+ * Checks if DeviceAction is a CustomRemoteBreach action without manual GetClassName() calls.
+ * Includes null safety check.
  *
- * SUPPORTED ACTION TYPES (only when HackingExtensions MOD installed):
- * - RemoteBreachAction: Computer breach (AccessPoint, Laptop)
- * - DeviceRemoteBreachAction: Generic device breach (Door, Camera, Turret)
- * - VehicleRemoteBreachAction: Vehicle breach
+ * Supported action types (only when HackingExtensions MOD installed):
+ * - RemoteBreachAction (Computer breach)
+ * - DeviceRemoteBreachAction (generic device)
+ * - VehicleRemoteBreachAction (vehicle breach)
  *
- * ARCHITECTURE:
- * - Self-contained implementation (no imports of feature modules)
- * - Circular imports are harmless in REDscript (tested and verified)
- * - Single source of truth (DRY principle)
- * - Conditional compilation (@if(ModuleExists("HackingExtensions")))
- *
- * RATIONALE:
- * Delegates to BNConstants.IsRemoteBreachAction() for centralized constant management.
- * All class names defined in Common/Constants.reds (Single Source of Truth).
- * Class definitions are in CustomHacking/RemoteBreachAction_*.reds files.
- *
- * CRITICAL:
- * No @if(ModuleExists("HackingExtensions")) guard needed here.
- * RemoteBreachAction classes have @if guards in their definitions,
- * so this function will return false when HackingExtensions is not installed.
- *
- * CLASS NAME PATTERN:
- * MUST use fully qualified names (n"Module.Path.ClassName") - defined in Constants.reds.
- * Short names (n"ClassName") do NOT work for cross-module references.
- *
- * TECHNICAL REQUIREMENTS:
- * - Circular imports are safe (tested and verified)
- * - Fully qualified names are required (n"Module.Path.ClassName")
- * - Centralized constants prevent typos and enable easy refactoring
+ * @param action Device action to check
+ * @return True if action is CustomRemoteBreach, false if undefined or other type
  */
-public func IsCustomRemoteBreachAction(className: CName) -> Bool {
-  // ✓ Use centralized constants (Single Source of Truth)
-  // Defined in: Common/Constants.reds
-  // Class definitions: CustomHacking/RemoteBreachAction_*.reds
-  return BNConstants.IsRemoteBreachAction(className);
-}/*
- * Overload for ref<DeviceAction> parameter (convenience method)
- *
- * PURPOSE:
- * Allows direct checking of DeviceAction instances without manual GetClassName() calls.
- *
- * USAGE:
- * - if (IsCustomRemoteBreachAction(action)) { ... }
- * Instead of:
- * - if (IsCustomRemoteBreachAction(action.GetClassName())) { ... }
- */
-
 public func IsCustomRemoteBreachAction(action: ref<DeviceAction>) -> Bool {
   if !IsDefined(action) {
     return false;
   }
-  return IsCustomRemoteBreachAction(action.GetClassName());
+  return BNConstants.IsRemoteBreachAction(action.GetClassName());
 }
+
+/*
+ * IsCustomRemoteBreachAction() - CName overload for pre-extracted class names.
+ *
+ * Optimized variant when className is already available (avoids redundant GetClassName() call).
+ *
+ * @param className Class name to check
+ * @return True if className matches CustomRemoteBreach action types
+ */
+public func IsCustomRemoteBreachAction(className: CName) -> Bool {
+  return BNConstants.IsRemoteBreachAction(className);
+}
+

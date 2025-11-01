@@ -1,6 +1,6 @@
-// -----------------------------------------------------------------------------
+// ============================================================================
 // RemoteBreach Helper Utilities
-// -----------------------------------------------------------------------------
+// ============================================================================
 // Utility classes and callbacks for RemoteBreach functionality.
 //
 // CONTENTS:
@@ -16,7 +16,7 @@
 // - OnRemoteBreachSucceeded.Execute() collects statistics and outputs via LogBreachSummary()
 // - Statistics include: device counts, unlock flags, network size, breach target
 // - Common device/vehicle/NPC unlock logic shared with AccessPoint breach via DeviceUnlockUtils.reds
-// -----------------------------------------------------------------------------
+// ============================================================================
 
 module BetterNetrunning.RemoteBreach.Core
 
@@ -28,6 +28,7 @@ import BetterNetrunning.Integration.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.RadialUnlock.*
 import BetterNetrunning.RemoteBreach.Common.*
+import BetterNetrunning.Logging.*
 
 @if(ModuleExists("HackingExtensions"))
 import HackingExtensions.*
@@ -35,12 +36,24 @@ import HackingExtensions.*
 @if(ModuleExists("HackingExtensions"))
 import HackingExtensions.Programs.*
 
+// ============================================================================
+// DaemonTypes - Daemon Type String Constants
+// ============================================================================
+// ARCHITECTURE: Converts TweakDBID to String using TDBID.ToStringDEBUG()
+// Returns String type for daemon type string comparison and SetDaemonType()
+//
+// DESIGN DECISION: Type conversion at call site (呼び出し元で型変換)
+// - TweakDBID → String conversion using TDBID.ToStringDEBUG()
+// - Single Source of Truth: BNConstants.PROGRAM_* holds all values
+// - No duplicate string literals (DRY principle compliance)
+//
+// MAINTENANCE: All values centralized in BNConstants.PROGRAM_* methods
+// ============================================================================
 public abstract class DaemonTypes {
-    public static func Basic() -> String { return "MinigameAction.UnlockQuickhacks"; }
-    public static func NPC() -> String { return "MinigameAction.UnlockNPCQuickhacks"; }
-    public static func Camera() -> String { return "MinigameAction.UnlockCameraQuickhacks"; }
-    public static func Turret() -> String { return "MinigameAction.UnlockTurretQuickhacks"; }
-    public static func PING() -> String { return "MinigameAction.NetworkPingHack"; }
+    public static func Basic() -> String { return TDBID.ToStringDEBUG(BNConstants.PROGRAM_UNLOCK_QUICKHACKS()); }
+    public static func NPC() -> String { return TDBID.ToStringDEBUG(BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS()); }
+    public static func Camera() -> String { return TDBID.ToStringDEBUG(BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS()); }
+    public static func Turret() -> String { return TDBID.ToStringDEBUG(BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS()); }
 }
 
 @if(ModuleExists("HackingExtensions"))
@@ -62,34 +75,24 @@ public abstract class StateSystemUtils {
     }
 }
 
-// ============================================================================
-// RemoteBreachRAMUtils - RAM Availability Check for RemoteBreach Actions
-// ============================================================================
-//
-// PURPOSE:
-// Centralized RAM availability check for RemoteBreach actions to avoid code duplication
-//
-// FUNCTIONALITY:
-// - Iterates device actions to find RemoteBreach actions
-// - Checks player RAM availability via CanPayCost()
-// - Applies SetInactive() + "Insufficient RAM" message if RAM < cost
-//
-// ARCHITECTURE:
-// - Static utility method (DRY principle)
-// - Single implementation used by multiple callers
-// - HackingExtensions dependency isolated in RemoteBreach module
-//
-// USAGE:
-// - ApplyPermissionsToActions() (Progressive Mode permission system)
-// - GetRemoteActions() (Sequencer Lock special case)
-// ============================================================================
 @if(ModuleExists("HackingExtensions"))
 public abstract class RemoteBreachRAMUtils {
   /*
-   * Check and lock RemoteBreach actions when player lacks RAM
+   * Centralized RAM availability check for RemoteBreach actions to avoid code duplication.
    *
-   * RATIONALE: Consolidates RAM checking logic to ensure consistent behavior
-   * ARCHITECTURE: Single responsibility - RAM availability check only
+   * Processing:
+   * - Iterates device actions to find RemoteBreach actions
+   * - Checks player RAM availability via CanPayCost()
+   * - Applies SetInactive() + "Insufficient RAM" message if RAM < cost
+   *
+   * Static utility method (DRY principle). Single implementation used by multiple callers.
+   * HackingExtensions dependency isolated in RemoteBreach module.
+   *
+   * Used by:
+   * - ApplyPermissionsToActions() (Progressive Mode permission system)
+   * - GetRemoteActions() (Sequencer Lock special case)
+   *
+   * @param actions Array of device actions to check (passed by reference)
    */
   public static func CheckAndLockRemoteBreachRAM(
     actions: script_ref<array<ref<DeviceAction>>>
@@ -121,6 +124,13 @@ public abstract class RemoteBreachRAMUtils {
 
 @if(ModuleExists("HackingExtensions"))
 public abstract class ProgramIDUtils {
+    /*
+     * Apply breach program timestamp to SharedGameplayPS
+     *
+     * @param programID - TweakDB ID of the breach program
+     * @param sharedPS - Shared gameplay power state
+     * @param gameInstance - Game instance for timestamp
+     */
     public static func ApplyProgramToSharedPS(programID: TweakDBID, sharedPS: ref<SharedGameplayPS>, gameInstance: GameInstance) -> Void {
         let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
 
@@ -135,6 +145,12 @@ public abstract class ProgramIDUtils {
         }
     }
 
+    /*
+     * Check if any daemon has been completed on device
+     *
+     * @param sharedPS - Shared gameplay power state
+     * @return True if any breach timestamp is set
+     */
     public static func IsAnyDaemonCompleted(sharedPS: ref<SharedGameplayPS>) -> Bool {
         return BreachStatusUtils.IsBasicBreached(sharedPS)
             || BreachStatusUtils.IsNPCsBreached(sharedPS)
@@ -142,6 +158,13 @@ public abstract class ProgramIDUtils {
             || BreachStatusUtils.IsTurretsBreached(sharedPS);
     }
 
+    /*
+     * Create SetBreachedSubnet event from breach program
+     *
+     * @param programID - TweakDB ID of the breach program
+     * @param gameInstance - Game instance for timestamp
+     * @return Initialized SetBreachedSubnet event
+     */
     public static func CreateBreachEventFromProgram(programID: TweakDBID, gameInstance: GameInstance) -> ref<SetBreachedSubnet> {
         let event: ref<SetBreachedSubnet> = new SetBreachedSubnet();
         let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
@@ -161,37 +184,8 @@ public abstract class ProgramIDUtils {
 }
 
 // -----------------------------------------------------------------------------
-// Helper Structures for Reduced Nesting
+// Helper Structures for Shallow Nesting
 // -----------------------------------------------------------------------------
-
-// Targeting setup information (reduces parameter passing)
-// Using struct instead of class to avoid ref<> requirement
-@if(ModuleExists("HackingExtensions"))
-public struct TargetingSetup {
-    let isValid: Bool;
-    let player: ref<PlayerPuppet>;
-    let targetingSystem: ref<TargetingSystem>;
-    let query: TargetSearchQuery;
-    let sourcePos: Vector4;
-    let breachRadius: Float;
-}
-
-// Unlock flags bundle (reduces parameter count)
-// Using struct instead of class to avoid ref<> requirement
-@if(ModuleExists("HackingExtensions"))
-public struct UnlockFlags {
-    let unlockBasic: Bool;
-    let unlockNPCs: Bool;
-    let unlockCameras: Bool;
-    let unlockTurrets: Bool;
-}
-
-// Vehicle processing result (reduces nesting in UnlockVehiclesInRadius)
-@if(ModuleExists("HackingExtensions"))
-public struct VehicleProcessResult {
-    let vehicleFound: Bool;
-    let unlocked: Bool;
-}
 
 // -----------------------------------------------------------------------------
 // RemoteBreach Utils - RemoteBreach-specific utilities
@@ -228,8 +222,20 @@ public abstract class RemoteBreachUtils {
         RecordAccessPointBreachByPosition(vehiclePos, gameInstance);
     }
 
-    // Unlock nearby network-connected devices (shared logic for Device and Vehicle RemoteBreach)
-    // RETURNS: RadialUnlockResult with device counts and unlock statistics
+    /*
+     * UnlockNearbyNetworkDevices() - Network Device Radial Unlock
+     *
+     * Unlock nearby network-connected devices (shared logic for Device and Vehicle RemoteBreach).
+     *
+     * @param sourceEntity Source entity for targeting
+     * @param gameInstance Game instance
+     * @param unlockBasic Whether to unlock basic devices
+     * @param unlockNPCs Whether to unlock NPCs
+     * @param unlockCameras Whether to unlock cameras
+     * @param unlockTurrets Whether to unlock turrets
+     * @param logPrefix Log message prefix
+     * @return RadialUnlockResult with device counts and unlock statistics
+     */
     public static func UnlockNearbyNetworkDevices(sourceEntity: wref<GameObject>, gameInstance: GameInstance, unlockBasic: Bool, unlockNPCs: Bool, unlockCameras: Bool, unlockTurrets: Bool, logPrefix: String) -> RadialUnlockResult {
         let result: RadialUnlockResult;
 
@@ -245,11 +251,7 @@ public abstract class RemoteBreachUtils {
         let parts: array<TS_TargetPartInfo>;
         targetingSetup.targetingSystem.GetTargetParts(targetingSetup.player, targetingSetup.query, parts);
 
-        let unlockFlags: UnlockFlags;
-        unlockFlags.unlockBasic = unlockBasic;
-        unlockFlags.unlockNPCs = unlockNPCs;
-        unlockFlags.unlockCameras = unlockCameras;
-        unlockFlags.unlockTurrets = unlockTurrets;
+        let unlockFlags: BreachUnlockFlags = IDaemonUnlockStrategy.BuildUnlockFlags(unlockBasic, unlockNPCs, unlockCameras, unlockTurrets);
 
         let i: Int32 = 0;
         while i < ArraySize(parts) {
@@ -296,9 +298,16 @@ public abstract class RemoteBreachUtils {
         return setup;
     }
 
-    // Process network-connected device (reduce nesting in UnlockNearbyNetworkDevices)
-    // RETURNS: RadialUnlockResult with device type counts
-    private static func ProcessNetworkDevice(part: TS_TargetPartInfo, setup: TargetingSetup, flags: UnlockFlags) -> RadialUnlockResult {
+    /*
+     * Process network-connected device
+     *
+     * ARCHITECTURE: Helper method with shallow nesting for UnlockNearbyNetworkDevices
+     * @param part Target part info
+     * @param setup Targeting setup
+     * @param flags Unlock flags
+     * @return RadialUnlockResult with device type counts
+     */
+    private static func ProcessNetworkDevice(part: TS_TargetPartInfo, setup: TargetingSetup, flags: BreachUnlockFlags) -> RadialUnlockResult {
         let result: RadialUnlockResult;
 
         let entity: wref<GameObject> = TS_TargetPartInfo.GetComponent(part).GetEntity() as GameObject;
@@ -367,19 +376,19 @@ public abstract class RemoteBreachUtils {
         return result;
     }
 
-    // Unlock device by type with flags (reduce nesting)
-    // RETURNS: true if device was unlocked, false if skipped
-    private static func UnlockDeviceByType(devicePS: ref<ScriptableDeviceComponentPS>, flags: UnlockFlags) -> Bool {
-        let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(devicePS);
+    /*
+     * Unlock device by type with flags
+     *
+     * ARCHITECTURE: Helper method with shallow nesting
+     * @param devicePS Device PS to unlock
+     * @param flags Unlock flags
+     * @return true if device was unlocked, false if skipped
+     */
+    private static func UnlockDeviceByType(devicePS: ref<ScriptableDeviceComponentPS>, flags: BreachUnlockFlags) -> Bool {
+        let TargetType: TargetType = DeviceTypeUtils.GetDeviceType(devicePS);
 
         // Check if device should be unlocked based on flags
-        let unlockFlags: BreachUnlockFlags;
-        unlockFlags.unlockBasic = flags.unlockBasic;
-        unlockFlags.unlockNPCs = flags.unlockNPCs;
-        unlockFlags.unlockCameras = flags.unlockCameras;
-        unlockFlags.unlockTurrets = flags.unlockTurrets;
-
-        if !DeviceTypeUtils.ShouldUnlockByFlags(deviceType, unlockFlags) {
+        if !DeviceTypeUtils.ShouldUnlockByFlags(TargetType, flags) {
             return false;  // Device type not allowed by flags
         }
 
@@ -411,11 +420,7 @@ public abstract class ComputerRemoteBreachUtils {
             return;  // Standalone computer, no network devices
         }
 
-        let flags: UnlockFlags;
-        flags.unlockBasic = unlockBasic;
-        flags.unlockNPCs = unlockNPCs;
-        flags.unlockCameras = unlockCameras;
-        flags.unlockTurrets = unlockTurrets;
+        let flags: BreachUnlockFlags = IDaemonUnlockStrategy.BuildUnlockFlags(unlockBasic, unlockNPCs, unlockCameras, unlockTurrets);
 
         let i: Int32 = 0;
         while i < ArraySize(apControllers) {
@@ -429,7 +434,7 @@ public abstract class ComputerRemoteBreachUtils {
     // ============================================================================
     // ARCHITECTURE: Extract Method pattern (max 2-level nesting)
     // Separated device processing logic into dedicated helper
-    private static func ProcessAccessPointDevices(apPS: ref<AccessPointControllerPS>, flags: UnlockFlags) -> Void {
+    private static func ProcessAccessPointDevices(apPS: ref<AccessPointControllerPS>, flags: BreachUnlockFlags) -> Void {
         if !IsDefined(apPS) {
             return;
         }
@@ -447,7 +452,7 @@ public abstract class ComputerRemoteBreachUtils {
     }
 
     // Helper: Create SetBreachedSubnet event with timestamps
-    private static func CreateBreachEvent(gameInstance: GameInstance, flags: UnlockFlags) -> ref<SetBreachedSubnet> {
+    private static func CreateBreachEvent(gameInstance: GameInstance, flags: BreachUnlockFlags) -> ref<SetBreachedSubnet> {
         let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
         let event: ref<SetBreachedSubnet> = new SetBreachedSubnet();
         event.unlockTimestampBasic = flags.unlockBasic ? currentTime : 0.0;
@@ -462,7 +467,7 @@ public abstract class ComputerRemoteBreachUtils {
         device: ref<DeviceComponentPS>,
         apPS: ref<AccessPointControllerPS>,
         setBreachedEvent: ref<SetBreachedSubnet>,
-        flags: UnlockFlags
+        flags: BreachUnlockFlags
     ) -> Void {
         if !IsDefined(device) {
             return;
@@ -472,8 +477,8 @@ public abstract class ComputerRemoteBreachUtils {
         apPS.QueuePSEvent(device, setBreachedEvent);
 
         // Determine device type and check if should unlock
-        let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(device);
-        let shouldUnlock: Bool = ComputerRemoteBreachUtils.ShouldUnlockDeviceType(deviceType, flags);
+        let TargetType: TargetType = DeviceTypeUtils.GetDeviceType(device);
+        let shouldUnlock: Bool = ComputerRemoteBreachUtils.ShouldUnlockDeviceType(TargetType, flags);
 
         if shouldUnlock {
             apPS.QueuePSEvent(device, apPS.ActionSetExposeQuickHacks());
@@ -481,15 +486,15 @@ public abstract class ComputerRemoteBreachUtils {
     }
 
     // Helper: Check if device type should be unlocked based on flags
-    private static func ShouldUnlockDeviceType(deviceType: DeviceType, flags: UnlockFlags) -> Bool {
-        switch deviceType {
-            case DeviceType.NPC:
+    private static func ShouldUnlockDeviceType(TargetType: TargetType, flags: BreachUnlockFlags) -> Bool {
+        switch TargetType {
+            case TargetType.NPC:
                 return flags.unlockNPCs;
-            case DeviceType.Camera:
+            case TargetType.Camera:
                 return flags.unlockCameras;
-            case DeviceType.Turret:
+            case TargetType.Turret:
                 return flags.unlockTurrets;
-            case DeviceType.Basic:
+            case TargetType.Basic:
                 return flags.unlockBasic;
             default:
                 return false;
@@ -505,8 +510,17 @@ public abstract class ComputerRemoteBreachUtils {
 // -----------------------------------------------------------------------------
 
 public abstract class MinigameIDHelper {
-    // Get minigame ID based on target type and difficulty
-    // Returns appropriate TweakDBID for Computer/Device/Vehicle RemoteBreach
+    /*
+     * GetMinigameID() - Minigame Selection
+     *
+     * Get minigame ID based on target type and difficulty.
+     * Returns appropriate TweakDBID for Computer/Device/Vehicle RemoteBreach.
+     *
+     * @param targetType Target type (Computer/Device/Vehicle)
+     * @param difficulty Gameplay difficulty
+     * @param devicePS Optional device PS
+     * @return Minigame TweakDBID
+     */
     public static func GetMinigameID(targetType: MinigameTargetType, difficulty: GameplayDifficulty, opt devicePS: ref<ScriptableDeviceComponentPS>) -> TweakDBID {
         switch targetType {
             case MinigameTargetType.Computer:
@@ -725,7 +739,7 @@ public class OnRemoteBreachSucceeded extends OnCustomHackingSucceeded {
         let activePrograms: array<TweakDBID> = FromVariant<array<TweakDBID>>(minigameBB.GetVariant(GetAllBlackboardDefs().HackingMinigame.ActivePrograms));
 
         let activeProgramsRef: script_ref<array<TweakDBID>> = activePrograms;
-        ApplyBonusDaemons(activeProgramsRef, GetGameInstance(), "[RemoteBreach]");
+        BonusDaemonUtils.ApplyBonusDaemons(activeProgramsRef, GetGameInstance(), "[RemoteBreach]");
 
         minigameBB.SetVariant(GetAllBlackboardDefs().HackingMinigame.ActivePrograms, ToVariant(activePrograms), true);
 
@@ -808,24 +822,44 @@ public class OnRemoteBreachSucceeded extends OnCustomHackingSucceeded {
         stats.unlockTurrets = unlockFlags.unlockTurrets;
         stats.unlockNPCs = unlockFlags.unlockNPCs;
 
-        // Collect executed daemon information for display
-        BreachStatisticsCollector.CollectExecutedDaemons(activePrograms, stats);
+        // Retrieve displayed daemons from StateSystem (set by BaseRemoteBreachAction.CompleteAction())
+        let container: ref<ScriptableSystemsContainer> = GameInstance.GetScriptableSystemsContainer(GetGameInstance());
+        let stateSystem: ref<DisplayedDaemonsStateSystem> = container.Get(BNConstants.CLASS_DISPLAYED_DAEMONS_STATE_SYSTEM()) as DisplayedDaemonsStateSystem;
+        let displayedDaemons: array<TweakDBID>;
 
-        // Get network devices for statistics
+        if IsDefined(stateSystem) {
+            displayedDaemons = stateSystem.GetDisplayedDaemons();
+        } else {
+            BNError("RemoteBreach", "DisplayedDaemonsStateSystem not found - falling back to activePrograms");
+            displayedDaemons = activePrograms;
+        }
+
+        // Collect daemon statistics with correct displayed vs executed distinction
+        BreachStatisticsCollector.CollectDisplayedDaemons(displayedDaemons, stats);  // All daemons in minigame
+        BreachStatisticsCollector.CollectExecutedDaemons(activePrograms, stats);     // Successfully completed daemons
+
+        // Get network devices and AccessPoint ID (DRY: single GetAccessPoints call)
         // IMPLEMENTATION: Supports both MasterControllerPS (Computer/AccessPoint) and child devices (Speaker/Camera/Turret)
         let networkDevices: array<ref<DeviceComponentPS>>;
+        let breachedAPID: PersistentID;
         let masterPS: ref<MasterControllerPS> = device as MasterControllerPS;
         if IsDefined(masterPS) {
-            // Case 1: Device is MasterControllerPS (Computer, AccessPoint) - direct GetChildren
+            // Case 1: Device is MasterControllerPS (Computer or AccessPoint)
             masterPS.GetChildren(networkDevices);
+            let apPS: ref<AccessPointControllerPS> = device as AccessPointControllerPS;
+            if IsDefined(apPS) {
+                breachedAPID = apPS.GetID();  // Direct AccessPoint
+            }
+            // Computer has no AccessPoint ID (not part of breached network)
         } else {
-            // Case 2: Device is child (Speaker, Camera, Turret) - get network via parent AccessPoint
+            // Case 2: Child device (Camera, Turret, Speaker) - get parent AccessPoint
             let sharedPS: ref<SharedGameplayPS> = device;
             if IsDefined(sharedPS) {
                 let apControllers: array<ref<AccessPointControllerPS>> = sharedPS.GetAccessPoints();
                 if ArraySize(apControllers) > 0 {
                     // Network-connected device - get all devices from parent AccessPoint
                     apControllers[0].GetChildren(networkDevices);
+                    breachedAPID = apControllers[0].GetID();  // First AccessPoint (primary network)
                 }
                 // If ArraySize(apControllers) == 0, device is standalone (networkDevices remains empty)
             }
@@ -836,35 +870,21 @@ public class OnRemoteBreachSucceeded extends OnCustomHackingSucceeded {
 
         let deviceEntity: ref<Device> = GameInstance.FindEntityByID(GetGameInstance(), PersistentID.ExtractEntityID(device.GetID())) as Device;
 
-        // Execute programs (Datamine, etc.)
-        ProcessMinigamePrograms(activePrograms, device, GetGameInstance(), stats.executedNormalDaemons, "[RemoteBreach]");
-
         // Grant vanilla hacking rewards
         RPGManager.GiveReward(GetGameInstance(), t"RPGActionRewards.Hacking", Cast<StatsObjectID>(device.GetMyEntityID()));
 
         // Disable JackIn interaction (delegates to DeviceInteractionUtils)
         DeviceInteractionUtils.DisableJackInInteractionForAccessPoint(device);
 
-        // Collect radial unlock statistics using unified collector
-        BreachStatisticsCollector.CollectRadialUnlockStats(device, unlockFlags, stats, GetGameInstance());
+        // Collect radial unlock statistics using unified collector with network separation
+        BreachStatisticsCollector.CollectRadialUnlockStats(device, breachedAPID, unlockFlags, stats, GetGameInstance());
 
         // Output statistics summary
         stats.Finalize();
         LogBreachSummary(stats);
     }
 
-    // ============================================================================
-    // ExecutePingIfNeeded - REMOVED
-    // ============================================================================
-    // REASON: Cannot implement single-device PING without extensive vanilla overrides
-    // - PingDevice action calls PingDevicesNetwork() in CompleteAction()
-    // - Device.PulseNetwork() uses EPingType.SPACE (network-wide)
-    // - No vanilla API exists for single-device PING
-    // All PING-related functionality has been disabled
-    // ============================================================================
-}
-
-// -----------------------------------------------------------------------------
+}// -----------------------------------------------------------------------------
 // RemoteBreach Failure Callback
 // -----------------------------------------------------------------------------
 
@@ -955,28 +975,14 @@ public class OnRemoteBreachFailed extends OnCustomHackingFailed {
 // - Static utility class (no instantiation)
 // - Integrates with BreachLockSystem for position-based lock checks
 //
-// DEPENDENCIES:
-// - BetterNetrunning.Breach.BreachLockSystem: Position lock validation
-// - BetterNetrunning.Core.BNConstants: LocKey constants
-// ============================================================================
 
 public abstract class RemoteBreachLockUtils {
   /**
-   * Remove all RemoteBreach actions from device action list
+   * Removes all RemoteBreach actions from device action list (CustomAccessBreach-based and vanilla).
    *
-   * FUNCTIONALITY:
-   * - Removes CustomAccessBreach-based actions (RemoteBreachAction, DeviceRemoteBreachAction, VehicleRemoteBreachAction)
-   * - Removes vanilla RemoteBreach actions
-   * - Type-based detection using class name check and interface casting
-   *
-   * USE CASES:
-   * - Breach failure penalty (device locked by position)
-   * - Device already breached (RemoteBreach redundant)
-   * - HackingExtensions integration (CustomHackingSystem menu)
-   *
-   * ARCHITECTURE:
-   * - Reverse iteration for safe array element removal
-   * - Combines class name check with interface casting
+   * Used when device locked by breach failure penalty, already breached, or for HackingExtensions
+   * integration. Combines class name check with interface casting, uses reverse iteration for
+   * safe array element removal.
    */
   public static func RemoveAllRemoteBreachActions(
     outActions: script_ref<array<ref<DeviceAction>>>
@@ -996,70 +1002,21 @@ public abstract class RemoteBreachLockUtils {
   }
 
   /**
-   * Check if RemoteBreach action can execute (RAM + position lock validation)
+   * Gets RemoteBreach inactive reason with vanilla-compatible LocKeys.
    *
-   * FUNCTIONALITY:
-   * - Validates RAM cost affordability
-   * - Checks breach failure penalty settings
-   * - Validates position-based lock status
+   * Validation priority:
+   * 1. RAM cost affordability → Returns "LocKey#27398" (RAM insufficient)
+   * 2. Position penalty → Returns "LocKey#7021" (Network breach failure)
+   * 3. No issues → Returns "" (empty string)
    *
-   * RATIONALE:
-   * DEPRECATED: Use GetRemoteBreachInactiveReason() for LocKey support.
-   * This method returns Bool only - new code should use the LocKey variant.
+   * Supports SetInactiveWithReason() for UI display. Uses output parameter pattern for dual
+   * return (Bool + String), integrates with BNConstants for LocKey management.
    *
-   * ARCHITECTURE:
-   * - Multi-stage validation with early returns
-   * - Delegates to BreachLockSystem for position checks
-   */
-  public static func CanExecuteRemoteBreachAction(
-    action: ref<BaseScriptableAction>,
-    devicePS: ref<ScriptableDeviceComponentPS>,
-    player: ref<PlayerPuppet>
-  ) -> Bool {
-    // Check 1: RAM affordability
-    if !action.CanPayCost(player) {
-      return false;
-    }
-
-    // Check 2: Breach failure penalty enabled
-    if !BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
-      return true;
-    }
-
-    // Check 3: Timestamp-based lock check
-    if RemoteBreachLockSystem.IsRemoteBreachLockedByTimestamp(devicePS, devicePS.GetGameInstance()) {
-      return false;
-    }
-
-    return true;
-  }
-
-  /**
-   * Get RemoteBreach inactive reason with vanilla-compatible LocKeys
-   *
-   * FUNCTIONALITY:
-   * - Validates RAM cost and returns appropriate LocKey
-   * - Checks position penalty and returns LocKey
-   * - Supports SetInactiveWithReason() for UI display
-   *
-   * RETURNS:
-   * - "" (empty) if canExecute=true
-   * - "LocKey#27398" if RAM insufficient (Vanilla: "RAM insufficient")
-   * - "LocKey#7021" if position penalty (Vanilla: "Network breach failure")
-   *
-   * ARCHITECTURE:
-   * - Priority-based validation (RAM > Position)
-   * - Output parameter pattern for dual return (Bool + String)
-   * - Integrates with BNConstants for LocKey management
-   *
-   * USAGE:
-   * ```redscript
-   * let canExecute: Bool;
-   * let reason: String = RemoteBreachLockUtils.GetRemoteBreachInactiveReason(
-   *   action, this, player, canExecute
-   * );
-   * action.SetInactiveWithReason(canExecute, reason);
-   * ```
+   * @param action - RemoteBreach action to validate
+   * @param devicePS Device persistent state
+   * @param player Player reference
+   * @param canExecute Output parameter set to true if executable, false if locked
+   * @return Empty string if can execute, LocKey string if locked (RAM or position)
    */
   public static func GetRemoteBreachInactiveReason(
     action: ref<BaseScriptableAction>,

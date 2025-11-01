@@ -9,20 +9,14 @@ import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.RemoteBreach.Actions.*
 import BetterNetrunning.RadialUnlock.*
 
-
-// ==================== Remote Actions ====================
-
 /*
- * Provides device quickhack actions based on breach status and player progression
+ * Provides device quickhack actions based on breach status and player progression.
  *
- * VANILLA DIFF: Replaces SetActionsInactiveAll() with SetActionsInactiveUnbreached() for progressive unlock
- * FIXED: Always apply progressive unlock restrictions in Progressive Mode (don't rely on IsQuickHacksExposed)
- * FIXED: Auto-unlock networks without access points when UnlockIfNoAccessPoint is false
+ * Vanilla diff: Replaces SetActionsInactiveAll() with SetActionsInactiveUnbreached()
+ * for progressive unlock.
  *
- * ARCHITECTURE:
- * - Progressive unlock via SetActionsInactiveUnbreached() (checks Cyberdeck tier, Intelligence)
- * - Standalone device support via radial breach system (50m radius)
- * - Network centroid calculation for isolated NPC auto-unlock
+ * @param outActions - Output array of available device actions
+ * @param context - Action context with device information
  */
 @replaceMethod(ScriptableDeviceComponentPS)
 public final func GetRemoteActions(out outActions: array<ref<DeviceAction>>, const context: script_ref<GetActionsContext>) -> Void {
@@ -104,8 +98,10 @@ public final func GetRemoteActions(out outActions: array<ref<DeviceAction>>, con
 
 /*
  * Allows quickhack menu to open when devices are not connected to an access point
- * VANILLA DIFF: Simplified from branching logic - equivalent to vanilla when QuickHacksExposedByDefault() is true
- * Removes the IsConnectedToBackdoorDevice() check that vanilla uses when QuickHacksExposedByDefault() is false
+ *
+ * Vanilla diff:
+ * - Simplified from branching logic - equivalent to vanilla when QuickHacksExposedByDefault() is true
+ * - Removes the IsConnectedToBackdoorDevice() check that vanilla uses when QuickHacksExposedByDefault() is false
  */
 @replaceMethod(Device)
 public const func CanRevealRemoteActionsWheel() -> Bool {

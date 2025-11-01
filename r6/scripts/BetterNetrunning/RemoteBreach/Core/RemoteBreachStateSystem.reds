@@ -10,6 +10,7 @@ module BetterNetrunning.RemoteBreach.Core
 import BetterNetrunning.*
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 
 @if(ModuleExists("HackingExtensions"))
 import HackingExtensions.*

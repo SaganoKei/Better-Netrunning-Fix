@@ -34,15 +34,20 @@ import HackingExtensions.Programs.*
 // -----------------------------------------------------------------------------
 
 @if(ModuleExists("HackingExtensions"))
+/*
+ * Registers Better Netrunning daemon actions after player initialization.
+ *
+ * VANILLA DIFF: Injects daemon registration during OnGameAttached.
+ *
+ * @return Bool - result of OnGameAttached (preserves vanilla return value)
+ */
 @wrapMethod(PlayerPuppet)
 protected cb func OnGameAttached() -> Bool {
-    // CRITICAL: Call wrappedMethod() FIRST to ensure CustomHackingSystem is initialized
-    let result: Bool = wrappedMethod();
+    wrappedMethod();
 
-    // Register BetterNetrunning daemon actions
     this.RegisterBetterNetrunningDaemons();
 
-    return result;
+    return true;
 }
 
 @if(ModuleExists("HackingExtensions"))

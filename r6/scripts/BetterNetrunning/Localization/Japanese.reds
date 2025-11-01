@@ -18,9 +18,6 @@
 // - Debug (12 entries)
 // - Daemon Names/Descriptions (8 entries)
 //
-// DEPENDENCIES:
-// - Codeware.Localization.ModLocalizationPackage
-// ============================================================================
 
 module BetterNetrunning.Localization
 import Codeware.Localization.*
@@ -40,9 +37,12 @@ public class Japanese extends ModLocalizationPackage {
     this.Text("DisplayName-BetterNetrunning-AllowBreachingUnconsciousNPCs", "気絶したNPCのブリーチを許可");
     this.Text("Description-BetterNetrunning-AllowBreachingUnconsciousNPCs", "有効の場合、ネットワークに接続された気絶中のNPCにもブリーチを実行できます");
 
+    this.Text("DisplayName-BetterNetrunning-RadialUnlockCrossNetwork", "クロスネットワーク範囲アンロック");
+    this.Text("Description-BetterNetrunning-RadialUnlockCrossNetwork", "有効の場合、他のネットワークに属する対象も範囲内であればアンロックします。無効の場合、他のネットワークに属する対象は範囲アンロックから除外されます");
+
     this.Text("DisplayName-BetterNetrunning-QuickhackUnlockDurationHours", "クイックハック アンロック持続期間（時）");
     this.Text("Description-BetterNetrunning-QuickhackUnlockDurationHours",
-              "ブリーチ成功後、クイックハックのアンロック状態が持続する時間を設定します（ゲーム内時間）。\n0に設定すると、一度ブリーチしたデバイスは期限切れなしで永続的にアンロック状態を維持します。\n1以上に設定すると、指定時間経過後に再ロックされ、再度ブリーチが必要になります");
+              "ブリーチ成功後、クイックハックのアンロック状態が持続する時間を設定します（ゲーム内時間）。\n0に設定すると、一度ブリーチした対象は期限切れなしで永続的にアンロック状態を維持します。\n1以上に設定すると、指定時間経過後に再ロックされ、再度ブリーチが必要になります");
 
     // ===== REMOTE BREACH =====
     this.Text("Category-RemoteBreach", "リモートブリーチ");
@@ -77,7 +77,7 @@ public class Japanese extends ModLocalizationPackage {
 
     this.Text("DisplayName-BetterNetrunning-APBreachFailurePenaltyEnabled", "アクセスポイント ブリーチペナルティ");
     this.Text("Description-BetterNetrunning-APBreachFailurePenaltyEnabled",
-              "アクセスポイントのブリーチ失敗時にペナルティを適用します。\n有効時: 切断エフェクト + 対象への再「接続」実行不可 + 逆探知（周囲にネットランナーがいる場合）\n一定期間、失敗したデバイスに対する「接続」アクションが非表示になります（他のデバイスは通常通りアクセス可能）");
+              "アクセスポイントのブリーチ失敗時にペナルティを適用します。\n有効時: 切断エフェクト + 対象への再「接続」実行不可 + 逆探知（周囲にネットランナーがいる場合）\n一定期間、失敗した対象に対する「接続」アクションが非表示になります（他の対象は通常通りアクセス可能）");
 
     this.Text("DisplayName-BetterNetrunning-NPCBreachFailurePenaltyEnabled", "NPC ブリーチペナルティ");
     this.Text("Description-BetterNetrunning-NPCBreachFailurePenaltyEnabled",
@@ -85,17 +85,17 @@ public class Japanese extends ModLocalizationPackage {
 
     this.Text("DisplayName-BetterNetrunning-RemoteBreachFailurePenaltyEnabled", "リモートブリーチ ペナルティ");
     this.Text("Description-BetterNetrunning-RemoteBreachFailurePenaltyEnabled",
-              "リモートブリーチクイックハックの失敗時にペナルティを適用します。\n有効時: 切断エフェクト + 接続先ネットワーク全体（ネットワーク接続時）または範囲内スタンドアロン/車両（スタンドアロン時）のリモートブリーチ実行不可 + 逆探知（周囲にネットランナーがいる場合）\n一定期間、「ブリーチプロトコル」クイックハックが非表示になる範囲: (1) 失敗デバイスがネットワーク接続時は接続先ネットワーク全体、(2) 失敗位置から一定範囲内のスタンドアロン/車両デバイス");
+              "リモートブリーチクイックハックの失敗時にペナルティを適用します。\n有効時: 切断エフェクト + 接続先ネットワーク全体（ネットワーク接続時）または範囲内スタンドアロン/車両（スタンドアロン時）のリモートブリーチ実行不可 + 逆探知（周囲にネットランナーがいる場合）\n一定期間、「ブリーチプロトコル」クイックハックが非表示になる範囲: (1) 失敗した対象がネットワーク接続時は接続先ネットワーク全体、(2) 失敗位置から一定範囲内のスタンドアロン/車両対象");
 
     this.Text("DisplayName-BetterNetrunning-BreachPenaltyDurationMinutes", "ブリーチペナルティ 持続期間（分）");
     this.Text("Description-BetterNetrunning-BreachPenaltyDurationMinutes",
-              "ブリーチ失敗後、ペナルティが持続する時間（ゲーム内時間）。\nAPブリーチ: 失敗したデバイスに対する「接続」操作をロック\n気絶NPCブリーチ: 失敗したNPCに対する「ブリーチ」操作をロック\nリモートブリーチ: 接続先ネットワーク全体（ネットワーク接続時）または範囲内スタンドアロン/車両（スタンドアロン時）の「ブリーチプロトコル」クイックハックをロック");
+              "ブリーチ失敗後、ペナルティが持続する時間（ゲーム内時間）。\nAPブリーチ: 失敗した対象に対する「接続」操作をロック\n気絶NPCブリーチ: 失敗したNPCに対する「ブリーチ」操作をロック\nリモートブリーチ: 接続先ネットワーク全体（ネットワーク接続時）または範囲内スタンドアロン/車両（スタンドアロン時）の「ブリーチプロトコル」クイックハックをロック");
 
     // ===== ACCESS POINTS =====
     this.Text("Category-AccessPoints", "アクセスポイント");
     this.Text("DisplayName-BetterNetrunning-UnlockIfNoAccessPoint", "アクセスポイントが無いネットワークをアンロック");
     this.Text("Description-BetterNetrunning-UnlockIfNoAccessPoint",
-              "有効の場合、アクセスポイントがないデバイスは常にアンロックされます（ブリーチ不要）。\n無効の場合、スタンドアロンデバイスは範囲アンロックシステム（Radial Unlock System）を通じてブリーチが必要です\n（ブリーチ済みネットワークの中心からブリーチ範囲内で自動アンロック。範囲は“Radial Breach”設定で変更可能）");
+              "有効の場合、アクセスポイントがない対象は常にアンロックされます（ブリーチ不要）。\n無効の場合、スタンドアロン対象は範囲アンロックシステム（Radial Unlock System）によって制御されます。\n（ブリーチ済みネットワークの中心からブリーチ範囲内で自動アンロック。範囲は“Radial Breach”設定で変更可能）");
 
     this.Text("DisplayName-BetterNetrunning-AutoDatamineBySuccessCount", "成功数に応じた自動データマイニング");
     this.Text("Description-BetterNetrunning-AutoDatamineBySuccessCount",

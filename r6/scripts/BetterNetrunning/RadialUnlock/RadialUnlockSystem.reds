@@ -1,18 +1,21 @@
 // ============================================================================
 // BetterNetrunning - Radial Unlock System
 // ============================================================================
+//
+// PURPOSE:
 // Radial-based network breach tracking for standalone devices
 //
-// ARCHITECTURE:
-// - Uses GameInstance.GetTargetingSystem() to find nearby devices
-// - Records breached AccessPoint entity IDs in player's persistent storage
-// - Standalone devices check if they're within breach radius of any recorded AP
+// FUNCTIONALITY:
+// - Records breached AccessPoint positions in persistent storage
+// - Validates standalone devices within configurable breach radius
+// - Integrates with RadialBreach MOD for settings
+// - Spatial proximity-based device discovery
 //
-// ADVANTAGES over hash-based approach:
-// - Uses native TargetingSystem (same as RadialBreach mod)
-// - No hash mismatch issues (devices found by spatial proximity)
-// - Works for physically separate standalone devices
-// - Configurable breach radius
+// ARCHITECTURE:
+// - Uses GameInstance.GetTargetingSystem() for native device discovery
+// - Persistent storage in PlayerPuppet for breach positions
+// - Position-based tracking instead of EntityID hashing
+// - Configurable breach radius (default 50m)
 // ============================================================================
 
 module BetterNetrunning.RadialUnlock
@@ -20,6 +23,7 @@ module BetterNetrunning.RadialUnlock
 import BetterNetrunning.Core.*
 import BetterNetrunning.Integration.*
 import BetterNetrunning.Utils.*
+import BetterNetrunning.Logging.*
 import BetterNetrunningConfig.*
 
 // ============================================================================
@@ -37,23 +41,20 @@ public persistent let m_betterNetrunning_breachTimestamps: array<Uint64>;
 // CONFIGURATION
 // ============================================================================
 
-/// Default breach radius (meters) - fetched from RadialBreach settings or default 50m
-/// Automatically syncs with RadialBreach user configuration via Native Settings UI
-/// @return Breach radius in meters (from RadialBreach settings or default 50m)
-public func GetDefaultBreachRadius() -> Float {
-  // Note: GetGame() is not available in standalone function
-  // This function is deprecated - use DeviceTypeUtils.GetRadialBreachRange(gameInstance) instead
-  return 50.0; // Fallback for legacy compatibility
-}
-
-/// Maximum stored breach records (prevents save bloat)
-/// @return Maximum number of breach records to store
+/*
+ * Maximum stored breach records (prevents save bloat)
+ *
+ * @return Maximum number of breach records to store
+ */
 public func GetMaxBreachRecords() -> Int32 {
   return 50; // Stores AccessPoint IDs only (not device hashes) to minimize save size
 }
 
-/// Records to remove when pruning (20% of max)
-/// @return Number of oldest records to remove when pruning
+/*
+ * Records to remove when pruning (20% of max)
+ *
+ * @return Number of oldest records to remove when pruning
+ */
 public func GetPruneCount() -> Int32 {
   return 10;
 }
@@ -62,11 +63,15 @@ public func GetPruneCount() -> Int32 {
 // CORE API
 // ============================================================================
 
-/// Records a successful AccessPoint breach by position
-/// Called from RefreshSlaves() after breach minigame completion
-/// Uses position-based tracking since EntityID retrieval is unreliable
-/// @param apPosition World position of the breached AccessPoint
-/// @param gameInstance Current game instance
+/*
+ * Records a successful AccessPoint breach by position
+ *
+ * Called from RefreshSlaves() after breach minigame completion
+ * Uses position-based tracking since EntityID retrieval is unreliable
+ *
+ * @param apPosition - World position of the breached AccessPoint
+ * @param gameInstance - Current game instance
+ */
 public func RecordAccessPointBreachByPosition(apPosition: Vector4, gameInstance: GameInstance) -> Void {
   let player: ref<PlayerPuppet> = GetPlayer(gameInstance);
   if !IsDefined(player) {
@@ -100,9 +105,12 @@ public func RecordAccessPointBreachByPosition(apPosition: Vector4, gameInstance:
   }
 }
 
-/// Legacy function for compatibility - now records by position
-/// @param apEntityID Entity ID of the breached AccessPoint
-/// @param gameInstance Current game instance
+/*
+ * Legacy function for compatibility - now records by position
+ *
+ * @param apEntityID - Entity ID of the breached AccessPoint
+ * @param gameInstance - Current game instance
+ */
 public func RecordAccessPointBreach(apEntityID: EntityID, gameInstance: GameInstance) -> Void {
   // Try to get entity position
   let apEntity: wref<GameObject> = GameInstance.FindEntityByID(gameInstance, apEntityID) as GameObject;
@@ -111,11 +119,15 @@ public func RecordAccessPointBreach(apEntityID: EntityID, gameInstance: GameInst
   }
 }
 
-/// Checks if a standalone device should be unlocked
-/// Returns true if device is within breach radius of any recorded AccessPoint
-/// @param device Device power state to check
-/// @param gameInstance Current game instance
-/// @return true if device should be unlocked (within breach radius or setting allows)
+/*
+ * Checks if a standalone device should be unlocked
+ *
+ * Returns true if device is within breach radius of any recorded AccessPoint
+ *
+ * @param device - Device power state to check
+ * @param gameInstance - Current game instance
+ * @return true if device should be unlocked (within breach radius or setting allows)
+ */
 public func ShouldUnlockStandaloneDevice(device: ref<ScriptableDeviceComponentPS>, gameInstance: GameInstance) -> Bool {
   // CRITICAL FIX: UnlockIfNoAccessPoint setting logic
   // - UnlockIfNoAccessPoint = true -> Standalone devices ALWAYS unlock (don't require AP)
@@ -145,13 +157,17 @@ public func ShouldUnlockStandaloneDevice(device: ref<ScriptableDeviceComponentPS
   return IsWithinBreachedAccessPointRadius(devicePosition, player, gameInstance);
 }
 
-/// Checks if a position is within breach radius of any recorded AccessPoint
-/// Now uses stored positions instead of EntityIDs
-/// Uses RadialBreach settings for breach radius (or default 50m)
-/// @param position World position to check
-/// @param player Player puppet instance
-/// @param gameInstance Current game instance
-/// @return true if position is within breach radius of any recorded AccessPoint
+/*
+ * Checks if a position is within breach radius of any recorded AccessPoint
+ *
+ * Now uses stored positions instead of EntityIDs
+ * Uses RadialBreach settings for breach radius (or default 50m)
+ *
+ * @param position - World position to check
+ * @param player - Player puppet instance
+ * @param gameInstance - Current game instance
+ * @return true if position is within breach radius of any recorded AccessPoint
+ */
 private func IsWithinBreachedAccessPointRadius(position: Vector4, player: ref<PlayerPuppet>, gameInstance: GameInstance) -> Bool {
   let breachRadius: Float = GetRadialBreachRange(gameInstance);
   let breachRadiusSq: Float = breachRadius * breachRadius; // Use squared distance for performance
@@ -175,8 +191,11 @@ private func IsWithinBreachedAccessPointRadius(position: Vector4, player: ref<Pl
 // HELPER FUNCTIONS
 // ============================================================================
 
-/// Removes oldest breach records when storage limit exceeded
-/// @param player Player puppet instance
+/*
+ * Removes oldest breach records when storage limit exceeded
+ *
+ * @param player - Player puppet instance
+ */
 private func PruneOldestBreachRecords(player: ref<PlayerPuppet>) -> Void {
   let pruneCount: Int32 = GetPruneCount();
   let currentSize: Int32 = ArraySize(player.m_betterNetrunning_breachedAccessPointPositions);
@@ -219,9 +238,12 @@ private func PruneOldestBreachRecords(player: ref<PlayerPuppet>) -> Void {
   }
 }
 
-/// Returns current game time as Uint64 timestamp
-/// @param gameInstance Current game instance
-/// @return Current game time as Uint64
+/*
+ * Returns current game time as Uint64 timestamp
+ *
+ * @param gameInstance - Current game instance
+ * @return Current game time as Uint64
+ */
 private func GetCurrentTimestamp(gameInstance: GameInstance) -> Uint64 {
   return Cast<Uint64>(TimeUtils.GetCurrentTimestamp(gameInstance));
 }
@@ -230,11 +252,15 @@ private func GetCurrentTimestamp(gameInstance: GameInstance) -> Uint64 {
 // RADIALBREACH INTEGRATION API
 // ============================================================================
 
-/// Gets the last breach position for a given AccessPoint
-/// Used by RadialBreach integration to filter devices by physical distance
-/// @param apPosition Position of the AccessPoint being checked
-/// @param gameInstance Current game instance
-/// @return Position of the last breach (or zero vector if not found)
+/*
+ * Gets the last breach position for a given AccessPoint
+ *
+ * Used by RadialBreach integration to filter devices by physical distance
+ *
+ * @param apPosition - Position of the AccessPoint being checked
+ * @param gameInstance - Current game instance
+ * @return Position of the last breach (or zero vector if not found)
+ */
 public func GetLastBreachPosition(apPosition: Vector4, gameInstance: GameInstance) -> Vector4 {
   let player: ref<PlayerPuppet> = GetPlayer(gameInstance);
   if !IsDefined(player) {
@@ -260,13 +286,17 @@ public func GetLastBreachPosition(apPosition: Vector4, gameInstance: GameInstanc
   return apPosition;
 }
 
-/// Checks if a device is within breach radius from any recorded breach position
-/// Used by RadialBreach integration for physical distance filtering
-/// Uses RadialBreach settings for breach radius (or default 50m)
-/// @param devicePosition World position of the device to check
-/// @param gameInstance Current game instance
-/// @param maxDistance Maximum allowed distance (optional, uses RadialBreach settings if 0)
-/// @return true if device is within breach radius of any recorded breach
+/*
+ * Checks if a device is within breach radius from any recorded breach position
+ *
+ * Used by RadialBreach integration for physical distance filtering
+ * Uses RadialBreach settings for breach radius (or default 50m)
+ *
+ * @param devicePosition - World position of the device to check
+ * @param gameInstance - Current game instance
+ * @param maxDistance - Maximum allowed distance (optional, uses RadialBreach settings if 0)
+ * @return true if device is within breach radius of any recorded breach
+ */
 public func IsDeviceWithinBreachRadius(devicePosition: Vector4, gameInstance: GameInstance, opt maxDistance: Float) -> Bool {
   if maxDistance == 0.0 {
     maxDistance = GetRadialBreachRange(gameInstance);
@@ -290,55 +320,4 @@ public func IsDeviceWithinBreachRadius(devicePosition: Vector4, gameInstance: Ga
   }
 
   return false;
-}
-
-/// OPTIONAL: Alternative API - Gets last breach position by AccessPoint PersistentID
-/// This is provided for API completeness and future extensibility.
-/// Currently not used by the integration code (direct entity position is used instead).
-/// @param apID PersistentID of the AccessPoint
-/// @param gameInstance Current game instance
-/// @return Recorded breach position, or error signal if not found
-public func GetLastBreachPositionByID(apID: PersistentID, gameInstance: GameInstance) -> Vector4 {
-  // Convert PersistentID to EntityID
-  let entityID: EntityID = PersistentID.ExtractEntityID(apID);
-
-  // Get GameObject from EntityID
-  let apEntity: wref<GameObject> = GameInstance.FindEntityByID(gameInstance, entityID) as GameObject;
-
-  if IsDefined(apEntity) {
-    // Use the Vector4-based API with entity position
-    let apPosition: Vector4 = apEntity.GetWorldPosition();
-    return GetLastBreachPosition(apPosition, gameInstance);
-  }
-
-  // Error: Could not find entity
-  return Vector4(-999999.0, -999999.0, -999999.0, 1.0);
-}
-
-// ============================================================================
-// DEBUG/TESTING FUNCTIONS
-// ============================================================================
-
-/// Debug: Returns count of recorded breaches
-/// Useful for testing and monitoring memory usage
-/// @param gameInstance Current game instance
-/// @return Number of recorded breach positions
-public func GetBreachRecordCount(gameInstance: GameInstance) -> Int32 {
-  let player: ref<PlayerPuppet> = GetPlayer(gameInstance);
-  if !IsDefined(player) {
-    return 0;
-  }
-  return ArraySize(player.m_betterNetrunning_breachedAccessPointPositions);
-}
-
-/// Debug: Clears all breach records
-/// Useful for testing
-/// @param gameInstance Current game instance
-public func ClearAllBreachRecords(gameInstance: GameInstance) -> Void {
-  let player: ref<PlayerPuppet> = GetPlayer(gameInstance);
-  if !IsDefined(player) {
-    return;
-  }
-  ArrayClear(player.m_betterNetrunning_breachedAccessPointPositions);
-  ArrayClear(player.m_betterNetrunning_breachTimestamps);
 }

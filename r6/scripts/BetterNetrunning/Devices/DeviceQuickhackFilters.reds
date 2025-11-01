@@ -1,4 +1,5 @@
 module BetterNetrunning.Devices
+import BetterNetrunning.Logging.*
 
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
@@ -10,18 +11,23 @@ import BetterNetrunning.RemoteBreach.Actions.*
 import BetterNetrunning.RadialUnlock.*
 
 
-// ==================== Post-Processing Filters ====================
+// ============================================================================
+// Post-Processing Filters
+// ============================================================================
 
 /*
- * Applies Better Netrunning enhancements after base game processing
+ * Applies Better Netrunning enhancements after base game processing.
  *
- * FUNCTIONALITY:
- * - Replaces vanilla RemoteBreach with CustomAccessBreach (if HackingExtensions installed)
- * - Removes RemoteBreach if device already unlocked (Progressive Unlock integration)
+ * Processing steps:
+ * - Replaces vanilla RemoteBreach with CustomAccessBreach (if HackingExtensions
+ *   installed)
+ * - Removes RemoteBreach if device already unlocked (Progressive Unlock
+ *   integration)
  *
- * ARCHITECTURE:
- * - Conditional compilation at method level (separate implementations)
- * - Type-based action detection (RemoteBreach class check)
+ * Implementation: Conditional compilation at method level (separate
+ * implementations) with type-based action detection (RemoteBreach class check).
+ *
+ * @param outActions - Array of device quickhacks (modified in-place)
  */
 @if(ModuleExists("HackingExtensions"))
 @addMethod(ScriptableDeviceComponentPS)
@@ -33,19 +39,28 @@ private final func ApplyBetterNetrunningDeviceFilters(outActions: script_ref<arr
   this.RemoveRemoteBreachIfUnlocked(outActions);
 }
 
+/*
+ * Fallback version of device filter (HackingExtensions disabled)
+ *
+ * @param outActions - Array of device quickhacks (modified in-place)
+ */
 @if(!ModuleExists("HackingExtensions"))
 @addMethod(ScriptableDeviceComponentPS)
 private final func ApplyBetterNetrunningDeviceFilters(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
   // Filter: Remove RemoteBreach if device already unlocked (fallback mode)
   this.RemoveRemoteBreachIfUnlocked(outActions);
-}/*
- * Replaces vanilla RemoteBreach with CustomAccessBreach
- * Only compiled when HackingExtensions module exists
+}
+
+/*
+ * Replaces vanilla RemoteBreach with CustomAccessBreach.
+ * Only compiled when HackingExtensions module exists.
  *
- * ARCHITECTURE:
+ * Implementation:
  * - Type-based detection: IsDefined(action as RemoteBreach)
  * - Removes vanilla RemoteBreach from actions array
  * - Adds CustomAccessBreach via TryAddCustomRemoteBreach()
+ *
+ * @param outActions - Array of device quickhacks (modified in-place)
  */
 @if(ModuleExists("HackingExtensions"))
 @addMethod(ScriptableDeviceComponentPS)
@@ -89,11 +104,14 @@ private final func ReplaceVanillaRemoteBreachWithCustom(outActions: script_ref<a
 
 /*
  * Removes RemoteBreach/CustomAccessBreach if device already unlocked
- * Prevents redundant breach action when device quickhacks are already available
  *
- * ARCHITECTURE:
- * - Type-based detection: Checks RemoteBreach (vanilla) and CustomAccessBreach (custom)
- * - HackingExtensions version: Handles both types
+ * Purpose: Prevents redundant breach action when device quickhacks are already available
+ *
+ * Implementation:
+ * - Type-based detection checks RemoteBreach (vanilla) and CustomAccessBreach (custom)
+ * - HackingExtensions version handles both types
+ *
+ * @param outActions - Array of device quickhacks (modified in-place)
  */
 @if(ModuleExists("HackingExtensions"))
 @addMethod(ScriptableDeviceComponentPS)
@@ -111,7 +129,6 @@ private final func RemoveRemoteBreachIfUnlocked(outActions: script_ref<array<ref
     // Check vanilla RemoteBreach
     if IsDefined(action as RemoteBreach) {
       ArrayErase(Deref(outActions), i);
-      BNTrace("RemoveRemoteBreachIfUnlocked", "Removed vanilla RemoteBreach (device already breached)");
     }
 
     // Check CustomAccessBreach
@@ -128,6 +145,8 @@ private final func RemoveRemoteBreachIfUnlocked(outActions: script_ref<array<ref
 /*
  * Removes RemoteBreach if device already unlocked (Fallback version)
  * Only handles vanilla RemoteBreach (no CustomAccessBreach)
+ *
+ * @param outActions - Array of device quickhacks (modified in-place)
  */
 @if(!ModuleExists("HackingExtensions"))
 @addMethod(ScriptableDeviceComponentPS)
@@ -145,16 +164,19 @@ private final func RemoveRemoteBreachIfUnlocked(outActions: script_ref<array<ref
     // Check vanilla RemoteBreach
     if IsDefined(action as RemoteBreach) {
       ArrayErase(Deref(outActions), i);
-      BNTrace("RemoveRemoteBreachIfUnlocked", "Removed vanilla RemoteBreach (device already breached)");
     }
 
     i -= 1;
   }
-}// ==================== Helper Methods (Shared Logic) ====================
+}
+
+// ==================== Helper Methods (Shared Logic) ====================
 
 /*
  * Wrapper for TryAddMissingCustomRemoteBreach (conditional compilation support)
  * Only compiled when HackingExtensions module exists
+ *
+ * @param outActions - Array of device quickhacks (modified in-place)
  */
 @if(ModuleExists("HackingExtensions"))
 @addMethod(ScriptableDeviceComponentPS)
@@ -164,6 +186,8 @@ private final func TryAddMissingCustomRemoteBreachWrapper(outActions: script_ref
 
 /*
  * Stub wrapper when HackingExtensions module does not exist
+ *
+ * @param outActions - Array of device quickhacks (unused in stub)
  */
 @if(!ModuleExists("HackingExtensions"))
 @addMethod(ScriptableDeviceComponentPS)
@@ -174,6 +198,9 @@ private final func TryAddMissingCustomRemoteBreachWrapper(outActions: script_ref
 /*
  * Common early exit checks for FinalizeGetQuickHackActions
  * Returns true if processing should continue, false if should exit early
+ *
+ * @param outActions - Array of device quickhacks to validate
+ * @return True if processing should continue, false if should exit early
  */
 @addMethod(ScriptableDeviceComponentPS)
 private final func ShouldProcessQuickHackActions(outActions: script_ref<array<ref<DeviceAction>>>) -> Bool {
@@ -192,12 +219,14 @@ private final func ShouldProcessQuickHackActions(outActions: script_ref<array<re
 }
 
 /*
- * Override MarkActionsAsQuickHacks to support CustomAccessBreach
- * CRITICAL FIX: CustomAccessBreach extends PuppetAction, not ScriptableDeviceAction,
- * so base game MarkActionsAsQuickHacks skips it. This causes RemoteBreach to not appear in UI.
+ * Marks quickhacks including CustomAccessBreach (PuppetAction) so RemoteBreach
+ * appears in UI.
  *
- * MOD COMPATIBILITY: Changed from @replaceMethod to @wrapMethod for better compatibility.
- * Base game processing is preserved, CustomAccessBreach support is added as extension.
+ * Vanilla diff: Adds SetAsQuickHack() handling for CustomAccessBreach while
+ * preserving vanilla marking logic.
+ *
+ * Implementation: @wrapMethod - calls wrappedMethod() first, then iterates and
+ * marks CustomAccessBreach explicitly.
  */
 @if(ModuleExists("HackingExtensions"))
 @wrapMethod(ScriptableDeviceComponentPS)
@@ -223,6 +252,9 @@ protected final func MarkActionsAsQuickHacks(actionsToMark: script_ref<array<ref
 /*
  * Applies common quickhack restrictions (power state, RPG checks, illegality)
  * Common logic shared by both conditional compilation versions
+ *
+ * @param outActions - Array of device quickhacks (modified in-place)
+ * @param context - Action context with executor and interaction details
  */
 @addMethod(ScriptableDeviceComponentPS)
 private final func ApplyCommonQuickHackRestrictions(outActions: script_ref<array<ref<DeviceAction>>>, const context: script_ref<GetActionsContext>) -> Void {

@@ -3,36 +3,25 @@
 // ============================================================================
 //
 // PURPOSE:
-// Evaluates player progression requirements (Cyberdeck quality, Intelligence stat,
-// Enemy Rarity) to determine quickhack unlock eligibility in Progressive Mode.
+// Evaluates player progression requirements for quickhack unlock eligibility
 //
 // FUNCTIONALITY:
-// - Cyberdeck Quality: Checks player's equipped Cyberdeck tier (Common to Legendary++)
-// - Intelligence Stat: Checks player's Intelligence attribute level
-// - Enemy Rarity: Checks target NPC's difficulty rating (Weak to MaxTac)
-// - AND/OR Logic: Supports "require all" or "require any" condition combinations
+// - Cyberdeck Quality checks (Common to Legendary++)
+// - Intelligence Stat validation
+// - Enemy Rarity assessment (Weak to MaxTac)
+// - AND/OR Logic for condition combinations
 //
-// RATIONALE: EnemyRarity provides granular progression curve:
-// - Weak -> Normal -> Strong -> Elite -> Rare -> Boss -> MiniBoss -> MaxTac
-// - More nuanced than simple level ranges
-// - Aligned with vanilla game's enemy classification system
-//
-// USAGE:
-// - Called from NPCs/NPCQuickhacks.reds and Devices/DeviceQuickhacks.reds
-// - Integrates with BetterNetrunningSettings for user configuration
+// ARCHITECTURE:
+// - Static utility functions for each progression check
+// - Enum-based quality and rarity classifications
+// - Integration with vanilla game's enemy classification system
 // ============================================================================
 
 module BetterNetrunning.Systems
 
 import BetterNetrunningConfig.*
 
-// ============================================================================
-// CYBERDECK QUALITY CHECKS
-// ============================================================================
-
-/// Converts config value (1-11) to gamedataQuality enum
-/// @param value Config value from Native Settings (1=Common, 11=Legendary++)
-/// @return Corresponding gamedataQuality enum value
+// Converts config value (1-11) to gamedataQuality enum
 public func CyberdeckQualityFromConfigValue(value: Int32) -> gamedataQuality {
   switch(value) {
     case 1:
@@ -61,10 +50,14 @@ public func CyberdeckQualityFromConfigValue(value: Int32) -> gamedataQuality {
   return gamedataQuality.Invalid;
 }
 
-/// Converts gamedataQuality enum to numeric rank (1-11) for comparison
-/// Required because CDPR reordered enum values inconsistently
-/// @param quality gamedataQuality enum value
-/// @return Numeric rank (1=Common, 11=Legendary++)
+/*
+ * Converts gamedataQuality enum to numeric rank (1-11) for comparison
+ *
+ * Required because CDPR reordered enum values inconsistently
+ *
+ * @param quality - gamedataQuality enum value
+ * @return Numeric rank (1=Common, 11=Legendary++)
+ */
 public func CyberdeckQualityToRank(quality: gamedataQuality) -> Int32 {
   switch(quality) {
     case gamedataQuality.Common:
@@ -93,10 +86,13 @@ public func CyberdeckQualityToRank(quality: gamedataQuality) -> Int32 {
   return 0;
 }
 
-/// Checks if player's Cyberdeck meets minimum quality requirement
-/// @param gameInstance Current game instance
-/// @param value Minimum required quality config value (1-11)
-/// @return true if player's Cyberdeck quality >= required quality
+/*
+ * Checks if player's Cyberdeck meets minimum quality requirement
+ *
+ * @param gameInstance - Current game instance
+ * @param value - Minimum required quality config value (1-11)
+ * @return true if player's Cyberdeck quality >= required quality
+ */
 public func CyberdeckConditionMet(gameInstance: GameInstance, value: Int32) -> Bool {
   let systemReplacementID: ItemID = EquipmentSystem.GetData(GetPlayer(gameInstance)).GetActiveItem(gamedataEquipmentArea.SystemReplacementCW);
   let itemRecord: wref<Item_Record> = RPGManager.GetItemRecord(systemReplacementID);
@@ -109,10 +105,13 @@ public func CyberdeckConditionMet(gameInstance: GameInstance, value: Int32) -> B
 // INTELLIGENCE STAT CHECKS
 // ============================================================================
 
-/// Checks if player's Intelligence stat meets minimum requirement
-/// @param gameInstance Current game instance
-/// @param value Minimum required Intelligence level
-/// @return true if player's Intelligence >= required value
+/*
+ * Checks if player's Intelligence stat meets minimum requirement
+ *
+ * @param gameInstance - Current game instance
+ * @param value - Minimum required Intelligence level
+ * @return true if player's Intelligence >= required value
+ */
 public func IntelligenceConditionMet(gameInstance: GameInstance, value: Int32) -> Bool {
   let statsSystem: ref<StatsSystem> = GameInstance.GetStatsSystem(gameInstance);
   let playerIntelligence: Int32 = Cast(statsSystem.GetStatValue(Cast(GetPlayer(gameInstance).GetEntityID()), gamedataStatType.Intelligence));
@@ -123,9 +122,12 @@ public func IntelligenceConditionMet(gameInstance: GameInstance, value: Int32) -
 // ENEMY RARITY CHECKS
 // ============================================================================
 
-/// Converts NPC rarity enum to numeric rank (1-8) for comparison
-/// @param rarity NPC's difficulty rating
-/// @return Numeric rank (1=Trash, 8=MaxTac)
+/*
+ * Converts NPC rarity enum to numeric rank (1-8) for comparison
+ *
+ * @param rarity - NPC's difficulty rating
+ * @return Numeric rank (1=Trash, 8=MaxTac)
+ */
 public func NPCRarityToRank(rarity: gamedataNPCRarity) -> Int32 {
   switch rarity {
     case gamedataNPCRarity.Trash:
@@ -148,11 +150,14 @@ public func NPCRarityToRank(rarity: gamedataNPCRarity) -> Int32 {
   return 0;
 }
 
-/// Checks if enemy rarity allows quickhack unlock
-/// @param gameInstance Current game instance
-/// @param enemy Target NPC entity
-/// @param value Maximum allowed rarity rank (1-8)
-/// @return true if enemy's rarity <= max allowed rarity
+/*
+ * Checks if enemy rarity allows quickhack unlock
+ *
+ * @param gameInstance - Current game instance
+ * @param enemy - Target NPC entity
+ * @param value - Maximum allowed rarity rank (1-8)
+ * @return true if enemy's rarity <= max allowed rarity
+ */
 public func EnemyRarityConditionMet(gameInstance: GameInstance, enemy: wref<Entity>, value: Int32) -> Bool {
   let puppet: wref<ScriptedPuppet> = enemy as ScriptedPuppet;
   if !IsDefined(puppet) {
@@ -166,15 +171,19 @@ public func EnemyRarityConditionMet(gameInstance: GameInstance, enemy: wref<Enti
 // COMBINED PROGRESSION CHECKS
 // ============================================================================
 
-/// Evaluates if NPC quickhacks should be unlocked based on progression settings
-/// Supports AND/OR logic based on ProgressionRequireAll() setting
-/// @param gameInstance Current game instance
-/// @param enemy Target NPC entity
-/// @param alwaysAllow If true, bypass all checks
-/// @param cyberdeckValue Minimum Cyberdeck quality (1-11)
-/// @param intelligenceValue Minimum Intelligence stat
-/// @param enemyRarityValue Maximum enemy rarity (1-8)
-/// @return true if NPC quickhacks should be unlocked
+/*
+ * Evaluates if NPC quickhacks should be unlocked based on progression settings
+ *
+ * Supports AND/OR logic based on ProgressionRequireAll() setting
+ *
+ * @param gameInstance - Current game instance
+ * @param enemy - Target NPC entity
+ * @param alwaysAllow - If true, bypass all checks
+ * @param cyberdeckValue - Minimum Cyberdeck quality (1-11)
+ * @param intelligenceValue - Minimum Intelligence stat
+ * @param enemyRarityValue - Maximum enemy rarity (1-8)
+ * @return true if NPC quickhacks should be unlocked
+ */
 public func ShouldUnlockHackNPC(gameInstance: GameInstance, enemy: wref<Entity>, alwaysAllow: Bool, cyberdeckValue: Int32, intelligenceValue: Int32, enemyRarityValue: Int32) -> Bool {
   if alwaysAllow {
     return true;
@@ -200,13 +209,17 @@ public func ShouldUnlockHackNPC(gameInstance: GameInstance, enemy: wref<Entity>,
   }
 }
 
-/// Evaluates if device quickhacks should be unlocked based on progression settings
-/// Supports AND/OR logic based on ProgressionRequireAll() setting
-/// @param gameInstance Current game instance
-/// @param alwaysAllow If true, bypass all checks
-/// @param cyberdeckValue Minimum Cyberdeck quality (1-11)
-/// @param intelligenceValue Minimum Intelligence stat
-/// @return true if device quickhacks should be unlocked
+/*
+ * Evaluates if device quickhacks should be unlocked based on progression settings
+ *
+ * Supports AND/OR logic based on ProgressionRequireAll() setting
+ *
+ * @param gameInstance - Current game instance
+ * @param alwaysAllow - If true, bypass all checks
+ * @param cyberdeckValue - Minimum Cyberdeck quality (1-11)
+ * @param intelligenceValue - Minimum Intelligence stat
+ * @return true if device quickhacks should be unlocked
+ */
 public func ShouldUnlockHackDevice(gameInstance: GameInstance, alwaysAllow: Bool, cyberdeckValue: Int32, intelligenceValue: Int32) -> Bool {
   if alwaysAllow {
     return true;

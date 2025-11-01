@@ -4,38 +4,35 @@ import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
 
-/*
- * ============================================================================
- * NPC LIFECYCLE MODULE
- * ============================================================================
- *
- * PURPOSE:
- * Manages NPC network connection state throughout their lifecycle (active,
- * incapacitated, dead) to enable/disable unconscious NPC breaching.
- *
- * FUNCTIONALITY:
- * - Keeps NPCs connected to network when incapacitated (allows unconscious breach)
- * - Disconnects NPCs from network upon death (vanilla behavior)
- * - Adds breach action to unconscious NPC interaction menu
- * - Checks physical access point connection for radial unlock mode
- *
- * VANILLA DIFF:
- * - OnIncapacitated(): Removes this.RemoveLink() call to keep network connection active
- * - GetValidChoices(): Adds breach action to unconscious NPC interaction menu
- *
- * MOD COMPATIBILITY:
- * OnDeath() override was removed as it's 100% identical to vanilla behavior,
- * improving compatibility with other mods that may hook death events.
- *
- * ============================================================================
- */
+// ============================================================================
+// NPC Lifecycle Module
+// ============================================================================
+//
+// PURPOSE:
+//   Manages NPC network connection state throughout their lifecycle (active,
+//   incapacitated, dead) to enable/disable unconscious NPC breaching
+//
+// FUNCTIONALITY:
+//   - Keeps NPCs connected to network when incapacitated (allows unconscious breach)
+//   - Disconnects NPCs from network upon death (vanilla behavior)
+//   - Adds breach action to unconscious NPC interaction menu
+//   - Detects unconscious NPC breaches via IsUnconsciousNPCBreach() entity type check
+//   - Checks physical access point connection for radial unlock mode
+//
+// ARCHITECTURE:
+//   - OnIncapacitated() override: Removes RemoveLink() call to keep network connection
+//   - GetValidChoices() override: Adds breach action to unconscious NPC interaction menu
+//   - CompleteAction() override: Delegates to vanilla after entity type detection
+//   - OnDeath() not overridden: Identical to vanilla, improves mod compatibility
+//
 
 // ==================== Incapacitation Handling ====================
 
 /*
- * Keeps NPCs connected to network when incapacitated
- * VANILLA DIFF: Removes this.RemoveLink() call to keep network connection active
- * Allows quickhacking unconscious NPCs per mod design
+ * Keeps NPCs connected to network when incapacitated.
+ *
+ * VANILLA DIFF: Removes this.RemoveLink() call to keep network connection active.
+ * Allows quickhacking unconscious NPCs per mod design.
  */
 @replaceMethod(ScriptedPuppet)
 protected func OnIncapacitated() -> Void {
@@ -72,23 +69,13 @@ protected func OnIncapacitated() -> Void {
   CachedBoolValue.SetDirty(this.m_isActiveCached);
 }
 
-// ==================== Death Handling ====================
-
-/*
- * Disconnects NPCs from network upon death
- * VANILLA DIFF: Identical to vanilla behavior (removed @replaceMethod for better mod compatibility)
- *
- * MOD COMPATIBILITY: This method is no longer overridden as it's identical to vanilla.
- * Better Netrunning now delegates death handling to vanilla logic.
- */
-// @replaceMethod(ScriptedPuppet)
-// REMOVED: This override is unnecessary (100% identical to vanilla)
-
 // ==================== Network Connection Checks ====================
 
 /*
  * Checks if device is connected to any access point controller
  * Used to determine if unconscious NPC breach is possible
+ *
+ * @return True if device is connected to at least one access point
  */
 @addMethod(DeviceComponentPS)
 public final func IsConnectedToPhysicalAccessPoint() -> Bool {
@@ -103,8 +90,10 @@ public final func IsConnectedToPhysicalAccessPoint() -> Bool {
 // ==================== Unconscious NPC Breach Action ====================
 
 /*
- * Adds breach action to unconscious NPC interaction menu
- * Allows breaching unconscious NPCs when connected to network
+ * Adds breach action to unconscious NPC interaction menu.
+ * Allows breaching unconscious NPCs when connected to network.
+ *
+ * VANILLA DIFF: Injects BreachUnconsciousOfficer action before vanilla processing.
  */
 @wrapMethod(ScriptedPuppetPS)
 public final const func GetValidChoices(const actions: script_ref<array<wref<ObjectAction_Record>>>, const context: script_ref<GetActionsContext>, objectActionsCallbackController: wref<gameObjectActionsCallbackController>, checkPlayerQuickHackList: Bool, choices: script_ref<array<InteractionChoice>>) -> Void {
@@ -119,23 +108,14 @@ public final const func GetValidChoices(const actions: script_ref<array<wref<Obj
 	wrappedMethod(actions, context, objectActionsCallbackController, checkPlayerQuickHackList, choices);
 }
 
-// ==================== Custom Action Creation ====================
-
 /*
- * Returns custom UnconsciousNPCBreach for BreachUnconsciousOfficer action
+ * Returns AccessBreach action for breach operations.
  *
- * FUNCTIONALITY:
- * - Detects BreachUnconsciousOfficer action by name
- * - Returns UnconsciousNPCBreach (custom AccessBreach with manual experience control)
- * - Delegates all other actions to vanilla GetAction()
+ * Detects BreachUnconsciousOfficer action by name and returns AccessBreach for all
+ * breach types. Delegates other actions to vanilla GetAction().
  *
- * ARCHITECTURE:
- * - @replaceMethod for full control over action creation
- * - UnconsciousNPCBreach: Custom class with StartUpload()/CompleteAction() overrides
- *
- * MOD COMPATIBILITY:
- * - Uses @replaceMethod (necessary to intercept action creation)
- * - Preserves vanilla logic for all non-BreachUnconsciousOfficer actions
+ * @param actionRecord Object action record from TweakDB
+ * @return AccessBreach for breach actions, vanilla PuppetAction for others
  */
 @replaceMethod(ScriptedPuppetPS)
 protected const func GetAction(actionRecord: wref<ObjectAction_Record>) -> ref<PuppetAction> {
@@ -150,42 +130,15 @@ protected const func GetAction(actionRecord: wref<ObjectAction_Record>) -> ref<P
     return null;
   }
 
-  // CRITICAL: Detect BreachUnconsciousOfficer and return UnconsciousNPCBreach
-  // This ensures manual experience control (experience only on minigame success)
+  // Detect BreachUnconsciousOfficer action
   isUnconsciousBreach = Equals(actionRecord.ActionName(), BNConstants.ACTION_UNCONSCIOUS_BREACH());
 
-  if isUnconsciousBreach {
-    let unconsciousBreachAction: ref<UnconsciousNPCBreach> = new UnconsciousNPCBreach();
-
-    if this.IsConnectedToAccessPoint() {
-      let networkName: String = ToString(this.GetNetworkName());
-      unconsciousBreachAction.SetProperties(
-        networkName,
-        ScriptedPuppetPS.GetNPCsConnectedToThisAPCount(),
-        this.GetAccessPoint().GetMinigameAttempt(),
-        false,  // isRemoteBreach = false
-        false   // isSuicideBreach = false
-      );
-    } else {
-      let squadNetwork: String = "SQUAD_NETWORK";
-      unconsciousBreachAction.SetProperties(
-        squadNetwork,
-        1,
-        1,
-        false,  // isRemoteBreach = false
-        false   // isSuicideBreach = false
-      );
-    }
-
-    return unconsciousBreachAction;
-  }
-
-  // VANILLA LOGIC: Handle all other breach types
+  // VANILLA LOGIC: Handle all breach types (including unconscious)
   isRemoteBreach = Equals(actionRecord.ActionName(), BNConstants.ACTION_REMOTE_BREACH());
   isSuicideBreach = Equals(actionRecord.ActionName(), BNConstants.ACTION_SUICIDE_BREACH());
   isPhysicalBreach = Equals(actionRecord.ActionName(), BNConstants.ACTION_PHYSICAL_BREACH());
 
-  if isPhysicalBreach || isRemoteBreach || isSuicideBreach {
+  if isPhysicalBreach || isRemoteBreach || isSuicideBreach || isUnconsciousBreach {
     breachAction = new AccessBreach();
 
     if this.IsConnectedToAccessPoint() {
@@ -217,3 +170,32 @@ protected const func GetAction(actionRecord: wref<ObjectAction_Record>) -> ref<P
 
   return puppetAction;
 }
+
+// ==================== Breach Completion Handling ====================
+
+/*
+ * Handles unconscious NPC breach completion.
+ *
+ * Ensures IsUnconsciousNPCBreach() can detect NPC breaches via Entity type check.
+ * Entity is set by vanilla AccessBreach in Blackboard.
+ */
+@wrapMethod(AccessBreach)
+protected func CompleteAction(gameInstance: GameInstance) -> Void {
+  // Check if this is an unconscious NPC breach
+  let minigameBB: ref<IBlackboard> = GameInstance.GetBlackboardSystem(gameInstance)
+    .Get(GetAllBlackboardDefs().HackingMinigame);
+
+
+  let entity: wref<Entity> = FromVariant<wref<Entity>>(
+    minigameBB.GetVariant(GetAllBlackboardDefs().HackingMinigame.Entity)
+  );
+
+  let npcPuppet: wref<ScriptedPuppet> = entity as ScriptedPuppet;
+
+  // Note: IsUnconsciousNPCBreach() already detects NPC breaches via Entity type check
+  // No additional flag needed
+
+  // Execute vanilla logic
+  wrappedMethod(gameInstance);
+}
+

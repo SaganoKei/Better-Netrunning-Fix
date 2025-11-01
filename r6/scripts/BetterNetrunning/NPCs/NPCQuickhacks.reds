@@ -1,4 +1,25 @@
+// ============================================================================
+// BetterNetrunning - NPC Quickhacks
+// ============================================================================
+//
+// PURPOSE:
+// Controls NPC quickhack availability based on breach status and player progression
+//
+// FUNCTIONALITY:
+// - Progressive unlock system (Cyberdeck tier, Intelligence stat, Enemy Rarity)
+// - Network isolation detection with auto-unlock for isolated NPCs
+// - Category-based restrictions (Covert, Combat, Control, Ultimate)
+// - Special always-allowed quickhacks (Ping, Whistle)
+// - Tutorial NPC whitelist for progression bypass
+//
+// ARCHITECTURE:
+// - Extract Method pattern with shallow nesting (max 2 levels)
+// - Event interception for vanilla behavior control
+// - Continue Pattern for cleaner control flow
+//
+
 module BetterNetrunning.NPCs
+import BetterNetrunning.Logging.*
 
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
@@ -6,43 +27,15 @@ import BetterNetrunning.Utils.*
 import BetterNetrunning.Systems.*
 import BetterNetrunning.Breach.*
 
+// Prevent vanilla from setting m_quickHacksExposed when NPC Subnet not unlocked
 /*
- * ============================================================================
- * NPC QUICKHACKS MODULE
- * ============================================================================
+ * Controls exposure of NPC quickhacks when NPC subnet is not unlocked.
  *
- * PURPOSE:
- * Controls NPC quickhack availability based on breach status and player
- * progression requirements.
+ * VANILLA DIFF: Blocks vanilla from setting m_quickHacksExposed if NPC subnet
+ * timestamp is not set.
  *
- * FUNCTIONALITY:
- * - Progressive unlock system (Cyberdeck tier, Intelligence stat, Enemy Rarity)
- * - Network isolation detection -> auto-unlock for isolated NPCs
- * - Category-based restrictions (Covert, Combat, Control, Ultimate)
- * - Special always-allowed quickhacks (Ping, Whistle)
- * - Tutorial NPC whitelist (bypass progression for tutorial flow)
- *
- * ARCHITECTURE:
- * - Shallow nesting (max 2 levels) using Extract Method pattern
- * - Continue Pattern for cleaner control flow
- *
- * BUG FIX (2025-10-19):
- * - Issue: Basic Daemon success sets m_quickHacksExposed = true for NPCs
- * - Root Cause: Vanilla SetExposeQuickHacks event fires unconditionally
- * - Solution: Event interception - block event if NPC Subnet not unlocked
- *
- * ============================================================================
- */
-
-/*
- * Prevent vanilla from setting m_quickHacksExposed when NPC Subnet not unlocked (Problem ③ fix)
- * ARCHITECTURE: Event interception before vanilla processing
- *
- * LOGIC:
- * - Standalone NPCs (no network) -> Allow vanilla processing (auto-unlock)
- * - Network-connected NPCs -> Check m_betterNetrunningUnlockTimestampNPCs
- *   - If timestamp > 0.0 -> NPC Subnet unlocked -> Allow vanilla processing
- *   - If timestamp == 0.0 -> NPC Subnet NOT unlocked -> Block event
+ * @param evt - SetExposeQuickHacks event
+ * @return EntityNotificationType - vanilla result or DoNotNotifyEntity when blocked
  */
 @wrapMethod(ScriptedPuppetPS)
 public func OnSetExposeQuickHacks(evt: ref<SetExposeQuickHacks>) -> EntityNotificationType {
@@ -74,19 +67,20 @@ public func OnSetExposeQuickHacks(evt: ref<SetExposeQuickHacks>) -> EntityNotifi
 /*
  * Controls NPC quickhack availability based on breach status and progression
  *
- * VANILLA DIFF: @wrapMethod approach - base game generates quickhacks, Better Netrunning filters
- * - Pre-processing: Calculate NPC permissions (breach state + progression)
- * - Base Game Processing: Generate all quickhacks with base game logic (76-line black box)
- * - Post-processing: Remove AccessBreach + Apply Progressive Unlock filter
+ * VANILLA DIFF: Base game generates quickhacks, Better Netrunning filters via 3-step workflow
  *
- * ARCHITECTURE: 3-step workflow (Pre → Base Game → Post) with Extract Method pattern
- * - Preserves base game behavior for better mod compatibility
- * - Better Netrunning logic applied as post-processing filter
+ * Workflow:
+ * - Pre-processing: Calculate permissions
+ * - Base Game: 76-line black box (wrappedMethod)
+ * - Post-processing: Remove AccessBreach + apply Progressive Unlock
  */
 @wrapMethod(ScriptedPuppetPS)
 public final const func GetAllChoices(const actions: script_ref<array<wref<ObjectAction_Record>>>, const context: script_ref<GetActionsContext>, puppetActions: script_ref<array<ref<PuppetAction>>>) -> Void {
   // Pre-processing: Calculate NPC permissions (breach state + progression)
   let permissions: NPCHackPermissions = this.CalculateNPCHackPermissions();
+
+  // Log NPC quickhack state (debug mode only)
+  DebugUtils.LogNPCQuickhackState(this, "NPCQuickhacks");
 
   // Base Game Processing: Generate quickhacks with wrappedMethod()
   wrappedMethod(actions, context, puppetActions);
@@ -96,17 +90,18 @@ public final const func GetAllChoices(const actions: script_ref<array<wref<Objec
   this.ApplyBetterNetrunningQuickhackFilter(puppetActions, permissions, attiudeTowardsPlayer);
 }
 
-// ==================== Post-Processing Filter ====================
-
 /*
  * Applies Better Netrunning's Progressive Unlock filter to vanilla-generated quickhacks
  *
- * FUNCTIONALITY:
+ * Operations:
  * - Removes AccessBreach (Better Netrunning uses Access Point breach instead)
  * - Activates quickhacks that meet Progressive Unlock requirements
  * - Deactivates quickhacks that don't meet requirements
+ * - Uses reverse iteration for safe array removal
  *
- * ARCHITECTURE: Reverse iteration for safe array removal
+ * @param puppetActions Array of NPC quickhacks (modified in-place)
+ * @param permissions Permission flags for NPC hack categories
+ * @param attiudeTowardsPlayer NPC's attitude (affects inactive reason message)
  */
 @addMethod(ScriptedPuppetPS)
 private final func ApplyBetterNetrunningQuickhackFilter(
@@ -139,7 +134,11 @@ private final func ApplyBetterNetrunningQuickhackFilter(
 
 // ==================== Permission Calculation ====================
 
-// Helper: Calculates NPC hack permissions based on breach state and progression
+/*
+ * Calculates NPC hack permissions based on breach state and progression.
+ *
+ * @return NPCHackPermissions struct with breach status and unlock permissions
+ */
 @addMethod(ScriptedPuppetPS)
 private final func CalculateNPCHackPermissions() -> NPCHackPermissions {
   let permissions: NPCHackPermissions;
@@ -170,7 +169,13 @@ private final func CalculateNPCHackPermissions() -> NPCHackPermissions {
 
 // ==================== Permission Enforcement ====================
 
-// Helper: Determines if quickhack should be inactive based on progression requirements
+/*
+ * Determines if quickhack should be inactive based on progression requirements
+ *
+ * @param puppetAction - Quickhack action to check
+ * @param permissions - Permission flags for NPC hack categories
+ * @return True if quickhack should be inactive, false if active
+ */
 @addMethod(ScriptedPuppetPS)
 private final func ShouldQuickhackBeInactive(puppetAction: ref<PuppetAction>, permissions: NPCHackPermissions) -> Bool {
   // All hacks available if breached or whitelisted
@@ -204,7 +209,12 @@ private final func ShouldQuickhackBeInactive(puppetAction: ref<PuppetAction>, pe
   return true;
 }
 
-// Helper: Sets inactive reason for unbreached network (unified message for all NPCs)
+/*
+ * Sets inactive reason for unbreached network (unified message for all NPCs)
+ *
+ * @param puppetAction - Quickhack action to mark inactive
+ * @param attiudeTowardsPlayer - NPC's attitude (currently unused)
+ */
 @addMethod(ScriptedPuppetPS)
 private final func SetQuickhackInactiveReason(puppetAction: ref<PuppetAction>, attiudeTowardsPlayer: EAIAttitude) -> Void {
   // Check if RemoteBreach is locked due to breach failure (position-based, 50m radius)
@@ -225,6 +235,8 @@ private final func SetQuickhackInactiveReason(puppetAction: ref<PuppetAction>, a
  * Whitelist of tutorial NPCs that should have all quickhacks available
  * These NPCs bypass progression requirements for proper tutorial flow
  * Credit: KiroKobra (AKA 'Phantum Jak' on Discord)
+ *
+ * @return True if NPC is whitelisted tutorial character
  */
 @addMethod(ScriptedPuppetPS)
 protected final func IsWhiteListedForHacks() -> Bool {

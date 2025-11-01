@@ -6,35 +6,27 @@
 //
 // PURPOSE:
 //   Collects all breach processing statistics into a single summary object
-//   and outputs formatted log summary, replacing 50+ detailed log statements
-//   with clean statistical output
+//   and outputs formatted log summary with clean statistical output
 //
-// USAGE:
-//   let stats: ref<BreachSessionStats> = BreachSessionStats.Create("AccessPoint", "Device Name");
-//   stats.minigameSuccess = true;
-//   stats.devicesUnlocked = 18;
-//   stats.Finalize(); // Calculate processing time
-//   LogBreachSummary(stats); // Output formatted summary
+// FUNCTIONALITY:
+//   - Factory method creates stats object with timestamp
+//   - Finalize() calculates processing time
+//   - LogBreachSummary() outputs formatted tabular display
+//   - Supports network devices, radial unlock, and daemon execution tracking
 //
-// OUTPUT EXAMPLE:
-//   [INFO] ╔═══════════════════════════════════════╗
-//   [INFO] ║   BREACH SESSION SUMMARY             ║
-//   [INFO] ╚═══════════════════════════════════════╝
-//   [INFO] Type: AccessPoint | Target: H10 Access Point
-//   [INFO] Result: SUCCESS | Processing: 234.5 ms
-//   [INFO] Total: 23 | Unlocked: 18 (78%)
-//   [INFO] � Basic: 5 | �📷 Cameras: 8 | 🔫 Turrets: 4 | 👤 NPCs: 6
-//
-// DESIGN RATIONALE:
-//   - Reduces log noise by 70% (50+ logs → 1 summary)
-//   - Improves readability (structured tables vs scattered messages)
-//   - Preserves debugging value (all critical metrics included)
+// ARCHITECTURE:
+//   - Structured log output with formatted tables
+//   - Single summary replaces scattered messages
+//   - Preserves debugging value with all critical metrics
 //   - Performance neutral (stats collection is negligible overhead)
 // ============================================================================
 
-module BetterNetrunning.Utils
+module BetterNetrunning.Logging
 
 import BetterNetrunning.Core.*
+import BetterNetrunning.Minigame.*
+import BetterNetrunning.Utils.*
+import BetterNetrunning.Logging.*
 
 // ============================================================================
 // STATISTICS DATA CLASS
@@ -74,18 +66,28 @@ public class BreachSessionStats {
   public let npcNetworkUnlocked: Int32;    // Network NPCs successfully unlocked
   public let npcNetworkSkipped: Int32;     // Network NPCs skipped (flag check)
 
-  // Radial unlock statistics
-  public let standaloneDeviceCount: Int32; // Standalone devices unlocked (radial)
-  public let vehicleCount: Int32;          // Vehicles unlocked (radial)
-  public let npcStandaloneCount: Int32;    // Standalone NPCs (radial unlock, no network)
+  // Radial unlock statistics - separated by network connectivity
+  public let standaloneDeviceCount: Int32; // Pure standalone devices (no network connection)
+  public let crossNetworkDeviceCount: Int32; // Cross-network devices (other network connections)
+  public let vehicleCount: Int32;          // Vehicles (always standalone)
+  public let npcPureStandaloneCount: Int32; // Pure standalone NPCs (no DeviceLink)
+  public let npcCrossNetworkCount: Int32;  // Cross-network NPCs (has DeviceLink, other network)
 
-  // Radial unlock breakdown (success/skip per type)
-  public let standaloneUnlocked: Int32;    // Standalone devices successfully unlocked
-  public let standaloneSkipped: Int32;     // Standalone devices skipped (flag check)
+  // Radial unlock breakdown - Pure standalone
+  public let standaloneUnlocked: Int32;    // Pure standalone devices successfully unlocked
+  public let standaloneSkipped: Int32;     // Pure standalone devices skipped (flag check)
+
+  // Radial unlock breakdown - Cross-network
+  public let crossNetworkUnlocked: Int32;  // Cross-network devices successfully unlocked
+  public let crossNetworkSkipped: Int32;   // Cross-network devices skipped (flag check)
+
+  // Radial unlock breakdown - Vehicles and NPCs
   public let vehicleUnlocked: Int32;       // Vehicles successfully unlocked
   public let vehicleSkipped: Int32;        // Vehicles skipped (flag check)
-  public let npcStandaloneUnlocked: Int32; // Standalone NPCs successfully unlocked
-  public let npcStandaloneSkipped: Int32;  // Standalone NPCs skipped (flag check)
+  public let npcPureStandaloneUnlocked: Int32; // Pure standalone NPCs successfully unlocked
+  public let npcPureStandaloneSkipped: Int32;  // Pure standalone NPCs skipped (flag check)
+  public let npcCrossNetworkUnlocked: Int32;   // Cross-network NPCs successfully unlocked
+  public let npcCrossNetworkSkipped: Int32;    // Cross-network NPCs skipped (flag check)
 
   // Unlock flags
   public let unlockBasic: Bool;            // Basic Subnet unlocked
@@ -98,11 +100,17 @@ public class BreachSessionStats {
   public let executedSubnetDaemons: array<TweakDBID>;  // Subnet daemons successfully executed
   public let displayedNormalDaemons: array<TweakDBID>;  // All Normal daemons displayed (success + failed)
   public let executedNormalDaemons: array<TweakDBID>;  // Normal daemons successfully executed
+  public let executedBonusDaemons: array<TweakDBID>;   // Bonus daemons (auto Datamine) executed
 
   // Radial Breach specific
   public let breachRadius: Float;          // Radius in meters
   public let breachPosition: Vector4;      // Breach coordinates
   public let devicesInRadius: Int32;       // Devices within radius
+
+  // Origin tracking
+  public let originPosition: Vector4;      // Origin coordinates for radial unlock
+  public let originType: String;           // "NPC" or "Device"
+  public let radialUnlockRange: Float;     // Actual radial unlock range in meters
 
   // Processing time
   public let processingTimeMs: Float;      // Milliseconds (auto-calculated in Finalize)
@@ -128,8 +136,26 @@ public class BreachSessionStats {
 // FORMATTED SUMMARY OUTPUT
 // ============================================================================
 
-/// Output breach statistics as formatted summary (INFO level)
-/// Replaces 30-50 individual log statements with clean tabular output
+/*
+ * Format Vector4 coordinates to string with 2 decimal precision
+ *
+ * @param pos Vector4 position
+ * @return Formatted string "(X, Y, Z)"
+ */
+private static func FormatCoordinates(pos: Vector4) -> String {
+  let x: String = FloatToStringPrec(pos.X, 2);
+  let y: String = FloatToStringPrec(pos.Y, 2);
+  let z: String = FloatToStringPrec(pos.Z, 2);
+  return "(" + x + ", " + y + ", " + z + ")";
+}
+
+/*
+ * Output breach statistics as formatted summary (INFO level)
+ *
+ * Replaces 30-50 individual log statements with clean tabular output
+ *
+ * @param stats - Breach session statistics object
+ */
 public static func LogBreachSummary(stats: ref<BreachSessionStats>) -> Void {
   BNInfo("BreachStats", "");
   BNInfo("BreachStats", "╔═══════════════════════════════════════════════════════════╗");
@@ -140,10 +166,17 @@ public static func LogBreachSummary(stats: ref<BreachSessionStats>) -> Void {
   // Basic information
   BNInfo("BreachStats", "┌─ BASIC INFO ──────────────────────────────────────────────┐");
   BNInfo("BreachStats", "│ Type         : " + stats.breachType);
-  BNInfo("BreachStats", "│ Target       : " + GetLocalizedTextByKey(StringToName(stats.breachTarget)) + " (" + stats.breachTarget + ")");
+  BNInfo("BreachStats", "│ Target       : " + GetLocalizedTextByKey(StringToName(stats.breachTarget)) + " (" + DebugUtils.CleanDeviceName(stats.breachTarget) + ")");
   BNInfo("BreachStats", "│ Result       : " + (stats.minigameSuccess ? "SUCCESS" : "FAILED"));
 
-  // Processing time (formatted to 1 decimal)
+  // Origin information (if available)
+  if stats.radialUnlockRange > 0.0 {
+    let originLabel: String = stats.originType + " Position";
+    let coordStr: String = FormatCoordinates(stats.originPosition);
+    BNInfo("BreachStats", "│ Origin       : " + originLabel + " " + coordStr);
+  }
+
+  // Processing time (formatted to 1 decimal) - moved to bottom
   let timeStr: String = FloatToStringPrec(stats.processingTimeMs, 1);
   BNInfo("BreachStats", "│ Processing   : " + timeStr + " ms");
   BNInfo("BreachStats", "└───────────────────────────────────────────────────────────┘");
@@ -151,7 +184,7 @@ public static func LogBreachSummary(stats: ref<BreachSessionStats>) -> Void {
 
   // Executed daemons display
   // FUNCTIONALITY: Shows actual daemons executed in breach minigame
-  // ARCHITECTURE: Composed Method pattern - separate helpers for Subnet/Normal daemons
+  // ARCHITECTURE: Uses LogDaemonList() for consistent daemon formatting
   BNInfo("BreachStats", "┌─ EXECUTED DAEMONS ─────────────────────────────────────────┐");
 
   // Calculate counts for Subnet System
@@ -160,17 +193,45 @@ public static func LogBreachSummary(stats: ref<BreachSessionStats>) -> Void {
 
   // Subnet System section
   BNInfo("BreachStats", "│ Subnet System (" + ToString(subnetExecuted) + "/" + ToString(subnetTotal) + "):");
-  LogSubnetDaemons(stats);
+  LogDaemonList(
+    stats.displayedSubnetDaemons,
+    stats.executedSubnetDaemons,
+    "(None executed)",
+    true,  // showStatusIcon - ✓ executed / ⊘ displayed only
+    true,  // showIcon - Subnet type icons (🔌📷🔫👤)
+    ""     // no additional suffix
+  );
 
-  BNInfo("BreachStats", "│");
+  // Normal Daemons section (conditional display - only if any normal daemons exist)
+  if ArraySize(stats.displayedNormalDaemons) > 0 {
+    BNInfo("BreachStats", "│");
+    let normalTotal: Int32 = ArraySize(stats.displayedNormalDaemons);
+    let normalActuallyExecuted: Int32 = ArraySize(stats.executedNormalDaemons);
+    BNInfo("BreachStats", "│ Normal Daemons (" + ToString(normalActuallyExecuted) + "/" + ToString(normalTotal) + "):");
+    LogDaemonList(
+      stats.displayedNormalDaemons,
+      stats.executedNormalDaemons,
+      "(None executed)",
+      true,   // showStatusIcon - ✓ executed / ⊘ displayed only
+      false,  // no icon for Normal daemons
+      ""      // no additional suffix
+    );
+  }
 
-  // Calculate counts for Normal Daemons
-  let normalTotal: Int32 = ArraySize(stats.displayedNormalDaemons);
-  let normalActuallyExecuted: Int32 = ArraySize(stats.executedNormalDaemons);
-
-  // Normal Daemons section
-  BNInfo("BreachStats", "│ Normal Daemons (" + ToString(normalActuallyExecuted) + "/" + ToString(normalTotal) + "):");
-  LogNormalDaemons(stats);
+  // Bonus Daemons section (conditional display - only if any bonus daemons executed)
+  if ArraySize(stats.executedBonusDaemons) > 0 {
+    BNInfo("BreachStats", "│");
+    let bonusCount: Int32 = ArraySize(stats.executedBonusDaemons);
+    BNInfo("BreachStats", "│ Bonus Daemons (" + ToString(bonusCount) + "):");
+    LogDaemonList(
+      stats.executedBonusDaemons,
+      stats.executedBonusDaemons,  // All bonus daemons executed by definition
+      "(None)",
+      false,  // no status icon - all are ✓
+      false,  // no type icon
+      "(auto-added)"  // suffix to indicate auto-execution
+    );
+  }
 
   BNInfo("BreachStats", "└────────────────────────────────────────────────────────────┘");
   BNInfo("BreachStats", "");
@@ -211,28 +272,57 @@ public static func LogBreachSummary(stats: ref<BreachSessionStats>) -> Void {
     BNInfo("BreachStats", "");
   }
 
-  // Radial unlock breakdown
-  // RATIONALE: All breach types execute Radial Unlock (50m radius scan)
-  // Always display section for consistency, even if no standalone devices found
-  BNInfo("BreachStats", "┌─ STANDALONE DEVICES (50m Radial Unlock) ──────────────────┐");
+  // Radial unlock breakdown - separated by network connectivity
+  // All breach types execute Radial Unlock
+  // Displays pure standalone and cross-network devices separately for clarity
+  BNInfo("BreachStats", "┌─ STANDALONE DEVICES (Radial Unlock) ──────────────────────┐");
 
-  let hasAnyRadialData: Bool = stats.standaloneDeviceCount > 0 || stats.vehicleCount > 0 || stats.npcStandaloneCount > 0;
+  // Display range information (dynamic based on actual radial unlock range)
+  if stats.radialUnlockRange > 0.0 {
+    let rangeStr: String = FloatToStringPrec(stats.radialUnlockRange, 1);
+    let originLabel: String = Equals(stats.originType, "NPC") ? "npc position" : "device position";
+    BNInfo("BreachStats", "│ Range        : " + rangeStr + "m (from " + originLabel + ")");
+  }
+
+  let hasPureStandalone: Bool = stats.standaloneDeviceCount > 0 || stats.vehicleCount > 0 || stats.npcPureStandaloneCount > 0;
+  let hasCrossNetwork: Bool = stats.crossNetworkDeviceCount > 0 || stats.npcCrossNetworkCount > 0;
+  let hasAnyRadialData: Bool = hasPureStandalone || hasCrossNetwork;
 
   if hasAnyRadialData {
-    LogDeviceTypeBreakdown(
-      stats.standaloneDeviceCount, stats.standaloneUnlocked, stats.standaloneSkipped,
-      "Devices", BNConstants.PROGRAM_UNLOCK_QUICKHACKS()
-    );
-    LogDeviceTypeBreakdown(
-      stats.vehicleCount, stats.vehicleUnlocked, stats.vehicleSkipped,
-      "Vehicles", BNConstants.PROGRAM_ACTION_BN_UNLOCK_VEHICLE()
-    );
-    LogDeviceTypeBreakdown(
-      stats.npcStandaloneCount, stats.npcStandaloneUnlocked, stats.npcStandaloneSkipped,
-      "NPCs", BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS()
-    );
+    // Pure Standalone section
+    if hasPureStandalone {
+      BNInfo("BreachStats", "│");
+      BNInfo("BreachStats", "│ Pure Standalone:");
+      LogDeviceTypeBreakdown(
+        stats.standaloneDeviceCount, stats.standaloneUnlocked, stats.standaloneSkipped,
+        "Devices", BNConstants.PROGRAM_UNLOCK_QUICKHACKS()
+      );
+      LogDeviceTypeBreakdown(
+        stats.vehicleCount, stats.vehicleUnlocked, stats.vehicleSkipped,
+        "Vehicles", BNConstants.PROGRAM_ACTION_BN_UNLOCK_VEHICLE()
+      );
+      LogDeviceTypeBreakdown(
+        stats.npcPureStandaloneCount, stats.npcPureStandaloneUnlocked, stats.npcPureStandaloneSkipped,
+        "NPCs", BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS()
+      );
+    }
+
+    // Cross-Network section
+    if hasCrossNetwork {
+      BNInfo("BreachStats", "│");
+      BNInfo("BreachStats", "│ Cross-Network (Other Networks):");
+      LogDeviceTypeBreakdown(
+        stats.crossNetworkDeviceCount, stats.crossNetworkUnlocked, stats.crossNetworkSkipped,
+        "Devices", BNConstants.PROGRAM_UNLOCK_QUICKHACKS()
+      );
+      LogDeviceTypeBreakdown(
+        stats.npcCrossNetworkCount, stats.npcCrossNetworkUnlocked, stats.npcCrossNetworkSkipped,
+        "NPCs", BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS()
+      );
+    }
   } else {
-    BNInfo("BreachStats", "│ (No standalone devices detected within 50m radius)");
+    let rangeStr: String = FloatToStringPrec(stats.radialUnlockRange, 1);
+    BNInfo("BreachStats", "│ (No standalone devices detected within " + rangeStr + "m radius)");
   }
 
   BNInfo("BreachStats", "└───────────────────────────────────────────────────────────┘");
@@ -253,18 +343,21 @@ public static func LogBreachSummary(stats: ref<BreachSessionStats>) -> Void {
 // ============================================================================
 // HELPER: Log Device Type Breakdown
 // ============================================================================
-// PURPOSE: Displays device unlock statistics with consistent formatting
-// FUNCTIONALITY:
-// - Shows ✓ icon with unlocked count if any devices were unlocked
-// - Shows ⊘ icon with skipped count if all devices were skipped
-// - Skips display if device count is 0
-// ARCHITECTURE: Guard Clauses + Early Return (0-level nesting)
-// PARAMETERS:
-// - deviceCount: Total devices of this type detected
-// - unlockedCount: Devices successfully unlocked
-// - skippedCount: Devices skipped (daemon not executed or conditions not met)
-// - label: Device type label (e.g., "Basic", "Cameras", "Vehicles")
-// - iconProgram: TweakDBID for icon lookup
+
+/*
+ * Displays device unlock statistics with consistent formatting
+ * - Shows ✓ icon with unlocked count if any devices were unlocked
+ * - Shows ⊘ icon with skipped count if all devices were skipped
+ * - Skips display if device count is 0
+ *
+ * ARCHITECTURE: Guard Clauses + Early Return (0-level nesting)
+ *
+ * @param deviceCount - Total devices of this type detected
+ * @param unlockedCount - Devices successfully unlocked
+ * @param skippedCount - Devices skipped (daemon not executed or conditions not met)
+ * @param label - Device type label (e.g., "Basic", "Cameras", "Vehicles")
+ * @param iconProgram - TweakDBID for icon lookup
+ */
 private static func LogDeviceTypeBreakdown(
   deviceCount: Int32,
   unlockedCount: Int32,
@@ -292,69 +385,59 @@ private static func LogDeviceTypeBreakdown(
 }
 
 // ============================================================================
-// HELPER: Log Subnet Daemons Section
+// HELPER: Generic Daemon List Logging
 // ============================================================================
-// PURPOSE: Displays executed and skipped Subnet Daemons
-// FUNCTIONALITY:
-// - Shows executed daemons with ✓ icon
-// - Shows skipped daemons with ⊘ icon (not executed)
-// FUNCTIONALITY: Displays Subnet daemon execution status with icons
-// - Iterates displayedSubnetDaemons array (actual screen display)
-// - Shows ✓ icon for successfully executed daemons
-// - Shows ⊘ icon for displayed but not executed daemons
-// - Falls back to "(None executed)" if no subnet daemons displayed
-// ARCHITECTURE: Guard Clauses + Early Return (0-level nesting)
-private static func LogSubnetDaemons(stats: ref<BreachSessionStats>) -> Void {
-  let hasDisplayed: Bool = ArraySize(stats.displayedSubnetDaemons) > 0;
 
-  // Guard: No Subnet daemons displayed
-  if !hasDisplayed {
-    BNInfo("BreachStats", "│   (None executed)");
+/*
+ * Generic daemon list logging function (DRY principle)
+ *
+ * ARCHITECTURE: Parameterized display logic for all daemon types
+ * @param daemons - Array of daemon TweakDBIDs to display
+ * @param executedDaemons - Array of executed daemon TweakDBIDs (for status icons)
+ * @param emptyMessage - Message to display when no daemons exist
+ * @param showStatusIcon - Whether to show ✓/⊘ status icons
+ * @param showIcon - Whether to show daemon type icon (🔌📷🔫👤)
+ * @param additionalSuffix - Optional suffix text (e.g., "(auto-added)")
+ */
+private static func LogDaemonList(
+  daemons: array<TweakDBID>,
+  executedDaemons: array<TweakDBID>,
+  emptyMessage: String,
+  showStatusIcon: Bool,
+  showIcon: Bool,
+  additionalSuffix: String
+) -> Void {
+  // Guard: No daemons to display
+  if ArraySize(daemons) == 0 {
+    BNInfo("BreachStats", "│   " + emptyMessage);
     return;
   }
 
-  // Display all Subnet daemons with status icons
+  // Display all daemons
   let i: Int32 = 0;
-  while i < ArraySize(stats.displayedSubnetDaemons) {
-    let programID: TweakDBID = stats.displayedSubnetDaemons[i];
-    let wasExecuted: Bool = ArrayContains(stats.executedSubnetDaemons, programID);
-    let statusIcon: String = wasExecuted ? "✓" : "⊘";
-    let daemonName: String = DaemonFilterUtils.GetDaemonDisplayName(programID);
-    let icon: String = GetSubnetDaemonIcon(programID);
-
-    BNInfo("BreachStats", "│   " + statusIcon + " " + icon + " " + daemonName + " (" + TDBID.ToStringDEBUG(programID) + ")");
-    i += 1;
-  }
-}
-
-// ============================================================================
-// HELPER: Log Normal Daemons Section
-// ============================================================================
-// PURPOSE: Displays executed Normal Daemons with execution status
-// FUNCTIONALITY:
-// - Shows displayed normal daemons with execution status (✓ executed / ⊘ displayed only)
-// - Adds effect descriptions (e.g., "rewards eddies")
-// - Falls back to "(None executed)" if no normal daemons
-// ARCHITECTURE: Guard Clauses + Early Return (0-level nesting)
-private static func LogNormalDaemons(stats: ref<BreachSessionStats>) -> Void {
-  let hasDisplayed: Bool = ArraySize(stats.displayedNormalDaemons) > 0;
-
-  if !hasDisplayed {
-    BNInfo("BreachStats", "│   (None executed)");
-    return;
-  }
-
-  // Display normal daemons with execution status
-  let i: Int32 = 0;
-  while i < ArraySize(stats.displayedNormalDaemons) {
-    let programID: TweakDBID = stats.displayedNormalDaemons[i];
+  while i < ArraySize(daemons) {
+    let programID: TweakDBID = daemons[i];
     let daemonName: String = DaemonFilterUtils.GetDaemonDisplayName(programID);
 
-    // Check if actually executed
-    let wasExecuted: Bool = ArrayContains(stats.executedNormalDaemons, programID);
-    let statusIcon: String = wasExecuted ? "✓" : "⊘";
+    // Build status icon prefix
+    let statusPrefix: String = "";
+    if showStatusIcon {
+      let wasExecuted: Bool = ArrayContains(executedDaemons, programID);
+      statusPrefix = wasExecuted ? "✓ " : "⊘ ";
+    } else {
+      statusPrefix = "✓ ";
+    }
 
-    BNInfo("BreachStats", "│   " + statusIcon + " " + daemonName + " (" + TDBID.ToStringDEBUG(programID) + ")");
+    // Build type icon (Subnet only)
+    let iconStr: String = "";
+    if showIcon {
+      iconStr = GetSubnetDaemonIcon(programID) + " ";
+    }
+
+    // Build suffix
+    let suffix: String = NotEquals(additionalSuffix, "") ? " " + additionalSuffix : "";
+
+    BNInfo("BreachStats", "│   " + statusPrefix + iconStr + daemonName + " (" + TDBID.ToStringDEBUG(programID) + ")" + suffix);
     i += 1;
   }
 }
@@ -362,9 +445,16 @@ private static func LogNormalDaemons(stats: ref<BreachSessionStats>) -> Void {
 // ============================================================================
 // HELPER: Get Subnet Daemon Icon
 // ============================================================================
-// PURPOSE: Returns appropriate icon for subnet daemon type
-// FUNCTIONALITY: Maps TweakDBID to icon (🔌 Basic, 📷 Camera, 🔫 Turret, 👤 NPC)
-// ARCHITECTURE: Simple lookup table
+
+/*
+ * Returns appropriate icon for subnet daemon type
+ * Maps TweakDBID to icon (🔌 Basic, 📷 Camera, 🔫 Turret, 👤 NPC)
+ *
+ * ARCHITECTURE: Simple lookup table
+ *
+ * @param programID - Daemon TweakDBID
+ * @return Icon string
+ */
 private static func GetSubnetDaemonIcon(programID: TweakDBID) -> String {
   // Basic Subnet (AccessPoint/UnconsciousNPC Breach + RemoteBreach variants)
   if Equals(programID, BNConstants.PROGRAM_UNLOCK_QUICKHACKS())

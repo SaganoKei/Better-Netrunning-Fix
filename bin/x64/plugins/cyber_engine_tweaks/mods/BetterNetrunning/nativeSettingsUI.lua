@@ -63,6 +63,10 @@ function NativeSettingsUI.Build(nativeSettings, SettingsManager, TweakDBSetup)
         SettingsManager.Set("AllowBreachUnconscious", state)
         SettingsManager.Save()
     end)
+    nativeSettings.addSwitch("/BetterNetrunning/Breaching", GetLocKey("DisplayName-BetterNetrunning-RadialUnlockCrossNetwork"), GetLocKey("Description-BetterNetrunning-RadialUnlockCrossNetwork"), settings.RadialUnlockCrossNetwork, true, function(state)
+        SettingsManager.Set("RadialUnlockCrossNetwork", state)
+        SettingsManager.Save()
+    end)
     nativeSettings.addRangeInt("/BetterNetrunning/Breaching", GetLocKey("DisplayName-BetterNetrunning-QuickhackUnlockDurationHours"), GetLocKey("Description-BetterNetrunning-QuickhackUnlockDurationHours"), 0, 24, 1,
         settings.QuickhackUnlockDurationHours, 6,
         function(state)

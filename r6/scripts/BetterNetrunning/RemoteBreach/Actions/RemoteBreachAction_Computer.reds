@@ -1,9 +1,20 @@
-// -----------------------------------------------------------------------------
-// RemoteBreach Action - Computer
-// -----------------------------------------------------------------------------
-// Computer-specific RemoteBreach action implementation.
-// Defines RemoteBreachAction class for Computer devices.
-// -----------------------------------------------------------------------------
+// ============================================================================
+// BetterNetrunning - RemoteBreach Action (Computer)
+// ============================================================================
+//
+// PURPOSE:
+// Computer-specific RemoteBreach action implementation
+//
+// FUNCTIONALITY:
+// - Extends BaseRemoteBreachAction for Computer devices
+// - HackingExtensions MOD integration
+// - Computer-specific StateSystem target management
+//
+// ARCHITECTURE:
+// - Inherits Template Method pattern from BaseRemoteBreachAction
+// - Conditional compilation for HackingExtensions dependency
+// - Computer-specific device handling
+//
 
 module BetterNetrunning.RemoteBreach.Actions
 
@@ -19,10 +30,6 @@ import HackingExtensions.*
 
 @if(ModuleExists("HackingExtensions.Programs"))
 import HackingExtensions.Programs.*
-
-// -----------------------------------------------------------------------------
-// Computer Remote Breach Action
-// -----------------------------------------------------------------------------
 
 @if(ModuleExists("HackingExtensions"))
 public class RemoteBreachAction extends BaseRemoteBreachAction {
@@ -109,16 +116,13 @@ private final func ActionCustomRemoteBreach() -> ref<RemoteBreachAction> {
 }
 
 /*
- * Adds Computer RemoteBreach action to QuickHack menu if conditions are met
+ * Adds Computer RemoteBreach action to QuickHack menu when eligible.
  *
- * RATIONALE: Enables remote breaching of Computers without physical proximity
- * ARCHITECTURE: Guard Clause pattern (max 1-level nesting)
+ * VANILLA DIFF: Appends custom RemoteBreach after vanilla generation, removes
+ * TweakDB-injected duplicate.
  *
- * CONDITIONS CHECKED:
- * - Computer RemoteBreach feature enabled (settings)
- * - RadialUnlock mode active (UnlockIfNoAccessPoint disabled)
- * - RemoteBreach not locked due to breach failure penalty
- * - Computer not already breached via RemoteBreach
+ * @param actions - Output action list (will be appended when eligible)
+ * @param context - GetActionsContext for quickhack evaluation
  */
 @if(ModuleExists("HackingExtensions"))
 @wrapMethod(ComputerControllerPS)

@@ -1,44 +1,26 @@
 // ============================================================================
-// Breach Penalty System - Breach Failure Penalty Handler
+// BetterNetrunning - Breach Penalty System
 // ============================================================================
 //
 // PURPOSE:
-// Apply penalties when players fail breach protocol minigames to maintain
-// game balance and provide meaningful feedback for player actions.
+// Apply penalties when players fail breach protocol minigames for game balance
 //
 // FUNCTIONALITY:
-// - Failure Detection: Detect when breach minigame fails (HackingMinigameState.Failed)
-// - VFX Application: Apply red visual effects for failure scenarios
-// - Lock Recording: Type-specific (deviceID/timestamp/position)
-// - Trace Trigger: Initiate position reveal trace via real netrunner (if TracePositionOverhaul)
-//
-// PENALTIES (Failure Only):
-// - Red VFX (2-3 seconds, disabling_connectivity_glitch_red)
-// - Type-specific lock (10 minutes default):
-//   - AccessPoint: Device PersistentID lock (specific device only)
-//   - UnconsciousNPC: Timestamp on ScriptedPuppetPS (specific NPC only)
-//   - RemoteBreach: Hybrid lock (network hierarchy + radial scan, range configurable)
-// - Position reveal trace (60s upload, requires real netrunner NPC via TracePositionOverhaul)
-//
-// SKIP vs FAILURE:
-// - Currently: Both skip (ESC key) and failure (timeout) are treated as "Failed"
-// - No differentiation: All Failed states receive full penalty
-// - Rationale: HackingMinigameState enum has no "Skipped" state, TimerLeftPercent unreliable
+// - Failure detection via HackingMinigameState monitoring
+// - Red VFX application for failure scenarios (2-3 seconds)
+// - Type-specific lock recording (deviceID/timestamp/position)
+// - Position reveal trace initiation via TracePositionOverhaul integration
+// - Configurable penalty duration (default 10 minutes)
 //
 // ARCHITECTURE:
-// - Single @wrapMethod on FinalizeNetrunnerDive() covers all breach types
-// - Type-specific lock recording strategy (3 mechanisms)
-// - Guard Clause pattern for validation
-// - Max nesting depth: 2 levels
+// - Single @wrapMethod on FinalizeNetrunnerDive() for all breach types
+// - Type-specific lock recording strategies (3 mechanisms)
+// - Guard Clause pattern with shallow nesting (max 2 levels)
+// - Strategy pattern for penalty application
 //
-// DEPENDENCIES:
-// - BetterNetrunningConfig: Settings control (Enabled, LockDuration)
-// - Common/TimeUtils: Timestamp management
-// - Breach/BreachLockSystem: Lock checking infrastructure
-// - Integration/TracePositionOverhaulGating: Position reveal trace
-// ============================================================================
 
 module BetterNetrunning.Breach
+import BetterNetrunning.Logging.*
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
@@ -46,21 +28,16 @@ import BetterNetrunning.Integration.*
 import BetterNetrunning.RemoteBreach.Common.*
 import BetterNetrunning.RemoteBreach.Core.*
 
-// ============================================================================
-// Breach Type Enum
-// ============================================================================
-//
-// FUNCTIONALITY:
-// - Identifies breach context for type-specific penalty application
-// - Enables individual penalty toggles per breach type
-//
-// VALUES:
-// - Unknown: Default/fallback (applies unified penalty)
-// - AccessPoint: Physical Access Point breach (MasterControllerPS)
-// - UnconsciousNPC: Unconscious NPC breach (ScriptedPuppetPS)
-// - RemoteBreach: RemoteBreach feature (RemoteBreachProgram)
-// ============================================================================
-
+/*
+ * Breach Type Enum - identifies breach context for type-specific penalty
+ * application and enables individual penalty toggles per breach type.
+ *
+ * Values:
+ * - Unknown: Default/fallback (applies unified penalty)
+ * - AccessPoint: Physical Access Point breach (MasterControllerPS)
+ * - UnconsciousNPC: Unconscious NPC breach (ScriptedPuppetPS)
+ * - RemoteBreach: RemoteBreach feature (RemoteBreachProgram)
+ */
 public enum BreachType {
   Unknown = 0,
   AccessPoint = 1,
@@ -68,35 +45,38 @@ public enum BreachType {
   RemoteBreach = 3
 }
 
-// ============================================================================
-// FinalizeNetrunnerDive() - Apply Breach Failure Penalties
-// ============================================================================
-//
-// Wraps game's base breach completion handler to inject penalty logic for all
-// breach types (AP Breach, Unconscious NPC Breach, Remote Breach).
-//
-// PROCESSING:
-// 1. Check if breach failed (state == HackingMinigameState.Failed)
-// 2. Check if penalty enabled in settings
-// 3. Apply full failure penalty (VFX + RemoteBreach lock + trace attempt)
-// 4. Call wrappedMethod() for base game processing
-//
-// STATE HANDLING:
-// - HackingMinigameState.Succeeded → Early return, no penalty (wrappedMethod only)
-// - HackingMinigameState.Failed → Full penalty applied (skip and timeout both)
-// - HackingMinigameState.Unknown/InProgress → Early return (should not occur)
-//
-// PENALTIES (All Failed States):
-// - Red VFX (2-3 seconds)
-// - RemoteBreach lock (10 minutes, 50m radius)
-// - Position reveal trace (60s upload, requires real netrunner NPC)
-//
-// COVERAGE:
-// - AP Breach: AccessPointControllerPS.FinalizeNetrunnerDive() → Covered
-// - Unconscious NPC Breach: AccessBreach.CompleteAction() → FinalizeNetrunnerDive() → Covered
-// - Remote Breach: RemoteBreachProgram explicitly calls FinalizeNetrunnerDive() → Covered
-// ============================================================================
-
+/*
+ * Applies breach failure penalties across all breach types. Wraps game's base breach
+ * completion handler to inject penalty logic for all breach types (AP Breach, Unconscious
+ * NPC Breach, Remote Breach).
+ *
+ * Processing:
+ * 1. Check if breach failed (state == HackingMinigameState.Failed)
+ * 2. Check if penalty enabled in settings
+ * 3. Apply full failure penalty (VFX + RemoteBreach lock + trace attempt)
+ * 4. Call wrappedMethod() for base game processing
+ *
+ * State handling:
+ * - HackingMinigameState.Succeeded → Early return, no penalty (wrappedMethod only)
+ * - HackingMinigameState.Failed → Full penalty applied (skip and timeout both)
+ * - HackingMinigameState.Unknown/InProgress → Early return (should not occur)
+ *
+ * Penalties (all failed states):
+ * - Red VFX (2-3 seconds)
+ * - RemoteBreach lock (10 minutes, 50m radius)
+ * - Position reveal trace (60s upload, requires real netrunner NPC)
+ *
+ * Coverage:
+ * - AP Breach: AccessPointControllerPS.FinalizeNetrunnerDive() → Covered
+ * - Unconscious NPC Breach: AccessBreach.CompleteAction() → FinalizeNetrunnerDive() → Covered
+ * - Remote Breach: RemoteBreachProgram explicitly calls FinalizeNetrunnerDive() → Covered
+ *
+ * Vanilla diff: Injects penalty
+ * on Failed states before calling base processing. @wrapMethod with early-return guards →
+ * apply penalty → wrappedMethod().
+ *
+ * @param state Current hacking minigame state
+ */
 @wrapMethod(ScriptableDeviceComponentPS)
 public func FinalizeNetrunnerDive(state: HackingMinigameState) -> Void {
   // Early Return: Success or penalty disabled
@@ -130,29 +110,34 @@ public func FinalizeNetrunnerDive(state: HackingMinigameState) -> Void {
   wrappedMethod(state);
 }
 
-// ============================================================================
-// AccessPointControllerPS.FinalizeNetrunnerDive() - Disable NPC Alert on Failure
-// ============================================================================
-//
-// VANILLA BEHAVIOR:
-// AccessPointControllerPS.FinalizeNetrunnerDive(Failed) calls SendMinigameFailedToAllNPCs(),
-// which sends MinigameFailEvent to all NPCs. ScriptedPuppet.OnMinigameFailEvent() then calls
-// NPCStatesComponent.AlertPuppet(this), causing immediate hostile state.
-//
-// RATIONALE:
-// Better Netrunning replaces instant alert with delayed traceback system (30-60s upload,
-// interruptible). Vanilla alert behavior breaks stealth gameplay and removes tactical choices.
-//
-// IMPLEMENTATION:
-// Wrap AccessPointControllerPS.FinalizeNetrunnerDive() to skip SendMinigameFailedToAllNPCs()
-// on failure. Success path remains unchanged (calls super.FinalizeNetrunnerDive()).
-//
-// COVERAGE:
-// - AP Breach: ✓ Covered (no alert on failure)
-// - Unconscious NPC Breach: ✓ Covered (BreachHelpers.reds already disables ALARM)
-// - Remote Breach: ✓ Not affected (uses CustomAccessBreach, no MinigameFailEvent)
-// ============================================================================
-
+/*
+ * Suppresses NPC global alert on AP breach failure while preserving success path.
+ *
+ * Vanilla behavior: AccessPointControllerPS.FinalizeNetrunnerDive(Failed) calls
+ * SendMinigameFailedToAllNPCs(), which sends MinigameFailEvent to all NPCs.
+ * ScriptedPuppet.OnMinigameFailEvent() then calls NPCStatesComponent.AlertPuppet(this),
+ * causing immediate hostile state.
+ *
+ * Rationale: Better Netrunning replaces instant alert with delayed traceback system
+ * (30-60s upload, interruptible). Vanilla alert behavior breaks stealth gameplay and
+ * removes tactical choices.
+ *
+ * Implementation: Wrap AccessPointControllerPS.FinalizeNetrunnerDive() to skip
+ * SendMinigameFailedToAllNPCs() on failure. Success path remains unchanged (calls
+ * super.FinalizeNetrunnerDive()).
+ *
+ * Coverage:
+ * - AP Breach: ✓ Covered (no alert on failure)
+ * - Unconscious NPC Breach: ✓ Covered (BreachHelpers.reds already disables ALARM)
+ * - Remote Breach: ✓ Not affected (uses CustomAccessBreach, no MinigameFailEvent)
+ *
+ * Vanilla diff: Skips SendMinigameFailedToAllNPCs() on Failed to prevent immediate NPC alert.
+ *
+ * Implementation: @wrapMethod - success → wrappedMethod(), failure → emulate parent behavior
+ * and apply penalty.
+ *
+ * @param state - Current hacking minigame state
+ */
 @wrapMethod(AccessPointControllerPS)
 public func FinalizeNetrunnerDive(state: HackingMinigameState) -> Void {
   // Success path: Normal processing
@@ -191,28 +176,32 @@ public func FinalizeNetrunnerDive(state: HackingMinigameState) -> Void {
   wrappedMethod(state);
 }
 
-// ============================================================================
-// AccessPointControllerPS.OnNPCBreachEvent() - Disable NPC Alert on Unconscious NPC Breach Failure
-// ============================================================================
-//
-// VANILLA BEHAVIOR:
-// AccessPointControllerPS.OnNPCBreachEvent(Failed) calls SendMinigameFailedToAllNPCs(),
-// which sends MinigameFailEvent to all NPCs. This triggers NPCStatesComponent.AlertPuppet().
-//
-// RATIONALE:
-// Same as FinalizeNetrunnerDive() - replace instant alert with delayed traceback system.
-// Maintains consistency across all breach types (AP, Unconscious NPC, Remote).
-//
-// IMPLEMENTATION:
-// Wrap OnNPCBreachEvent() to skip SendMinigameFailedToAllNPCs() on failure.
-// Success path calls SetIsBreached(true) and RefreshSlaves_Event() as vanilla.
-//
-// COVERAGE:
-// - AP Breach: ✓ Covered by FinalizeNetrunnerDive() wrap
-// - Unconscious NPC Breach: ✓ Covered by this wrap (OnNPCBreachEvent)
-// - Remote Breach: ✓ Not affected (uses CustomAccessBreach, no NPCBreachEvent)
-// ============================================================================
-
+/*
+ * Prevents NPC alert on Unconscious NPC breach failure.
+ *
+ * Vanilla behavior: AccessPointControllerPS.OnNPCBreachEvent(Failed) calls
+ * SendMinigameFailedToAllNPCs(), which sends MinigameFailEvent to all NPCs.
+ * This triggers NPCStatesComponent.AlertPuppet().
+ *
+ * Rationale: Same as FinalizeNetrunnerDive() - replace instant alert with delayed
+ * traceback system. Maintains consistency across all breach types (AP, Unconscious NPC,
+ * Remote).
+ *
+ * Implementation: Wrap OnNPCBreachEvent() to skip SendMinigameFailedToAllNPCs() on
+ * failure. Success path calls SetIsBreached(true) and RefreshSlaves_Event() as vanilla.
+ *
+ * Coverage:
+ * - AP Breach: ✓ Covered by FinalizeNetrunnerDive() wrap
+ * - Unconscious NPC Breach: ✓ Covered by this wrap (OnNPCBreachEvent)
+ * - Remote Breach: ✓ Not affected (uses CustomAccessBreach, no NPCBreachEvent)
+ *
+ * Vanilla diff: Skips
+ * SendMinigameFailedToAllNPCs() on Failed; success path unchanged. @wrapMethod: branch on
+ * evt.state, perform minimal handling, and return DoNotNotifyEntity.
+ *
+ * @param evt NPCBreachEvent carrying the result state
+ * @return EntityNotificationType - vanilla result on success or DoNotNotifyEntity
+ */
 @wrapMethod(AccessPointControllerPS)
 public func OnNPCBreachEvent(evt: ref<NPCBreachEvent>) -> EntityNotificationType {
   // Success path: Normal processing
@@ -240,25 +229,22 @@ public func OnNPCBreachEvent(evt: ref<NPCBreachEvent>) -> EntityNotificationType
   return wrappedMethod(evt);
 }
 
-// ============================================================================
-// Helper: DetectBreachType() - Identify Breach Context
-// ============================================================================
-//
-// FUNCTIONALITY:
-// - Detects breach context using blacklist + fallback strategy
-// - Enables type-specific penalty application
-//
-// DETECTION STRATEGY (Blacklist + Fallback):
-// 1. RemoteBreach detection (PRIORITY): Check state systems (Computer/Device/Vehicle)
-// 2. AccessPoint detection: Check JackIn capability (HasPersonalLinkSlot)
-// 3. Fallback: Default to RemoteBreach (safer than AccessPoint)
-//
-// RATIONALE:
-// - State system check is most reliable for RemoteBreach detection
-// - HasPersonalLinkSlot() supports dynamic m_personalLinkComponent setup
-// - Fallback to RemoteBreach prevents incorrect AP penalty application
-// ============================================================================
-
+/*
+ * Detects breach context using blacklist + fallback strategy for type-specific
+ * penalty application.
+ *
+ * Detection strategy (Blacklist + Fallback):
+ * 1. RemoteBreach detection (PRIORITY): Check state systems (Computer/Device/Vehicle)
+ * 2. AccessPoint detection: Check JackIn capability (HasPersonalLinkSlot)
+ * 3. Fallback: Default to RemoteBreach (safer than AccessPoint)
+ *
+ * Rationale:
+ * - State system check is most reliable for RemoteBreach detection
+ * - HasPersonalLinkSlot() supports dynamic m_personalLinkComponent setup
+ * - Fallback to RemoteBreach prevents incorrect AP penalty application
+ *
+ * @return BreachType enum identifying the breach context
+ */
 @addMethod(ScriptableDeviceComponentPS)
 private func DetectBreachType() -> BreachType {
   // Strategy: Check RemoteBreach state systems first (most reliable indicator)
@@ -282,13 +268,19 @@ private func DetectBreachType() -> BreachType {
   return BreachType.RemoteBreach;
 }
 
-// Helper: Check if ANY device is being breached via RemoteBreach
-// RATIONALE: Extensible detection covering all RemoteBreach state systems
-//   - ComputerControllerPS: RemoteBreachStateSystem (Computer-specific)
-//   - TerminalControllerPS: DeviceRemoteBreachStateSystem (generic device)
-//   - VehicleComponentPS: VehicleRemoteBreachStateSystem (vehicle-specific)
-//   - Future devices: Automatically covered by adding new state system checks
-// DEFENSIVE: Returns false if state systems unavailable (safer than assuming RemoteBreach)
+/*
+ * Checks if ANY device is being breached via RemoteBreach.
+ *
+ * Rationale: Extensible detection covering all RemoteBreach state systems:
+ * - ComputerControllerPS: RemoteBreachStateSystem (Computer-specific)
+ * - TerminalControllerPS: DeviceRemoteBreachStateSystem (generic device)
+ * - VehicleComponentPS: VehicleRemoteBreachStateSystem (vehicle-specific)
+ * - Future devices: Automatically covered by adding new state system checks
+ *
+ * Defensive: Returns false if state systems unavailable (safer than assuming RemoteBreach).
+ *
+ * @return True if device is being breached via RemoteBreach, false otherwise
+ */
 @addMethod(ScriptableDeviceComponentPS)
 private func IsRemoteBreachingAnyDevice() -> Bool {
   let gameInstance: GameInstance = this.GetGameInstance();
@@ -336,19 +328,15 @@ private func IsRemoteBreachingAnyDevice() -> Bool {
   return false;
 }
 
-// ============================================================================
-// Helper: IsBreachPenaltyEnabledForType() - Type-Specific Penalty Check
-// ============================================================================
-//
-// FUNCTIONALITY:
-// - Checks if penalty is enabled for specific breach type
-// - Individual toggles per breach type (AP, NPC, RemoteBreach)
-//
-// ARCHITECTURE:
-// - Guard Clause pattern for early return
-// - Type-specific settings from config.reds
-// ============================================================================
-
+/*
+ * Checks if penalty is enabled for specific breach type using individual
+ * toggles per breach type (AP, NPC, RemoteBreach). Guard Clause pattern for
+ * early return, type-specific settings from config.reds. Enables granular
+ * control over penalty application per breach context.
+ *
+ * @param breachType The type of breach to check
+ * @return True if penalty enabled for this type, false otherwise
+ */
 @addMethod(ScriptableDeviceComponentPS)
 private func IsBreachPenaltyEnabledForType(breachType: BreachType) -> Bool {
   if Equals(breachType, BreachType.AccessPoint) {
@@ -364,27 +352,24 @@ private func IsBreachPenaltyEnabledForType(breachType: BreachType) -> Bool {
   return BetterNetrunningSettings.RemoteBreachFailurePenaltyEnabled();
 }
 
-// ============================================================================
-// Helper: ApplyFailurePenalty() - Type-Specific Penalty Application
-// ============================================================================
-//
-// FUNCTIONALITY:
-// - Applies penalty based on breach type
-// - VFX: All breach types (unified)
-// - Lock Recording: Type-specific (deviceID for AP, timestamp for NPC, position for RemoteBreach)
-// - Trace: All breach types (unified)
-//
-// PENALTY BREAKDOWN:
-// - AccessPoint: VFX + Device Lock (PersistentID) + Trace
-// - UnconsciousNPC: VFX + NPC Lock (timestamp on PS) + Trace
-// - RemoteBreach: VFX + Position Lock (50m radius) + Trace
-//
-// ARCHITECTURE:
-// - Type-specific lock recording (deviceID/timestamp/position)
-// - Guard Clause pattern for entity validation
-// - Unified VFX and trace application
-// ============================================================================
-
+/*
+ * Applies penalty based on breach type with unified VFX and trace, but
+ * type-specific lock recording (deviceID for AP, timestamp for NPC, position
+ * for RemoteBreach).
+ *
+ * Penalty breakdown:
+ * - AccessPoint: VFX + Device Lock (PersistentID) + Trace
+ * - UnconsciousNPC: VFX + NPC Lock (timestamp on PS) + Trace
+ * - RemoteBreach: VFX + Position Lock (50m radius) + Trace
+ *
+ * Guard Clause pattern for entity validation, type-specific lock recording
+ * strategies, unified VFX and trace application for consistency.
+ *
+ * @param player Player reference
+ * @param devicePS Device persistent state
+ * @param gameInstance Game instance
+ * @param breachType Type of breach that failed
+ */
 public static func ApplyFailurePenalty(
   player: ref<PlayerPuppet>,
   devicePS: ref<ScriptableDeviceComponentPS>,
@@ -420,29 +405,22 @@ public static func ApplyFailurePenalty(
   TriggerTraceAttempt(player, gameInstance);
 }
 
-// ============================================================================
-// ApplyFailurePenalty() Overload - For UnconsciousNPC Breach
-// ============================================================================
-//
-// FUNCTIONALITY:
-// Applies failure penalty for UnconsciousNPC breach using ScriptedPuppet directly.
-//
-// RATIONALE:
-// PuppetDeviceLinkPS and ScriptableDeviceComponentPS are sibling classes (both inherit
-// from SharedGameplayPS) and cannot be cast to each other. This overload accepts
-// ScriptedPuppet directly to avoid casting issues.
-//
-// PENALTY COMPONENTS:
-// - VFX: Red glitch effect (unified with other breach types)
-// - Timestamp: Records on ScriptedPuppetPS.m_betterNetrunningNPCBreachFailedTimestamp
-// - Trace: Position reveal attempt (unified)
-//
-// ARCHITECTURE:
-// - Reuses ApplyBreachFailurePenaltyVFX() for DRY principle
-// - Reuses TriggerTraceAttempt() for DRY principle
-// - Uses RecordBreachFailureTimestamp() for timestamp recording (DRY principle)
-// ============================================================================
-
+/*
+ * ApplyFailurePenalty() overload for UnconsciousNPC breach using ScriptedPuppet directly
+ * to avoid sibling class casting issues (PuppetDeviceLinkPS ↔ ScriptableDeviceComponentPS).
+ *
+ * Penalty components:
+ * - Red glitch VFX
+ * - Timestamp on ScriptedPuppetPS.m_betterNetrunningNPCBreachFailedTimestamp
+ * - Position reveal trace attempt
+ *
+ * Reuses ApplyBreachFailurePenaltyVFX(), TriggerTraceAttempt(), and
+ * RecordBreachFailureTimestamp() for DRY principle.
+ *
+ * @param player Player reference
+ * @param npcPuppet Target NPC puppet
+ * @param gameInstance Game instance
+ */
 public static func ApplyFailurePenalty(
   player: ref<PlayerPuppet>,
   npcPuppet: ref<ScriptedPuppet>,
@@ -469,16 +447,17 @@ public static func ApplyFailurePenalty(
   TriggerTraceAttempt(player, gameInstance);
 }
 
-// ============================================================================
-// Helper: ApplyBreachFailurePenaltyVFX() - Visual Penalty Effect
-// ============================================================================
-//
-// Applies red VFX effect when breach fails.
-// Extracted as separate function for reusability across different breach types.
-//
-// VFX: disabling_connectivity_glitch_red (red, 2-3 seconds)
-// ============================================================================
-
+/*
+ * ApplyBreachFailurePenaltyVFX() - Visual Penalty Effect
+ *
+ * Applies red VFX effect when breach fails.
+ * Extracted as separate function for reusability across different breach types.
+ *
+ * VFX: disabling_connectivity_glitch_red (red, 2-3 seconds)
+ *
+ * @param player Player reference
+ * @param gameInstance Game instance
+ */
 private static func ApplyBreachFailurePenaltyVFX(
   player: ref<PlayerPuppet>,
   gameInstance: GameInstance
@@ -490,27 +469,22 @@ private static func ApplyBreachFailurePenaltyVFX(
   );
 }
 
-// ============================================================================
-// Helper: RecordBreachFailureTimestamp() - AP Breach Timestamp Recording
-// ============================================================================
-//
-// Records breach failure timestamp on device-side persistent storage for AP breach.
-//
-// FUNCTIONALITY:
-// - Validates devicePS can be cast to SharedGameplayPS
-// - Records current timestamp on m_betterNetrunningAPBreachFailedTimestamp
-// - Returns success/failure status
-//
-// RATIONALE:
-// Device-side persistent fields (SharedGameplayPS) correctly persist across save/load,
-// unlike PlayerPuppet fields which do not serialize properly.
-//
-// ARCHITECTURE:
-// - Type-safe casting with IsDefined() check (DEVELOPMENT_GUIDELINES.md compliance)
-// - Single Responsibility: Only records timestamp, no side effects
-// - Early return on validation failure
-// ============================================================================
-
+/*
+ * Records breach failure timestamp on device-side persistent storage for AP breach.
+ *
+ * Processing:
+ * - Validates devicePS can be cast to SharedGameplayPS
+ * - Records current timestamp on m_betterNetrunningAPBreachFailedTimestamp
+ * - Returns success/failure status
+ *
+ * Device-side persistent fields (SharedGameplayPS) correctly persist across save/load
+ * unlike PlayerPuppet fields. Uses type-safe casting with IsDefined() check, single
+ * responsibility (only timestamp recording), early return on validation failure.
+ *
+ * @param devicePS Device persistent state
+ * @param gameInstance Game instance
+ * @return True if timestamp recorded successfully, false if cast failed
+ */
 private static func RecordBreachFailureTimestamp(
   devicePS: ref<ScriptableDeviceComponentPS>,
   gameInstance: GameInstance
@@ -527,28 +501,26 @@ private static func RecordBreachFailureTimestamp(
   return true;
 }
 
-// ============================================================================
-// Helper: RecordBreachFailureTimestamp() - NPC Breach Timestamp Recording
-// ============================================================================
-//
-// Records breach failure timestamp on NPC-side persistent storage for unconscious NPC breach.
-//
-// FUNCTIONALITY:
-// - Validates npcPS is defined
-// - Records current timestamp on m_betterNetrunningNPCBreachFailedTimestamp
-// - Returns success/failure status
-//
-// RATIONALE:
-// ScriptedPuppetPS persistent fields correctly persist across save/load.
-// Same pattern as AP breach for consistency (DRY principle).
-//
-// ARCHITECTURE:
-// - Type-safe validation with IsDefined() check
-// - Single Responsibility: Only records timestamp, no side effects
-// - Early return on validation failure
-// - Sibling class to ScriptableDeviceComponentPS (cannot cast between them)
-// ============================================================================
-
+/*
+ * RecordBreachFailureTimestamp() overload for NPC breach using ScriptedPuppetPS.
+ *
+ * Processing:
+ * - Validates npcPS is defined
+ * - Records current timestamp on m_betterNetrunningNPCBreachFailedTimestamp
+ * - Returns success/failure status
+ *
+ * ScriptedPuppetPS persistent fields correctly persist across save/load. Same pattern
+ * as AP breach for consistency (DRY principle). Uses type-safe validation with
+ * IsDefined() check, single responsibility (only timestamp recording), early return
+ * on validation failure.
+ *
+ * Note: ScriptedPuppetPS is sibling class to ScriptableDeviceComponentPS (cannot cast
+ * between them).
+ *
+ * @param npcPS NPC persistent state
+ * @param gameInstance Game instance
+ * @return True if timestamp recorded successfully, false if npcPS not defined
+ */
 private static func RecordBreachFailureTimestamp(
   npcPS: ref<ScriptedPuppetPS>,
   gameInstance: GameInstance
@@ -564,29 +536,26 @@ private static func RecordBreachFailureTimestamp(
   return true;
 }
 
-// ============================================================================
-// Helper: RecordBreachFailureByType() - Type-Based Dispatch
-// ============================================================================
-//
-// FUNCTIONALITY:
-// Dispatches breach failure recording to appropriate system based on breach type.
-// Acts as coordinator only - delegates actual recording to specialized systems.
-//
-// RECORDING DELEGATION:
-// - RemoteBreach: RemoteBreachLockSystem.RecordRemoteBreachFailure()
-// - AP/NPC: Should not reach here (handled in ApplyFailurePenalty directly)
-// - Unknown types: Fallback to RemoteBreach behavior
-//
-// RATIONALE:
-// BreachPenaltySystem no longer knows RemoteBreach internal implementation details.
-// Each breach type's lock management is fully encapsulated in its own system.
-//
-// ARCHITECTURE:
-// - Type-based dispatch pattern (coordinator role)
-// - Delegation to specialized systems (RemoteBreachLockSystem)
-// - Guard Clause for invalid types
-// ============================================================================
-
+/*
+ * Dispatches breach failure recording to appropriate system based on breach type.
+ * Acts as coordinator only - delegates actual recording to specialized systems.
+ *
+ * Delegation strategy:
+ * - RemoteBreach → RemoteBreachLockSystem.RecordRemoteBreachFailure()
+ * - AP/NPC → Should not reach here (handled in ApplyFailurePenalty directly)
+ * - Unknown types → Fallback to RemoteBreach behavior
+ *
+ * BreachPenaltySystem no longer knows RemoteBreach internal implementation details -
+ * each breach type's lock management is fully encapsulated in its own system. Uses
+ * type-based dispatch pattern (coordinator role), delegation to specialized systems,
+ * guard clause for invalid types.
+ *
+ * @param player Player reference
+ * @param devicePS Device persistent state
+ * @param failedPosition Position where breach failed
+ * @param gameInstance Game instance
+ * @param breachType Type of breach that failed
+ */
 private static func RecordBreachFailureByType(
   player: ref<PlayerPuppet>,
   devicePS: ref<ScriptableDeviceComponentPS>,
@@ -611,39 +580,21 @@ private static func RecordBreachFailureByType(
   RemoteBreachLockSystem.RecordRemoteBreachFailure(player, devicePS, failedPosition, gameInstance);
 }
 
-// ============================================================================
-// Helper: TriggerTraceAttempt() - Trigger Position Reveal Trace
-// ============================================================================
-//
-// Triggers position reveal trace attempt (notification sent) after breach failure.
-// Uses vanilla NPCPuppet.RevealPlayerPositionIfNeeded() API.
-//
-// TRACE MECHANISM:
-// - Real netrunner only (requires TracePositionOverhaul MOD)
-// - Uses FindNearestNetrunner() to search for trace-capable NPCs
-// - Upload time: Vanilla 60 seconds (fixed by game engine)
-// - Interruptible: NPC death/defeat, combat state change, HackInterrupt StatusEffect
-//
-// HARD DEPENDENCY: TracePositionOverhaul MOD
-//   WITH: FindNearestNetrunner() searches for real NPCs → RevealPlayerPositionIfNeeded()
-//   WITHOUT: FindNearestNetrunner() returns null → No trace penalty
-//
-// ADVANTAGES OVER INSTANT ALERT:
-// - 60s delay (player can escape or interrupt)
-// - Interruptible (kill netrunner, apply StatusEffect, NPC enters combat)
-// - Tactical choices (stealth maintained during trace upload)
-// - No immediate AlertPuppet() (NPCs stay in normal patrol state until trace completes)
-//
-// DESIGN NOTE:
-// No virtual netrunner fallback - trace penalty only applies when real netrunner is present.
-// This maintains immersion (trace must originate from actual NPC) and provides clear feedback
-// (player can see netrunner icon on scanner during trace).
-//
-// ARCHITECTURE:
-// Simplified signature - no longer requires devicePS parameter
-// Works for all breach types (Device, NPC, Vehicle)
-// ============================================================================
-
+/*
+ * Triggers position reveal trace attempt after breach failure using vanilla
+ * NPCPuppet.RevealPlayerPositionIfNeeded(). Requires TracePositionOverhaul MOD for
+ * real netrunner detection.
+ *
+ * Trace characteristics:
+ * - 60s upload time
+ * - Interruptible by NPC death/combat/HackInterrupt StatusEffect
+ * - No virtual netrunner fallback (maintains immersion by requiring actual NPC source)
+ *
+ * Advantages over instant alert: 60s delay, interruptible, preserves stealth during upload.
+ *
+ * @param player Player reference
+ * @param gameInstance Game instance
+ */
 private static func TriggerTraceAttempt(
   player: ref<PlayerPuppet>,
   gameInstance: GameInstance
@@ -686,32 +637,28 @@ private static func TriggerTraceAttempt(
   BNDebug("BreachPenalty", "No netrunner found - trace penalty skipped");
 }
 
-// ============================================================================
-// ScriptableDeviceComponentPS.SetHasPersonalLinkSlot() - Prevent Lock Bypass on Load
-// ============================================================================
-//
-// VANILLA BEHAVIOR:
-// Device.OnGameAttached() calls SetHasPersonalLinkSlot(true) when device has
-// m_personalLinkComponent, unconditionally enabling JackIn interaction.
-//
-// PROBLEM:
-// Save/Load restores JackIn interaction even when device is locked by AP
-// breach failure penalty, bypassing the lock system.
-//
-// SOLUTION:
-// Intercept SetHasPersonalLinkSlot(true) calls and check breach lock status.
-// If device is locked, force isPersonalLinkSlotPresent = false to keep JackIn disabled.
-//
-// ARCHITECTURE:
-// - @wrapMethod for compatibility with other mods
-// - Early return pattern for non-enable calls (false parameter)
-// - Lock check only when attempting to enable (true parameter)
-//
-// PERSISTENCE:
-// Ensures penalty state survives save/load cycles by intercepting load-time
-// JackIn restoration in Device.OnGameAttached().
-// ============================================================================
-
+/*
+ * Prevents lock bypass on save/load by intercepting SetHasPersonalLinkSlot() calls.
+ *
+ * Vanilla behavior: Device.OnGameAttached() calls SetHasPersonalLinkSlot(true) when
+ * device has m_personalLinkComponent, unconditionally enabling JackIn interaction.
+ *
+ * Problem: Save/Load restores JackIn interaction even when device is locked by AP
+ * breach failure penalty, bypassing the lock system.
+ *
+ * Solution: Intercept SetHasPersonalLinkSlot(true) calls and check breach lock status.
+ * If device is locked, force isPersonalLinkSlotPresent = false to keep JackIn disabled.
+ *
+ * Architecture:
+ * - @wrapMethod for compatibility with other mods
+ * - Early return pattern for non-enable calls (false parameter)
+ * - Lock check only when attempting to enable (true parameter)
+ *
+ * Persistence: Ensures penalty state survives save/load cycles by intercepting load-time
+ * JackIn restoration in Device.OnGameAttached().
+ *
+ * @param isPersonalLinkSlotPresent Whether to enable/disable JackIn
+ */
 @wrapMethod(ScriptableDeviceComponentPS)
 public func SetHasPersonalLinkSlot(isPersonalLinkSlotPresent: Bool) -> Void {
   // If disabling JackIn, pass through immediately (no lock check needed)

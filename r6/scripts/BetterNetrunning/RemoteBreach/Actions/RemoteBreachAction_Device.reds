@@ -1,9 +1,20 @@
-// -----------------------------------------------------------------------------
-// RemoteBreach Action - Device
-// -----------------------------------------------------------------------------
-// Generic device RemoteBreach action implementation.
-// Defines DeviceRemoteBreachAction class for generic devices (TV, Jukebox, etc).
-// -----------------------------------------------------------------------------
+// ============================================================================
+// BetterNetrunning - RemoteBreach Action (Device)
+// ============================================================================
+//
+// PURPOSE:
+// Generic device RemoteBreach action implementation for regular devices
+//
+// FUNCTIONALITY:
+// - Extends BaseRemoteBreachAction for generic devices (TV, Jukebox, etc)
+// - HackingExtensions MOD integration
+// - Device-specific StateSystem target management
+//
+// ARCHITECTURE:
+// - Inherits Template Method pattern from BaseRemoteBreachAction
+// - Conditional compilation for HackingExtensions dependency
+// - Generic device handling for non-specialized devices
+//
 
 module BetterNetrunning.RemoteBreach.Actions
 
@@ -19,10 +30,6 @@ import HackingExtensions.*
 
 @if(ModuleExists("HackingExtensions.Programs"))
 import HackingExtensions.Programs.*
-
-// -----------------------------------------------------------------------------
-// Device Remote Breach Action
-// -----------------------------------------------------------------------------
 
 @if(ModuleExists("HackingExtensions"))
 public class DeviceRemoteBreachAction extends BaseRemoteBreachAction {
@@ -121,17 +128,13 @@ private final func ActionCustomDeviceRemoteBreach() -> ref<DeviceRemoteBreachAct
 }
 
 /*
- * Adds Device RemoteBreach action to QuickHack menu if conditions are met
+ * Adds Device RemoteBreach action to QuickHack menu when eligible.
  *
- * RATIONALE: Enables remote breaching of devices (Camera, Turret, Terminal, AccessPoint, etc.) without physical proximity
- * ARCHITECTURE: Guard Clause pattern (max 2-level nesting for device type branching)
+ * VANILLA DIFF: Appends custom RemoteBreach after vanilla generation, removes
+ * TweakDB-injected duplicate.
  *
- * CONDITIONS CHECKED:
- * - Device is not Computer or Vehicle (handled by separate wrappers)
- * - RadialUnlock mode active (UnlockIfNoAccessPoint disabled)
- * - Device-specific RemoteBreach feature enabled (Camera/Turret/Other)
- * - RemoteBreach not locked due to breach failure penalty
- * - Device not already breached via RemoteBreach
+ * @param actions - Output action list (will be appended when eligible)
+ * @param context - GetActionsContext for quickhack evaluation
  */
 @if(ModuleExists("HackingExtensions"))
 @wrapMethod(ScriptableDeviceComponentPS)

@@ -38,16 +38,13 @@ import BetterNetrunning.*
 import BetterNetrunningConfig.*
 
 /*
- * Checks if device is already unlocked via daemon or CustomHackingSystem breach
- * Returns true if device is unlocked via daemon or CustomHackingSystem breach
+ * Checks if device is already unlocked via daemon or CustomHackingSystem breach.
  *
- * NEW REQUIREMENT: RemoteBreach should be hidden when:
- *   1. Device is unlocked via daemon (UnlockQuickhacks/Camera/Turret), OR
- *   2. Device has completed ANY RemoteBreach daemon (Basic/NPC/Camera/Turret)
- * Both conditions are checked with OR logic.
+ * Returns true if device unlocked via daemon (UnlockQuickhacks/Camera/Turret) OR completed
+ * any RemoteBreach daemon (Basic/NPC/Camera/Turret). Prevents unnecessary RemoteBreach action
+ * creation and UI flash.
  *
- * PERFORMANCE: This prevents unnecessary RemoteBreach action creation and UI flash
- * APPLIES TO: All devices including Vehicles, Cameras, Turrets, and generic devices
+ * @return True if device is unlocked via daemon or CustomHackingSystem breach
  */
 @addMethod(ScriptableDeviceComponentPS)
 public final func IsDeviceAlreadyUnlocked() -> Bool {
@@ -94,6 +91,8 @@ public final func IsDeviceAlreadyUnlocked() -> Bool {
 /*
  * Tries to add Custom RemoteBreach action (Computer, Vehicle, or Device)
  * Only compiled when HackingExtensions module exists
+ *
+ * @param outActions - Array of device quickhacks (modified in-place)
  */
 @if(ModuleExists("HackingExtensions"))
 @addMethod(ScriptableDeviceComponentPS)
@@ -114,7 +113,7 @@ public final func TryAddCustomRemoteBreach(outActions: script_ref<array<ref<Devi
   let i: Int32 = 0;
   while i < ArraySize(Deref(outActions)) {
     let action: ref<DeviceAction> = Deref(outActions)[i];
-    if IsDefined(action) && IsCustomRemoteBreachAction(action.GetClassName()) {
+    if IsCustomRemoteBreachAction(action) {
       hasCustomRemoteBreach = true;
       break;
     }
@@ -170,10 +169,12 @@ public final func TryAddCustomRemoteBreach(outActions: script_ref<array<ref<Devi
 }
 
 /*
- * Adds missing Custom RemoteBreach to devices that override GetQuickHackActions()
- * Only compiled when HackingExtensions module exists
- * CRITICAL: Some devices (NetrunnerChair, Jukebox, DisposalDevice) override GetQuickHackActions()
- * without calling wrappedMethod(), so Custom RemoteBreach must be injected here
+ * Adds missing Custom RemoteBreach to devices that override GetQuickHackActions() without
+ * calling wrappedMethod() (NetrunnerChair, Jukebox, DisposalDevice).
+ *
+ * Only compiled when HackingExtensions module exists.
+ *
+ * @param outActions - Array of device quickhacks (modified in-place)
  */
 @if(ModuleExists("HackingExtensions"))
 @addMethod(ScriptableDeviceComponentPS)
@@ -228,27 +229,17 @@ public final func TryAddMissingCustomRemoteBreach(outActions: script_ref<array<r
 }
 
 /*
- * Removes Custom RemoteBreach from unlocked devices
+ * Removes RemoteBreach action from unlocked devices as defensive cleanup.
  *
- * DEFENSE-IN-DEPTH: This is a fallback safety mechanism
- * - Primary prevention: IsDeviceAlreadyUnlocked() check in TryAddCustomRemoteBreach()
- * - Secondary cleanup: This function removes any RemoteBreach that slipped through
+ * Note: Primary check is IsDeviceAlreadyUnlocked() in TryAddCustomRemoteBreach()
  *
- * FUNCTIONALITY:
- * - Checks device-specific unlock flags (Vehicle/Camera/Turret/Basic)
- * - Handles timestamp expiration via UnlockExpirationUtils
- * - Re-enables JackIn interaction on expiration via DeviceInteractionUtils
- * - Removes CustomAccessBreach action if device is unlocked
+ * Processing steps:
+ * 1. Checks unlock timestamp expiration via UnlockExpirationUtils
+ * 2. Re-enables JackIn if expired
+ * 3. Queries DeviceRemoteBreachStateSystem for CustomHackingSystem breach state (Basic devices only)
+ * 4. Removes action if unlocked
  *
- * ARCHITECTURE: Composed Method pattern with shallow nesting (max 2 levels)
- *
- * UNLOCK DETECTION (OR logic):
- * - Vehicles: m_betterNetrunningUnlockTimestampBasic > 0.0 (UnlockQuickhacks daemon)
- * - Basic devices (Computer, TV, etc.):
- *   1. DeviceRemoteBreachStateSystem.IsDeviceBreached() (CustomHackingSystem RemoteBreach - ANY daemon success)
- *   2. m_betterNetrunningUnlockTimestampBasic > 0.0 (UnlockQuickhacks daemon)
- * - Cameras: m_betterNetrunningUnlockTimestampCameras > 0.0 (UnlockCameraQuickhacks daemon)
- * - Turrets: m_betterNetrunningBreachedTurrets flag (UnlockTurretQuickhacks daemon)
+ * @param outActions Array of device quickhacks (modified in-place)
  */
 @addMethod(ScriptableDeviceComponentPS)
 public final func RemoveCustomRemoteBreachIfUnlocked(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
@@ -273,13 +264,11 @@ public final func RemoveCustomRemoteBreachIfUnlocked(outActions: script_ref<arra
 }
 
 /*
- * Checks if basic device is breached via CustomHackingSystem RemoteBreach
+ * Checks if basic device is breached via CustomHackingSystem RemoteBreach. Queries
+ * DeviceRemoteBreachStateSystem for breach state, only applies to basic devices (Computer,
+ * TV, etc.). Early return pattern with type-safe casting.
  *
- * FUNCTIONALITY:
- * - Queries DeviceRemoteBreachStateSystem for breach state
- * - Only applies to basic devices (Computer, TV, etc.)
- *
- * ARCHITECTURE: Early return pattern with type-safe casting
+ * @return True if device breached via CustomHackingSystem RemoteBreach
  */
 @addMethod(ScriptableDeviceComponentPS)
 private final func IsBasicDeviceBreachedByCustomHackingSystem() -> Bool {
@@ -296,20 +285,18 @@ private final func IsBasicDeviceBreachedByCustomHackingSystem() -> Bool {
 }
 
 /*
- * Removes CustomAccessBreach action from action list
+ * Removes CustomAccessBreach action from action list. Finds first CustomAccessBreach action
+ * in list, removes action and exits (assumes max 1 RemoteBreach per device). Forward iteration
+ * with early break.
  *
- * FUNCTIONALITY:
- * - Finds first CustomAccessBreach action in list
- * - Removes action and exits (assumes max 1 RemoteBreach per device)
- *
- * ARCHITECTURE: Forward iteration with early break
+ * @param outActions Array of device quickhacks (modified in-place)
  */
 @addMethod(ScriptableDeviceComponentPS)
 private final func RemoveCustomRemoteBreachAction(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
   let i: Int32 = 0;
   while i < ArraySize(Deref(outActions)) {
     let action: ref<DeviceAction> = Deref(outActions)[i];
-    if IsDefined(action) && IsCustomRemoteBreachAction(action.GetClassName()) {
+    if IsCustomRemoteBreachAction(action) {
       ArrayErase(Deref(outActions), i);
       break;
     }

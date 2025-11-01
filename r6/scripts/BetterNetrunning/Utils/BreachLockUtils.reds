@@ -3,8 +3,7 @@
 // ============================================================================
 //
 // PURPOSE:
-// High-level wrapper functions for breach lock checks, simplifying
-// repeated patterns of entity/player/position retrieval across the codebase.
+// High-level wrapper functions for breach lock checks with entity/player/position retrieval
 //
 // FUNCTIONALITY:
 // - Device lock check: Combines GetOwnerEntityWeak() + GetWorldPosition() + player retrieval
@@ -14,17 +13,8 @@
 // ARCHITECTURE:
 // - Static utility methods (no instantiation required)
 // - Single source of truth for entity/position retrieval pattern
-// - Eliminates 100+ lines of duplicate code across 9 files
+// - Centralized guard-heavy retrieval keeps callers focused on domain logic
 //
-// RATIONALE:
-// - Centralize guard-heavy entity/player/position retrieval so callers can remain
-//   focused on domain logic. This reduces duplication and ensures consistent
-//   null-safety when calling into the Breach domain lock check.
-//
-// DEPENDENCIES:
-// - BetterNetrunning.Breach.BreachLockSystem: Position-based lock checks
-// - BetterNetrunningConfig: Settings control (BreachFailurePenaltyEnabled)
-// ============================================================================
 
 module BetterNetrunning.Utils
 
@@ -38,13 +28,10 @@ import BetterNetrunning.RemoteBreach.Core.*
 public abstract class BreachLockUtils {
 
   /*
-   * High-level wrapper for device RemoteBreach lock check
+   * Checks if device is locked by RemoteBreach failure.
    *
-   * PURPOSE: Simplify repeated pattern for device RemoteBreach lock checks
-   * ARCHITECTURE: Single point of entry for device RemoteBreach lock checks
-   * USAGE: All ScriptableDeviceComponentPS contexts (devices, computers, vehicles)
-   * RATIONALE: Centralize null-safe devicePS retrieval and guarantee consistent
-   * invocation of the domain-level lock check implemented in RemoteBreachLockSystem.
+   * Centralized wrapper for device RemoteBreach lock checks across all ScriptableDeviceComponentPS
+   * contexts (devices, computers, vehicles). Delegates to RemoteBreachLockSystem.IsRemoteBreachLockedByTimestamp().
    */
   public static func IsDeviceLockedByRemoteBreachFailure(
     devicePS: ref<ScriptableDeviceComponentPS>
@@ -58,18 +45,10 @@ public abstract class BreachLockUtils {
   }
 
   /*
-   * Check if NPC is locked by RemoteBreach failure (position-based, 50m radius)
+   * Checks if NPC is locked by RemoteBreach failure (position-based, 50m radius).
    *
-   * PURPOSE: RemoteBreach-specific lock check for NPCs
-   * ARCHITECTURE: Single point of entry for RemoteBreach lock checks on NPCs
-   * USAGE: NPCQuickhacks, NPCLifecycle contexts where RemoteBreach affects NPC actions
-   *
-   * CHECKS:
-   * - RemoteBreach failure within 50m radius (affects all NPCs/devices in range)
-   *
-   * RATIONALE: Centralize null-safe puppet/player/position retrieval for
-   * RemoteBreach-specific lock checks. Separated from Unconscious NPC Breach
-   * checks per Single Responsibility Principle.
+   * Centralized wrapper for RemoteBreach lock checks on NPCs in NPCQuickhacks/NPCLifecycle
+   * contexts. Separated from Unconscious NPC Breach checks per Single Responsibility Principle.
    */
   public static func IsNPCLockedByRemoteBreachFailure(
     npcPS: ref<ScriptedPuppetPS>
@@ -94,17 +73,9 @@ public abstract class BreachLockUtils {
   }
 
   /*
-   * Check if NPC is locked by Unconscious NPC Breach failure (NPC-specific timestamp)
-   *
-   * PURPOSE: Unconscious NPC Breach-specific lock check
-   * ARCHITECTURE: Single point of entry for Unconscious NPC Breach lock checks
-   * USAGE: NPCLifecycle contexts (BreachUnconsciousOfficer action)
-   *
-   * CHECKS:
-   * - Unconscious NPC Breach failure timestamp (affects this specific NPC only)
-   *
-   * RATIONALE: Separated from RemoteBreach checks per Single Responsibility Principle.
-   * This check only applies to the specific NPC that was previously breached while unconscious.
+   * Checks if NPC is locked by Unconscious NPC Breach failure. Applies to specific NPC previously
+   * breached while unconscious (per-NPC timestamp). Separated from RemoteBreach checks per Single
+   * Responsibility Principle. Used in NPCLifecycle contexts (BreachUnconsciousOfficer action).
    */
   public static func IsNPCLockedByUnconsciousNPCBreachFailure(
     npcPS: ref<ScriptedPuppetPS>
@@ -121,20 +92,16 @@ public abstract class BreachLockUtils {
   }
 
   /*
-   * High-level wrapper for AP breach JackIn lock check
+   * Checks if JackIn is locked by AP breach failure.
    *
-   * FUNCTIONALITY:
-   * - Checks if JackIn should be disabled due to AP breach failure
-   * - Used by DeviceInteractionUtils.EnableJackInInteractionForAccessPoint()
-   * - Only affects MasterControllerPS devices (AccessPoint, Computer, Terminal)
+   * Used by DeviceInteractionUtils.EnableJackInInteractionForAccessPoint() to prevent
+   * duplicate AP breach (via JackIn) after failure.
    *
-   * ARCHITECTURE:
-   * - Guard Clause pattern for early return
-   * - Delegates to BreachLockSystem.IsAPBreachLockedByTimestamp()
+   * Scope: Only affects MasterControllerPS devices (AccessPoint, Computer, Terminal)
    *
-   * RATIONALE:
-   * - Prevents duplicate AP breach (via JackIn) after failure
+   * Implementation:
    * - Uses device-side timestamp for persistence across save/load
+   * - Delegates to BreachLockSystem.IsAPBreachLockedByTimestamp()
    */
   public static func IsJackInLockedByAPBreachFailure(
     devicePS: ref<ScriptableDeviceComponentPS>

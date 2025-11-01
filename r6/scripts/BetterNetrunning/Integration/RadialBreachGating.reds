@@ -3,33 +3,29 @@
 // ============================================================================
 //
 // PURPOSE:
-// Provides conditional gating for RadialBreach MOD integration
-// (https://www.nexusmods.com/cyberpunk2077/mods/14816)
-// Enables physical proximity-based breach filtering for network devices.
+//   Provides conditional gating for RadialBreach MOD integration
+//   (https://www.nexusmods.com/cyberpunk2077/mods/14816)
+//   Enables physical proximity-based breach filtering for network devices
 //
 // FUNCTIONALITY:
-// - Conditionally compiled based on RadialBreach MOD presence
-// - Syncs breach range configuration with RadialBreach settings
-// - Implements physical distance filtering for network devices
-// - Records network centroid position for radial unlock system
-// - Supports both AccessPoint breach and RemoteBreach
+//   - Conditionally compiled based on RadialBreach MOD presence
+//   - Syncs breach range configuration with RadialBreach settings
+//   - Implements physical distance filtering for network devices
+//   - Records network centroid position for radial unlock system
+//   - Supports both AccessPoint breach and RemoteBreach
 //
 // ARCHITECTURE:
-// - @if(ModuleExists("RadialBreach")): Full RadialBreach gating enabled
-// - @if(!ModuleExists("RadialBreach")): Fallback stubs (no physical filtering)
+//   - @if(ModuleExists("RadialBreach")): Full RadialBreach gating enabled
+//   - @if(!ModuleExists("RadialBreach")): Fallback stubs (no physical filtering)
+//   - Works with or without RadialBreach MOD installed
+//   - Automatically syncs breach range with RadialBreach Native Settings
+//   - Delegates to vanilla behavior when MOD not present
+//   - Naming pattern: [MOD]Gating.reds for external MOD integration layers
 //
-// MOD COMPATIBILITY:
-// - Works with or without RadialBreach MOD installed
-// - Automatically syncs breach range with RadialBreach Native Settings
-// - Delegates to vanilla behavior when MOD not present
-//
-// NAMING CONVENTION:
-// - Follows [MOD]Gating.reds pattern (e.g., DNRGating.reds, RadialBreachGating.reds)
-// - "Gating" = Conditional filtering layer for external MOD integration
-// ============================================================================
 
 module BetterNetrunning.Integration
 
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
 
@@ -42,27 +38,14 @@ import RadialBreach.Config.*
 // ============================================================================
 
 /*
- * GetRadialBreachRange - External dependency isolation function
+ * Returns RadialBreach MOD's configured breach range
  *
- * PURPOSE:
- * Centralizes RadialBreach MOD integration logic in Integration/ layer
- * Isolates external dependency (RadialBreachSettings) from Core/ layer
- *
- * ARCHITECTURE:
- * - Single Responsibility: RadialBreach MOD configuration access
- * - Design Principle: External dependencies must be isolated in Integration/
- * - Delegation Pattern: Core/DeviceTypeUtils delegates to this function
- *
- * RATIONALE:
- * Core/ modules should NOT depend on external MODs directly
- * Integration/ layer provides conditional gating and fallback logic
- *
- * FUNCTIONALITY:
+ * Behavior:
  * - Reads config.breachRange from RadialBreach Native Settings (10-50m, default 25m)
  * - Falls back to 50m if RadialBreach disabled or invalid
  *
- * USAGE:
- * let range: Float = GetRadialBreachRange(gameInstance);
+ * @param gameInstance - Game instance
+ * @return Breach range in meters
  */
 @if(ModuleExists("RadialBreach"))
 public static func GetRadialBreachRange(gameInstance: GameInstance) -> Float {
@@ -87,8 +70,12 @@ public static func GetRadialBreachRange(gameInstance: GameInstance) -> Float {
 // BREACH POSITION TRACKING
 // ============================================================================
 
-/// Gets the breach position (AccessPoint position or player position as fallback)
-/// Used for network centroid calculation and radial unlock system
+/*
+ * Gets the breach position for network centroid calculation
+ *
+ * Returns: AccessPoint position or player position as fallback
+ * Used by: Network centroid calculation and radial unlock system
+ */
 @addMethod(AccessPointControllerPS)
 public final func GetBreachPosition() -> Vector4 {
   // Try to get AccessPoint entity position
@@ -112,9 +99,13 @@ public final func GetBreachPosition() -> Vector4 {
 // DEVICE UNLOCK APPLICATION (CONDITIONAL COMPILATION)
 // ============================================================================
 
-/// Applies device-type-specific unlock to all connected devices
-/// RadialBreach version: Filters devices by physical proximity
-/// Architecture: Shallow nesting (max 2 levels) using helper methods
+/*
+ * Applies device-type-specific unlock to all connected devices (RadialBreach version)
+ *
+ * Features:
+ * - Filters devices by physical proximity
+ * - Uses shallow nesting (max 2 levels) with helper methods
+ */
 @if(ModuleExists("RadialBreach"))
 @addMethod(AccessPointControllerPS)
 public final func ApplyBreachUnlockToDevices(const devices: script_ref<array<ref<DeviceComponentPS>>>, unlockFlags: BreachUnlockFlags) -> Void {
@@ -139,9 +130,12 @@ public final func ApplyBreachUnlockToDevices(const devices: script_ref<array<ref
   }
 }
 
-/// Applies device-type-specific unlock to all connected devices
-/// Fallback version: No physical filtering (unlocks all devices in network)
-/// Architecture: Shallow nesting (max 2 levels)
+/*
+ * Applies device-type-specific unlock to all connected devices (Fallback version)
+ *
+ * No physical filtering - unlocks all devices in network
+ * Architecture: Shallow nesting (max 2 levels)
+ */
 @if(!ModuleExists("RadialBreach"))
 @addMethod(AccessPointControllerPS)
 public final func ApplyBreachUnlockToDevices(const devices: script_ref<array<ref<DeviceComponentPS>>>, unlockFlags: BreachUnlockFlags) -> Void {
@@ -154,7 +148,11 @@ public final func ApplyBreachUnlockToDevices(const devices: script_ref<array<ref
   }
 }
 
-/// Helper: Process unlock for a single device (shared by both versions)
+/*
+ * Process unlock for a single device
+ *
+ * Shared by both RadialBreach and Fallback versions
+ */
 @addMethod(AccessPointControllerPS)
 private final func ProcessSingleDeviceUnlock(device: ref<DeviceComponentPS>, unlockFlags: BreachUnlockFlags) -> Void {
   // Apply device-type-specific unlock
@@ -177,18 +175,18 @@ private final func ProcessSingleDeviceUnlock(device: ref<DeviceComponentPS>, unl
 }
 
 // ============================================================================
-// REMOTEBREACH INTEGRATION
-// ============================================================================
-
-// Direct API calls for clarity and minimal indirection
-// Uses: GetRadialBreachRange(gameInstance), DeviceDistanceUtils.IsDeviceWithinRadius(...)
-
-// ============================================================================
 // SHARED HELPER METHODS
 // ============================================================================
 
-/// Applies unlock to a single RemoteBreach network device
-/// Shared by both RadialBreach and Fallback versions
+/*
+ * Applies unlock to a single RemoteBreach network device
+ *
+ * Shared by both RadialBreach and Fallback versions
+ *
+ * @param device - Device to unlock
+ * @param unlockFlags - Flags indicating which device types to unlock
+ * @return True if unlock successful
+ */
 @addMethod(PlayerPuppet)
 private final func ApplyRemoteBreachDeviceUnlockInternal(
   device: ref<DeviceComponentPS>,
@@ -199,10 +197,10 @@ private final func ApplyRemoteBreachDeviceUnlockInternal(
     return false;
   }
 
-  let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(device);
+  let TargetType: TargetType = DeviceTypeUtils.GetDeviceType(device);
 
   // Validate device type against unlock flags (daemon-based filtering)
-  if !DeviceTypeUtils.ShouldUnlockByFlags(deviceType, unlockFlags) {
+  if !DeviceTypeUtils.ShouldUnlockByFlags(TargetType, unlockFlags) {
     return false;
   }
 
@@ -212,7 +210,7 @@ private final func ApplyRemoteBreachDeviceUnlockInternal(
 
   // Set breach timestamp (device type-specific)
   let currentTime: Float = TimeUtils.GetCurrentTimestamp(this.GetGame());
-  TimeUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
+  TimeUtils.SetDeviceUnlockTimestamp(sharedPS, TargetType, currentTime);
 
   // Set breached subnet event with timestamps
   let setBreachedSubnetEvent: ref<SetBreachedSubnet> = new SetBreachedSubnet();
@@ -225,8 +223,15 @@ private final func ApplyRemoteBreachDeviceUnlockInternal(
   return true;
 }
 
-/// Applies RemoteBreach network unlock (RadialBreach MOD version)
-/// Uses daemon-based filtering + physical distance filtering
+/*
+ * Applies RemoteBreach network unlock (RadialBreach MOD version)
+ *
+ * Uses daemon-based filtering + physical distance filtering
+ *
+ * @param targetDevice - Target device for breach
+ * @param networkDevices - Array of network devices to unlock
+ * @param unlockFlags - Flags indicating which device types to unlock
+ */
 @if(ModuleExists("RadialBreach"))
 @addMethod(PlayerPuppet)
 public final func ApplyRemoteBreachNetworkUnlock(
@@ -274,8 +279,15 @@ public final func ApplyRemoteBreachNetworkUnlock(
   }
 }
 
-/// Applies RemoteBreach network unlock (Fallback version - no RadialBreach)
-/// Uses daemon-based filtering only (no physical distance filtering)
+/*
+ * Applies RemoteBreach network unlock (Fallback version - no RadialBreach)
+ *
+ * Uses daemon-based filtering only (no physical distance filtering)
+ *
+ * @param targetDevice - Target device for breach
+ * @param networkDevices - Array of network devices to unlock
+ * @param unlockFlags - Flags indicating which device types to unlock
+ */
 @if(!ModuleExists("RadialBreach"))
 @addMethod(PlayerPuppet)
 public final func ApplyRemoteBreachNetworkUnlock(

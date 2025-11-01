@@ -25,11 +25,6 @@
 // - Guard Clause pattern for validation (max nesting: 1-2 levels)
 // - Public helper method (IsLockedByTimestamp) for DRY pattern
 //
-// DEPENDENCIES:
-// - BetterNetrunningConfig: Settings control (BreachPenaltyDurationMinutes)
-// - Core/TimeUtils.reds: Timestamp management
-// - Core/Logger.reds: Debug logging
-// ============================================================================
 
 module BetterNetrunning.Breach
 import BetterNetrunningConfig.*
@@ -79,23 +74,18 @@ public class BreachLockSystem {
   // Timestamp Validation Helper (DRY Pattern)
   // ============================================================================
   //
-  // FUNCTIONALITY:
-  // - Validate timestamp against lock duration
-  // - Auto-expiration detection
-  //
-  // ARCHITECTURE:
-  // - Shared helper for AP/NPC/RemoteBreach lock checks (DRY pattern)
-  // - Called by IsAPBreachLockedByTimestamp, IsNPCBreachLockedByTimestamp, RemoteBreachLockSystem
-  //
-  // PARAMETERS:
-  // - timestamp: Failure timestamp to check
-  // - gameInstance: For current time/settings
-  // - shouldClear: (out) true if timestamp should be cleared
-  //
-  // RETURNS:
-  // - true if locked (timestamp valid and not expired)
-  // - false if accessible (no timestamp or expired)
-  // ============================================================================
+  /* Validates timestamp against lock duration with auto-expiration detection.
+   *
+   * Shared helper for AP/NPC/RemoteBreach lock checks (DRY pattern).
+   * Called by IsAPBreachLockedByTimestamp, IsNPCBreachLockedByTimestamp,
+   * and RemoteBreachLockSystem.
+   *
+   * @param timestamp Failure timestamp to check
+   * @param gameInstance For current time/settings
+   * @param shouldClear (out) True if timestamp should be cleared
+   * @return True if locked (timestamp valid and not expired); false if
+   *         accessible (no timestamp or expired)
+   */
   public static func IsLockedByTimestamp(
     timestamp: Float,
     gameInstance: GameInstance,

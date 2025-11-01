@@ -1,35 +1,25 @@
-// -----------------------------------------------------------------------------
-// RemoteBreach System - Base RemoteBreach Action
-// -----------------------------------------------------------------------------
-// Core infrastructure for RemoteBreach functionality using CustomHackingSystem.
+// ============================================================================
+// BetterNetrunning - Base RemoteBreach Action
+// ============================================================================
+//
+// PURPOSE:
+// Core infrastructure for RemoteBreach functionality using CustomHackingSystem
+//
+// FUNCTIONALITY:
+// - Template method pattern for RemoteBreach actions
+// - Dynamic RAM cost calculation based on target type
+// - Integration with HackingExtensions MOD framework
+// - State management for RemoteBreach sessions
 //
 // ARCHITECTURE:
-// RemoteBreach uses CustomHackingSystem (HackingExtensions MOD) instead of the
-// vanilla MinigameGenerationRuleScalingPrograms pipeline. This means:
+// - Template Method pattern with abstract SetStateSystemTarget()
+// - Strategy pattern for device-specific breach logic
+// - Static daemon lists defined at initialization (CET)
+// - No dynamic filtering (by design - capabilities-based model)
 //
-// 1. DAEMON LISTS ARE STATIC
-//    - Defined in remoteBreach.lua at game initialization
-//    - ComputerRemoteBreach: Basic + Camera (always)
-//    - DeviceRemoteBreach: Basic only (always)
-//    - VehicleRemoteBreach: All 4 daemon types (always)
-//
-// 2. NO DYNAMIC FILTERING
-//    - FilterPlayerPrograms() is NOT called for RemoteBreach
-//    - PhysicalRangeFilter does NOT apply
-//    - AccessPointFilter does NOT apply
-//    - Daemon availability is determined by target TYPE, not network composition
-//
-// 3. DESIGN RATIONALE
-//    - Daemons represent CAPABILITIES granted by breaching that target type
-//    - Computer = "access point control" → Basic + Camera make semantic sense
-//    - Not based on actual devices present in the network (by design)
-//
-// LIMITATION:
-// Cannot be changed without modifying CustomHackingSystem API or creating
-// 48+ minigame variants (2^4 device types × 3 difficulties).
-// -----------------------------------------------------------------------------
 
 module BetterNetrunning.RemoteBreach.Core
+import BetterNetrunning.Logging.*
 
 import BetterNetrunning.*
 import BetterNetrunningConfig.*
@@ -52,13 +42,19 @@ import HackingExtensions.Programs.*
 public abstract class BaseRemoteBreachAction extends CustomAccessBreach {
     public let m_calculatedRAMCost: Int32; // Dynamic RAM cost
 
-    // ============================================================================
-    // SetProperties Override: Set StateSystem target BEFORE minigame starts
-    // ============================================================================
-    //
-    // CRITICAL: This is called BEFORE CompleteAction(), allowing us to set up
-    // StateSystem target for DeviceDaemonAction.ExecuteProgramSuccess() to retrieve.
-    // ============================================================================
+    /*
+     * Sets RemoteBreach action properties.
+     *
+     * VANILLA DIFF: Wraps CustomAccessBreach.SetProperties.
+     *
+     * @param networkName - Network identifier
+     * @param npcCount - Number of NPCs in network
+     * @param attemptsCount - Number of allowed attempts
+     * @param isRemote - Whether this is a remote breach
+     * @param isSuicide - Whether this is a suicide breach
+     * @param minigameDefinition - TweakDB ID of minigame definition
+     * @param targetHack - Target IScriptable reference
+     */
     public func SetProperties(networkName: String, npcCount: Int32, attemptsCount: Int32, isRemote: Bool, isSuicide: Bool, minigameDefinition: TweakDBID, targetHack: ref<IScriptable>) -> Void {
         // Call parent implementation to set all fields
         super.SetProperties(networkName, npcCount, attemptsCount, isRemote, isSuicide, minigameDefinition, targetHack);
@@ -68,20 +64,55 @@ public abstract class BaseRemoteBreachAction extends CustomAccessBreach {
         // Solution: Store target reference and set StateSystem in CompleteAction()
     }
 
-    // ============================================================================
-    // CompleteAction Override: Set StateSystem target and register callbacks
-    // ============================================================================
-    //
-    // Sets StateSystem target, then starts minigame with success/failure callbacks.
-    // This is based on CustomAccessBreach.CompleteAction() but uses callbacks.
-    // ============================================================================
+    /*
+     * Completes RemoteBreach action and starts minigame.
+     *
+     * Critical: Sets StateSystem target BEFORE minigame starts.
+     * Registers callbacks for bonus daemon support.
+     *
+     * @param gameInstance - Game instance for system access
+     */
     public func CompleteAction(gameInstance: GameInstance) -> Void {
+        // Log remote breach target information (debug mode only)
+        let devicePS: ref<ScriptableDeviceComponentPS> = this.GetTargetDevice();
+        if IsDefined(devicePS) {
+            DebugUtils.LogRemoteBreachTarget(devicePS, "RemoteBreach");
+        }
+
         // CRITICAL: Set StateSystem target BEFORE minigame starts
         // Reason: DeviceDaemonAction.ExecuteProgramSuccess() retrieves target from StateSystem
         this.SetStateSystemTarget(gameInstance);
 
-        // Get CustomHackingSystem
+        // Get ScriptableSystemsContainer for system access
         let container: ref<ScriptableSystemsContainer> = GameInstance.GetScriptableSystemsContainer(gameInstance);
+
+        // Retrieve displayed daemons from TweakDB and store for statistics
+        let allProgramsRecord: array<wref<Program_Record>>;
+        let minigameRecord: ref<Minigame_Def_Record> = TweakDBInterface.GetMinigame_DefRecord(this.m_minigameDefinition);
+
+        if IsDefined(minigameRecord) {
+            minigameRecord.OverrideProgramsList(allProgramsRecord);
+
+            let displayedDaemons: array<TweakDBID>;
+            let i: Int32 = 0;
+            while i < ArraySize(allProgramsRecord) {
+                ArrayPush(displayedDaemons, allProgramsRecord[i].Program().GetID());
+                i += 1;
+            }
+
+            let stateSystem: ref<DisplayedDaemonsStateSystem> = container.Get(BNConstants.CLASS_DISPLAYED_DAEMONS_STATE_SYSTEM()) as DisplayedDaemonsStateSystem;
+
+            if IsDefined(stateSystem) {
+                stateSystem.SetDisplayedDaemons(displayedDaemons);
+                BNDebug("RemoteBreach", "Stored " + ToString(ArraySize(displayedDaemons)) + " displayed daemons for statistics");
+            } else {
+                BNError("RemoteBreach", "DisplayedDaemonsStateSystem not found");
+            }
+        } else {
+            BNError("RemoteBreach", "Failed to get Minigame_Def_Record for: " + TDBID.ToStringDEBUG(this.m_minigameDefinition));
+        }
+
+        // Get CustomHackingSystem
         let customHackSystem: ref<CustomHackingSystem> = container.Get(BNConstants.CLASS_CUSTOM_HACKING_SYSTEM()) as CustomHackingSystem;
 
         if IsDefined(customHackSystem) {
@@ -158,16 +189,26 @@ public abstract class BaseRemoteBreachAction extends CustomAccessBreach {
         GameInstance.GetPlayerSystem(gameInstance).GetLocalPlayerMainGameObject().QueueEvent(psmEvent);
     }
 
-    // ============================================================================
-    // GetCost Override: Return calculated RAM cost
-    // ============================================================================
-    // Override GetCost to return calculated RAM cost
+    // ===================================
+    // Cost Management
+    // ===================================
+
+    /*
+     * Returns calculated RAM cost for this action
+     *
+     * @return RAM cost (or 0 if not set)
+     */
     public func GetCost() -> Int32 {
         // Always return the calculated cost (or 0 if not set)
         return this.m_calculatedRAMCost;
     }
 
-    // Override PayCost to consume RAM
+    /*
+     * Consumes RAM from player's memory pool
+     *
+     * @param checkForOverclockedState - Optional overclock check
+     * @return True if cost was paid successfully
+     */
     public func PayCost(opt checkForOverclockedState: Bool) -> Bool {
         if this.m_calculatedRAMCost <= 0 {
             return true; // No cost to pay
@@ -195,7 +236,13 @@ public abstract class BaseRemoteBreachAction extends CustomAccessBreach {
         return true;
     }
 
-    // Override CanPayCost to check if player has enough RAM
+    /*
+     * Checks if player has enough RAM to pay cost
+     *
+     * @param user - Optional user GameObject (defaults to executor)
+     * @param checkForOverclockedState - Optional overclock check
+     * @return True if player has enough RAM
+     */
     public func CanPayCost(opt user: ref<GameObject>, opt checkForOverclockedState: Bool) -> Bool {
         if this.m_calculatedRAMCost <= 0 {
             return true; // No cost required
@@ -219,7 +266,14 @@ public abstract class BaseRemoteBreachAction extends CustomAccessBreach {
         return currentRAM >= Cast<Float>(this.m_calculatedRAMCost);
     }
 
-    // Override IsPossible to lock action when insufficient RAM
+    /*
+     * Checks if action is possible (includes RAM check)
+     *
+     * @param target - Target GameObject
+     * @param actionRecord - Optional action record
+     * @param objectActionsCallbackController - Optional callback controller
+     * @return True if action is possible
+     */
     public func IsPossible(target: wref<GameObject>, opt actionRecord: wref<ObjectAction_Record>, opt objectActionsCallbackController: wref<gameObjectActionsCallbackController>) -> Bool {
         // First check base prerequisites
         if !super.IsPossible(target, actionRecord, objectActionsCallbackController) {
@@ -230,7 +284,11 @@ public abstract class BaseRemoteBreachAction extends CustomAccessBreach {
         return this.CanPayCost();
     }
 
-    // Get target device (for callback access)
+    /*
+     * Gets target device from m_targetHack reference
+     *
+     * @return Target device power state or null
+     */
     public func GetTargetDevice() -> wref<ScriptableDeviceComponentPS> {
         // m_targetHack is inherited from CustomAccessBreach
         // It's a GameObject reference to the target
@@ -243,11 +301,12 @@ public abstract class BaseRemoteBreachAction extends CustomAccessBreach {
         return null;
     }
 
-    // Set StateSystem target for DeviceDaemonAction to retrieve
-    // This is CRITICAL for Basic/NPC/Camera/Turret daemon execution
-    //
-    // ARCHITECTURE: Extract Method pattern to reduce nesting (max 2 levels)
-    // Each target type handled by dedicated helper method with early returns
+    /*
+     * Sets StateSystem target for daemon execution
+     *
+     * ARCHITECTURE: Uses Extract Method pattern with shallow nesting (max 2 levels)
+     * @param gameInstance - Game instance for system access
+     */
     private func SetStateSystemTarget(gameInstance: GameInstance) -> Void {
         if !IsDefined(this.m_targetHack) {
             BNWarn("RemoteBreach", "m_targetHack not defined - cannot set StateSystem target");
@@ -274,8 +333,13 @@ public abstract class BaseRemoteBreachAction extends CustomAccessBreach {
         BNError("RemoteBreach", "Failed to set StateSystem target - unknown target type");
     }
 
-    // Helper: Try to set StateSystem target as PersistentState
-    // Returns true if successful, false otherwise
+    /*
+     * Attempts to set StateSystem target as PersistentState.
+     * Uses Strategy pattern - tries Computer first, then falls back to generic Device.
+     *
+     * @param container - ScriptableSystemsContainer for system access
+     * @return True if target set successfully, false otherwise
+     */
     private func TrySetPersistentStateTarget(container: ref<ScriptableSystemsContainer>) -> Bool {
         let devicePS: ref<ScriptableDeviceComponentPS> = this.m_targetHack as ScriptableDeviceComponentPS;
         if !IsDefined(devicePS) {
@@ -291,8 +355,13 @@ public abstract class BaseRemoteBreachAction extends CustomAccessBreach {
         return this.TrySetGenericDeviceTarget(container, devicePS);
     }
 
-    // Helper: Try to set StateSystem target as Device (Computer or generic)
-    // Returns true if successful, false otherwise
+    /*
+     * Attempts to set StateSystem target as Device (Computer or generic).
+     * Uses Strategy pattern - tries Computer first, then falls back to generic Device.
+     *
+     * @param container - ScriptableSystemsContainer for system access
+     * @return True if target set successfully, false otherwise
+     */
     private func TrySetDeviceTarget(container: ref<ScriptableSystemsContainer>) -> Bool {
         let device: ref<Device> = this.m_targetHack as Device;
         if !IsDefined(device) {
@@ -314,7 +383,14 @@ public abstract class BaseRemoteBreachAction extends CustomAccessBreach {
         return this.TrySetGenericDeviceTarget(container, devicePS);
     }
 
-    // Helper: Try to set StateSystem target as Computer
+    /*
+     * Attempts to set StateSystem target as Computer.
+     * Sets ComputerControllerPS in RemoteBreachStateSystem.
+     *
+     * @param container - ScriptableSystemsContainer for system access
+     * @param devicePS - Device persistent state to cast and register
+     * @return True if target set successfully, false otherwise
+     */
     private func TrySetComputerTarget(
         container: ref<ScriptableSystemsContainer>,
         devicePS: ref<ScriptableDeviceComponentPS>
@@ -334,7 +410,14 @@ public abstract class BaseRemoteBreachAction extends CustomAccessBreach {
         return true;
     }
 
-    // Helper: Try to set StateSystem target as generic Device
+    /*
+     * Attempts to set StateSystem target as generic Device.
+     * Sets ScriptableDeviceComponentPS in DeviceRemoteBreachStateSystem.
+     *
+     * @param container - ScriptableSystemsContainer for system access
+     * @param devicePS - Device persistent state to register
+     * @return True if target set successfully, false otherwise
+     */
     private func TrySetGenericDeviceTarget(
         container: ref<ScriptableSystemsContainer>,
         devicePS: ref<ScriptableDeviceComponentPS>
@@ -349,7 +432,13 @@ public abstract class BaseRemoteBreachAction extends CustomAccessBreach {
         return true;
     }
 
-    // Helper: Try to set StateSystem target as Vehicle
+    /*
+     * Attempts to set StateSystem target as Vehicle.
+     * Sets VehicleComponentPS in VehicleRemoteBreachStateSystem.
+     *
+     * @param container - ScriptableSystemsContainer for system access
+     * @return True if target set successfully, false otherwise
+     */
     private func TrySetVehicleTarget(container: ref<ScriptableSystemsContainer>) -> Bool {
         let vehicle: ref<VehicleObject> = this.m_targetHack as VehicleObject;
         if !IsDefined(vehicle) {

@@ -1,26 +1,29 @@
-// -----------------------------------------------------------------------------
-// Device Type Utilities
-// -----------------------------------------------------------------------------
-// Provides centralized device type classification and breach flag management.
-// Eliminates duplicate device type checking logic across the codebase.
+// ============================================================================
+// BetterNetrunning - Device Type Utilities
+// ============================================================================
 //
-// DESIGN RATIONALE:
-// - Single Responsibility: Device type determination
-// - DRY Principle: Replaces 16+ duplicate type checks
-// - Type Safety: Enum-based classification
-// - Maintainability: Centralized breach flag access
+// PURPOSE:
+// Centralized device type classification and breach flag management
 //
-// USAGE:
-// let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(devicePS);
-// if DeviceTypeUtils.IsBreached(deviceType, sharedPS) { ... }
-// -----------------------------------------------------------------------------
+// FUNCTIONALITY:
+// - Device type determination (NPC, Camera, Turret, Basic devices)
+// - Breach status validation across device types
+// - Permission calculation for progressive unlock
+// - Unified device type checking for consistency
+//
+// ARCHITECTURE:
+// - Enum-based device classification for type safety
+// - Struct-based permission containers
+// - Static utility methods for device identification
+// - Single Responsibility Principle implementation
+//
 
 module BetterNetrunning.Core
 
 import BetterNetrunning.Integration.*
 
-// Device type classification enum
-public enum DeviceType {
+// Target classification enum (devices and breach unlock types)
+public enum TargetType {
   NPC = 0,
   Camera = 1,
   Turret = 2,
@@ -62,27 +65,21 @@ public struct BreachUnlockFlags {
   public let unlockTurrets: Bool;
 }
 
-public struct BreachLootResult {
-  public let baseMoney: Float;
-  public let craftingMaterial: Bool;
-  public let baseShardDropChance: Float;
-  public let shouldLoot: Bool;
-  public let markForErase: Bool;
-  public let eraseIndex: Int32;
-  public let unlockFlags: BreachUnlockFlags;
-}
-
-// Centralized device type utilities
 public abstract class DeviceTypeUtils {
 
-  // ==================== Type Detection ====================
+  // ===================================
+  // Type Detection
+  // ===================================
 
-  // Determines device type from DeviceComponentPS
-  // Replaces duplicate if-else chains across codebase
-  public static func GetDeviceType(device: ref<DeviceComponentPS>) -> DeviceType {
+  /*
+   * Determines device type from DeviceComponentPS
+   * @param device - Device persistent state
+   * @return TargetType enum value (NPC, Camera, Turret, Basic)
+   */
+  public static func GetDeviceType(device: ref<DeviceComponentPS>) -> TargetType {
     // NPCs (PuppetDeviceLink or CommunityProxy)
     if IsDefined(device as PuppetDeviceLinkPS) || IsDefined(device as CommunityProxyPS) {
-      return DeviceType.NPC;
+      return TargetType.NPC;
     }
 
     // Get owner entity for Camera/Turret detection
@@ -90,82 +87,102 @@ public abstract class DeviceTypeUtils {
 
     // Cameras
     if IsDefined(entity as SurveillanceCamera) {
-      return DeviceType.Camera;
+      return TargetType.Camera;
     }
 
     // Turrets
     if IsDefined(entity as SecurityTurret) {
-      return DeviceType.Turret;
+      return TargetType.Turret;
     }
 
-    // Basic devices (everything else)
-    return DeviceType.Basic;
+    return TargetType.Basic;
   }
 
-  // Alternative: Type detection from GameObject entity
-  public static func GetDeviceTypeFromEntity(entity: wref<GameObject>) -> DeviceType {
+  /*
+   * Type detection from GameObject entity
+   * @param entity - Game object entity
+   * @return TargetType enum value
+   */
+  public static func GetDeviceTypeFromEntity(entity: wref<GameObject>) -> TargetType {
     if IsDefined(entity as SurveillanceCamera) {
-      return DeviceType.Camera;
+      return TargetType.Camera;
     }
     if IsDefined(entity as SecurityTurret) {
-      return DeviceType.Turret;
+      return TargetType.Turret;
     }
     if IsDefined(entity as ScriptedPuppet) {
-      return DeviceType.NPC;
+      return TargetType.NPC;
     }
-    return DeviceType.Basic;
+    return TargetType.Basic;
   }
 
-  // Convenience methods for type checking
+  /* IsCameraDevice() - Checks if device is a camera */
   public static func IsCameraDevice(device: ref<DeviceComponentPS>) -> Bool {
-    return Equals(DeviceTypeUtils.GetDeviceType(device), DeviceType.Camera);
+    return Equals(DeviceTypeUtils.GetDeviceType(device), TargetType.Camera);
   }
 
+  /* IsTurretDevice() - Checks if device is a turret */
   public static func IsTurretDevice(device: ref<DeviceComponentPS>) -> Bool {
-    return Equals(DeviceTypeUtils.GetDeviceType(device), DeviceType.Turret);
+    return Equals(DeviceTypeUtils.GetDeviceType(device), TargetType.Turret);
   }
 
+  /* IsNPCDevice() - Checks if device is an NPC */
   public static func IsNPCDevice(device: ref<DeviceComponentPS>) -> Bool {
-    return Equals(DeviceTypeUtils.GetDeviceType(device), DeviceType.NPC);
+    return Equals(DeviceTypeUtils.GetDeviceType(device), TargetType.NPC);
   }
 
+  /* IsBasicDevice() - Checks if device is a basic device */
   public static func IsBasicDevice(device: ref<DeviceComponentPS>) -> Bool {
-    return Equals(DeviceTypeUtils.GetDeviceType(device), DeviceType.Basic);
+    return Equals(DeviceTypeUtils.GetDeviceType(device), TargetType.Basic);
   }
 
-  // ==================== Breach Flag Management ====================
+  // ===================================
+  // Breach Flag Management
+  // ===================================
 
-  // Gets breach state for specific device type
-  // Centralizes unlock timestamp field access (unified state check)
-  public static func IsBreached(deviceType: DeviceType, sharedPS: ref<SharedGameplayPS>) -> Bool {
+  /*
+   * Gets breach state for specific device type
+   * @param TargetType - Type of device to check
+   * @param sharedPS - Shared gameplay persistent state
+   * @return True if device type is breached
+   */
+  public static func IsBreached(TargetType: TargetType, sharedPS: ref<SharedGameplayPS>) -> Bool {
     if !IsDefined(sharedPS) {
       return false;
     }
 
-    switch deviceType {
-      case DeviceType.NPC:
+    switch TargetType {
+      case TargetType.NPC:
         return BreachStatusUtils.IsNPCsBreached(sharedPS);
-      case DeviceType.Camera:
+      case TargetType.Camera:
         return BreachStatusUtils.IsCamerasBreached(sharedPS);
-      case DeviceType.Turret:
+      case TargetType.Turret:
         return BreachStatusUtils.IsTurretsBreached(sharedPS);
-      default: // DeviceType.Basic
+      default: // TargetType.Basic
         return BreachStatusUtils.IsBasicBreached(sharedPS);
     }
   }
 
   // ==================== Unlock Flag Management ====================
 
-  // Checks if device type should be unlocked based on BreachUnlockFlags
-  public static func ShouldUnlockByFlags(deviceType: DeviceType, flags: BreachUnlockFlags) -> Bool {
-    switch deviceType {
-      case DeviceType.NPC:
+  /*
+   * ShouldUnlockByFlags() - Device Unlock Flag Check
+   *
+   * Checks if device type should be unlocked based on BreachUnlockFlags.
+   *
+   * @param TargetType Type of device to check
+   * @param flags Breach unlock flags
+   * @return True if device type should be unlocked
+   */
+  public static func ShouldUnlockByFlags(TargetType: TargetType, flags: BreachUnlockFlags) -> Bool {
+    switch TargetType {
+      case TargetType.NPC:
         return flags.unlockNPCs;
-      case DeviceType.Camera:
+      case TargetType.Camera:
         return flags.unlockCameras;
-      case DeviceType.Turret:
+      case TargetType.Turret:
         return flags.unlockTurrets;
-      default: // DeviceType.Basic
+      default: // TargetType.Basic
         return flags.unlockBasic;
     }
   }
@@ -173,30 +190,30 @@ public abstract class DeviceTypeUtils {
   // ==================== Helper Predicates ====================
 
   // Type checking predicates for readability
-  public static func IsNPC(deviceType: DeviceType) -> Bool {
-    return Equals(deviceType, DeviceType.NPC);
+  public static func IsNPC(TargetType: TargetType) -> Bool {
+    return Equals(TargetType, TargetType.NPC);
   }
 
-  public static func IsCamera(deviceType: DeviceType) -> Bool {
-    return Equals(deviceType, DeviceType.Camera);
+  public static func IsCamera(TargetType: TargetType) -> Bool {
+    return Equals(TargetType, TargetType.Camera);
   }
 
-  public static func IsTurret(deviceType: DeviceType) -> Bool {
-    return Equals(deviceType, DeviceType.Turret);
+  public static func IsTurret(TargetType: TargetType) -> Bool {
+    return Equals(TargetType, TargetType.Turret);
   }
 
-  public static func IsBasicDevice(deviceType: DeviceType) -> Bool {
-    return Equals(deviceType, DeviceType.Basic);
+  public static func IsBasicDevice(TargetType: TargetType) -> Bool {
+    return Equals(TargetType, TargetType.Basic);
   }
 
   // ==================== Debug Utilities ====================
 
-  // Converts DeviceType enum to string for logging
-  public static func DeviceTypeToString(deviceType: DeviceType) -> String {
-    switch deviceType {
-      case DeviceType.NPC: return "NPC";
-      case DeviceType.Camera: return "Camera";
-      case DeviceType.Turret: return "Turret";
+  // Converts TargetType enum to string for logging
+  public static func DeviceTypeToString(TargetType: TargetType) -> String {
+    switch TargetType {
+      case TargetType.NPC: return "NPC";
+      case TargetType.Camera: return "Camera";
+      case TargetType.Turret: return "Turret";
       default: return "Basic";
     }
   }

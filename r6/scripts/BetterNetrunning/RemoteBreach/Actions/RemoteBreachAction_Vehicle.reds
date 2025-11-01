@@ -1,9 +1,20 @@
-// -----------------------------------------------------------------------------
-// RemoteBreach Action - Vehicle
-// -----------------------------------------------------------------------------
-// Vehicle-specific RemoteBreach action implementation.
-// Defines VehicleRemoteBreachAction class for Vehicle devices.
-// -----------------------------------------------------------------------------
+// ============================================================================
+// BetterNetrunning - RemoteBreach Action (Vehicle)
+// ============================================================================
+//
+// PURPOSE:
+// Vehicle-specific RemoteBreach action implementation
+//
+// FUNCTIONALITY:
+// - Extends BaseRemoteBreachAction for Vehicle devices
+// - HackingExtensions MOD integration
+// - Vehicle-specific StateSystem target management
+//
+// ARCHITECTURE:
+// - Inherits Template Method pattern from BaseRemoteBreachAction
+// - Conditional compilation for HackingExtensions dependency
+// - Vehicle-specific device handling
+//
 
 module BetterNetrunning.RemoteBreach.Actions
 
@@ -19,10 +30,6 @@ import HackingExtensions.*
 
 @if(ModuleExists("HackingExtensions.Programs"))
 import HackingExtensions.Programs.*
-
-// -----------------------------------------------------------------------------
-// Vehicle Remote Breach Action
-// -----------------------------------------------------------------------------
 
 @if(ModuleExists("HackingExtensions"))
 public class VehicleRemoteBreachAction extends BaseRemoteBreachAction {
@@ -101,16 +108,16 @@ private final func ActionCustomVehicleRemoteBreach() -> ref<VehicleRemoteBreachA
 }
 
 /*
- * Adds Vehicle RemoteBreach action to QuickHack menu if conditions are met
+ * Adds Vehicle RemoteBreach action to QuickHack menu when eligible.
  *
- * RATIONALE: Enables remote breaching of vehicles without physical proximity
- * ARCHITECTURE: Guard Clause pattern (max 1-level nesting)
+ * Vanilla diff: Appends custom RemoteBreach after vanilla generation and removes
+ * TweakDB-injected duplicate.
  *
- * CONDITIONS CHECKED:
- * - Vehicle RemoteBreach feature enabled (settings)
- * - RadialUnlock mode active (UnlockIfNoAccessPoint disabled)
- * - RemoteBreach not locked due to breach failure penalty
- * - Vehicle not already breached via RemoteBreach
+ * Implementation: @wrapMethod - wrappedMethod() → remove TweakDB RemoteBreach →
+ * guard checks → push custom action.
+ *
+ * @param actions - Output action list (will be appended when eligible)
+ * @param context - GetActionsContext for quickhack evaluation
  */
 @if(ModuleExists("HackingExtensions"))
 @wrapMethod(VehicleComponentPS)

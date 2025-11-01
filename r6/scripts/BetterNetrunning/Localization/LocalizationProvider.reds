@@ -21,16 +21,16 @@
 // 2. Add case to GetPackage() switch statement
 // 3. Implement ModLocalizationPackage with DefineTexts() method
 //
-// DEPENDENCIES:
-// - Codeware.Localization.*
-// - English.reds (fallback language)
-// - Japanese.reds (additional languages)
-// ============================================================================
 
 module BetterNetrunning.Localization
 import Codeware.Localization.*
 
 public class LocalizationProvider extends ModLocalizationProvider {
+  /*
+   * Returns language-specific ModLocalizationPackage instance
+   * @param language - Language code (e.g., n"en-us", n"jp-jp")
+   * @return Language-specific localization package, or null if unsupported
+   */
   public func GetPackage(language: CName) -> ref<ModLocalizationPackage> {
     switch language {
       case n"en-us": return new English();
@@ -39,6 +39,10 @@ public class LocalizationProvider extends ModLocalizationProvider {
     }
   }
 
+  /*
+   * Returns fallback language code
+   * @return Default language code (en-us)
+   */
   public func GetFallback() -> CName {
     return n"en-us";
   }

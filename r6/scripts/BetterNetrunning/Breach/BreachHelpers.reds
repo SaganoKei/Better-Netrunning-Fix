@@ -1,19 +1,28 @@
 module BetterNetrunning.Breach
 
+import BetterNetrunning.Logging.*
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.Breach.*
 
-/*
- * Breach helper functions for network hierarchy and minigame completion
- * Provides utility functions for access point navigation and NPC breach handling
- *
- * FEATURES:
- * - GetMainframe(): Recursive access point hierarchy traversal
- * - CheckConnectedClassTypes(): Device type detection (ignores power state)
- * - OnAccessPointMiniGameStatus(): NPC breach completion handler (no alarm trigger)
- */
+// ============================================================================
+// Breach Helpers
+// ============================================================================
+//
+// PURPOSE:
+//   Provides utility functions for network hierarchy traversal and breach completion
+//
+// FUNCTIONALITY:
+//   - GetMainframe(): Recursive access point hierarchy traversal
+//   - CheckConnectedClassTypes(): Device type detection (ignores power state)
+//   - OnAccessPointMiniGameStatus(): NPC breach completion handler (no alarm trigger)
+//
+// ARCHITECTURE:
+//   - Recursive traversal for network hierarchy
+//   - Power state-agnostic device detection
+//   - NPC breach integration with vanilla alarm system
+//
 
 /*
  * Recursively finds the top-level access point in network hierarchy
@@ -35,15 +44,14 @@ public func GetMainframe() -> ref<AccessPointControllerPS> {
 
 /*
  * Allows breach program upload even when all devices of specific type are disabled
+ *
  * VANILLA DIFF: Removes IsON() and IsBroken() checks to count all devices regardless of power state
- * Fixes vanilla issue where disabled devices block program availability
  *
- * RATIONALE:
- * Vanilla checks device power state (IsON() && !IsBroken()) before counting cameras/turrets.
- * This prevents camera/turret unlock programs from appearing if all devices are disabled.
- * Better Netrunning removes these checks to allow unlocking disabled devices.
- *
- * ARCHITECTURE: Continue Pattern + Extract Method with shallow nesting (max 2 levels)
+ * Rationale:
+ * - Vanilla checks device power state (IsON() && !IsBroken()) before counting
+ * - This prevents camera/turret unlock programs if all devices are disabled
+ * - Better Netrunning removes these checks to allow unlocking disabled devices
+ * - Uses Continue Pattern + Extract Method with shallow nesting (max 2 levels)
  */
 @replaceMethod(AccessPointControllerPS)
 public final const func CheckConnectedClassTypes() -> ConnectedClassTypes {
@@ -65,7 +73,12 @@ public final const func CheckConnectedClassTypes() -> ConnectedClassTypes {
   return data;
 }
 
-// Helper: Update device type detection flags for a single slave device
+/*
+ * Updates device type detection flags for a single slave device.
+ *
+ * @param slave Device persistent state to check
+ * @param data ConnectedClassTypes struct to update with detected types
+ */
 @addMethod(AccessPointControllerPS)
 private final func UpdateDeviceTypeData(slave: ref<DeviceComponentPS>, out data: ConnectedClassTypes) -> Void {
   // Check for Camera/Turret (ScriptableDeviceComponentPS)
@@ -98,18 +111,20 @@ private final func UpdateDeviceTypeData(slave: ref<DeviceComponentPS>, out data:
 }
 
 /*
- * Handles breach minigame completion for NPCs (Unconscious NPC Breach)
- * VANILLA DIFF: Removes TriggerSecuritySystemNotification(ALARM) call on breach failure
- * Intentionally suppresses alarm on breach failure to avoid breaking stealth
+ * Handles breach minigame completion for NPCs (Unconscious NPC Breach).
  *
- * RATIONALE:
- * Vanilla triggers an alarm when breach fails on an NPC, causing all enemies to become hostile.
- * Better Netrunning removes this to allow failed breach attempts without consequences.
- * Players can retry breach without alerting the entire area.
+ * VANILLA DIFF: Removes TriggerSecuritySystemNotification(ALARM) call on breach
+ * failure. Intentionally suppresses alarm on breach failure to avoid breaking stealth.
  *
- * BREACH PENALTY INTEGRATION:
+ * RATIONALE: Vanilla triggers an alarm when breach fails on an NPC, causing all
+ * enemies to become hostile. Better Netrunning removes this to allow failed breach
+ * attempts without consequences. Players can retry breach without alerting the
+ * entire area.
+ *
+ * Breach penalty integration:
  * - Success: Normal processing (no penalty)
- * - Failure: Apply breach failure penalty via unified ApplyFailurePenalty() (VFX + lock + trace)
+ * - Failure: Apply breach failure penalty via unified ApplyFailurePenalty()
+ *   (VFX + lock + trace)
  */
 @replaceMethod(ScriptedPuppet)
 protected cb func OnAccessPointMiniGameStatus(evt: ref<AccessPointMiniGameStatus>) -> Bool {
@@ -148,7 +163,9 @@ protected cb func OnAccessPointMiniGameStatus(evt: ref<AccessPointMiniGameStatus
   QuickhackModule.RequestRefreshQuickhackMenu(this.GetGame(), this.GetEntityID());
 }
 
-// Helper: Clears network state from blackboard
+/*
+ * Clears network state from blackboard.
+ */
 @addMethod(ScriptedPuppet)
 private final func ClearNetworkBlackboardState() -> Void {
   let emptyID: EntityID;
@@ -156,7 +173,9 @@ private final func ClearNetworkBlackboardState() -> Void {
   this.GetNetworkBlackboard().SetEntityID(this.GetNetworkBlackboardDef().DeviceID, emptyID);
 }
 
-// Helper: Restores normal time flow after breach minigame
+/*
+ * Restores normal time flow after breach minigame.
+ */
 @addMethod(ScriptedPuppet)
 private final func RestoreTimeDilation() -> Void {
   let easeOutCurve: CName = TweakDBInterface.GetCName(t"timeSystem.nanoWireBreach.easeOutCurve", n"DiveEaseOut");

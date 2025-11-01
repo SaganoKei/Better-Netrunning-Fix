@@ -1,4 +1,25 @@
+// ============================================================================
+// BetterNetrunning - Device Progressive Unlock
+// ============================================================================
+//
+// PURPOSE:
+// Manages device quickhack availability based on breach status and progression
+//
+// FUNCTIONALITY:
+// - Progressive unlock restrictions (Cyberdeck tier, Intelligence stat)
+// - Standalone device support via radial breach system (50m radius)
+// - Network isolation detection with auto-unlock for unsecured networks
+// - Device-type-specific permissions (Camera, Turret, Basic)
+// - Special always-allowed quickhacks (Ping, Distraction)
+//
+// ARCHITECTURE:
+// - Extract Method pattern with shallow nesting (max 2 levels)
+// - Clear separation of concerns between entry points
+// - Unified permission calculation system
+//
+
 module BetterNetrunning.Devices
+import BetterNetrunning.Logging.*
 
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
@@ -8,47 +29,18 @@ import BetterNetrunning.Breach.*
 import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.RadialUnlock.*
 
-/*
- * ============================================================================
- * DEVICE QUICKHACKS MODULE
- * ============================================================================
- *
- * PURPOSE:
- * Manages device quickhack availability based on breach status and player
- * progression requirements.
- *
- * FUNCTIONALITY:
- * - Progressive unlock restrictions (Cyberdeck tier, Intelligence stat)
- * - Standalone device support via radial breach system (50m radius)
- * - Network isolation detection -> auto-unlock for unsecured networks
- * - Device-type-specific permissions (Camera, Turret, Basic)
- * - Special always-allowed quickhacks (Ping, Distraction)
- *
- * ARCHITECTURE:
- * - SetActionsInactiveUnbreached(): Main entry point for progressive unlock
- * - FinalizeGetQuickHackActions(): Finalizes actions before presenting to player
- * - GetRemoteActions(): Provides device quickhack actions based on breach status
- * - CanRevealRemoteActionsWheel(): Controls quickhack menu visibility
- *
- * ARCHITECTURE:
- * - Shallow nesting (max 2 levels) using Extract Method pattern
- * - Clear separation of concerns
- *
- * ============================================================================
- */
-
-// ==================== Progressive Unlock System ====================
+// ============================================================================
+// Progressive Unlock System
+// ============================================================================
 
 /*
  * Checks if device is breached with expiration support
- * Overrides vanilla IsBreached() to support temporary unlock feature
  *
- * FUNCTIONALITY:
+ * Features:
  * - Returns true if device has valid (non-expired) breach timestamp
  * - Supports permanent unlock (duration = 0)
  * - Supports temporary unlock with expiration check
- *
- * APPLIES TO: All breach types (AP Breach, Unconscious NPC Breach, RemoteBreach)
+ * - Applies to all breach types (AP/NPC/Remote)
  */
 @addMethod(ScriptableDeviceComponentPS)
 public final func IsBreached() -> Bool {
@@ -85,10 +77,11 @@ public final func IsBreached() -> Bool {
 
 /*
  * Applies progressive unlock restrictions to device quickhacks before breach
- * Checks player progression (Cyberdeck tier, Intelligence stat) and device type
- * to determine which quickhacks should be available before successful breach
  *
- * ARCHITECTURE: Shallow nesting (max 2 levels) using Extract Method pattern for clarity
+ * Operations:
+ * - Checks player progression (Cyberdeck tier, Intelligence stat)
+ * - Checks device type to determine available quickhacks
+ * - Uses shallow nesting (max 2 levels) via Extract Method pattern
  */
 @addMethod(ScriptableDeviceComponentPS)
 public final func SetActionsInactiveUnbreached(actions: script_ref<array<ref<DeviceAction>>>) -> Void {
@@ -105,7 +98,11 @@ public final func SetActionsInactiveUnbreached(actions: script_ref<array<ref<Dev
   this.ApplyPermissionsToActions(actions, deviceInfo, permissions);
 }
 
-// Helper: Gets device classification and network status
+/*
+ * Gets device classification and network status
+ *
+ * @return DeviceBreachInfo with device type flags and network status
+ */
 @addMethod(ScriptableDeviceComponentPS)
 private final func GetDeviceBreachInfo() -> DeviceBreachInfo {
   let info: DeviceBreachInfo;
@@ -127,7 +124,14 @@ private final func GetDeviceBreachInfo() -> DeviceBreachInfo {
   return info;
 }
 
-// Helper: Updates breach flags for standalone devices within radial breach radius
+/*
+ * Updates breach flags for standalone devices within radial breach radius.
+ *
+ * CRITICAL FIX: Only persists timestamps already set by daemon unlock.
+ * Timestamps are persistent (@persistent in SharedGameplayPS).
+ *
+ * @param deviceInfo - Device classification info
+ */
 @addMethod(ScriptableDeviceComponentPS)
 private final func UpdateStandaloneDeviceBreachState(deviceInfo: DeviceBreachInfo) -> Void {
   // Only process standalone devices that are within radial breach radius
@@ -146,7 +150,7 @@ private final func UpdateStandaloneDeviceBreachState(deviceInfo: DeviceBreachInf
   //   Timestamps are already persistent and set by daemon unlock
   //   Only ensures timestamps remain > 0.0 after save/load (daemon unlock is authoritative)
   //
-  // EXAMPLE: NPC Subnet breach + vehicle within 50m
+  // Scenario: NPC Subnet breach + vehicle within 50m
   //   - Daemon unlock sets m_betterNetrunningUnlockTimestampNPCs = currentTime (NPCs only)
   //   - This method does NOT set m_betterNetrunningUnlockTimestampBasic (vehicle stays locked)
   //   - After save/load, vehicle remains correctly locked (timestamp = 0.0)
@@ -155,7 +159,13 @@ private final func UpdateStandaloneDeviceBreachState(deviceInfo: DeviceBreachInf
   // This method now serves as documentation for the radial unlock discovery mechanism
 }
 
-// Helper: Calculates permissions based on breach state and player progression
+/*
+ * Calculates permissions based on breach state and player progression.
+ * Device is permitted if breached OR progression requirements met for each device type.
+ *
+ * @param deviceInfo - Device classification info
+ * @return DevicePermissions with calculated permission flags
+ */
 @addMethod(ScriptableDeviceComponentPS)
 private final func CalculateDevicePermissions(deviceInfo: DeviceBreachInfo) -> DevicePermissions {
   let permissions: DevicePermissions;
@@ -174,7 +184,14 @@ private final func CalculateDevicePermissions(deviceInfo: DeviceBreachInfo) -> D
   return permissions;
 }
 
-// Helper: Applies calculated permissions to all actions
+/*
+ * Applies calculated permissions to all actions.
+ * Iterates actions and sets inactive state with reason if not allowed.
+ *
+ * @param actions - Array of DeviceAction refs to process
+ * @param deviceInfo - Device classification info
+ * @param permissions - Calculated DevicePermissions
+ */
 @addMethod(ScriptableDeviceComponentPS)
 private final func ApplyPermissionsToActions(actions: script_ref<array<ref<DeviceAction>>>, deviceInfo: DeviceBreachInfo, permissions: DevicePermissions) -> Void {
   // Check if RemoteBreach is locked due to breach failure
@@ -204,7 +221,20 @@ private final func ApplyPermissionsToActions(actions: script_ref<array<ref<Devic
   }
 }
 
-// Helper: Determines if an action should be allowed based on device type and progression
+/*
+ * Determines if an action should be allowed based on device type and progression.
+ * Centralized permission logic for all quickhack actions.
+ *
+ * @param action - DeviceAction to check
+ * @param isCamera - True if device is camera
+ * @param isTurret - True if device is turret
+ * @param allowCameras - Permission flag for cameras
+ * @param allowTurrets - Permission flag for turrets
+ * @param allowBasicDevices - Permission flag for basic devices
+ * @param allowPing - Permission flag for Ping
+ * @param allowDistraction - Permission flag for Distraction
+ * @return True if action is allowed, false otherwise
+ */
 @addMethod(ScriptableDeviceComponentPS)
 private final func ShouldAllowAction(action: ref<ScriptableDeviceAction>, isCamera: Bool, isTurret: Bool, allowCameras: Bool, allowTurrets: Bool, allowBasicDevices: Bool, allowPing: Bool, allowDistraction: Bool) -> Bool {
   let className: CName = action.GetClassName();
@@ -236,14 +266,17 @@ private final func ShouldAllowAction(action: ref<ScriptableDeviceAction>, isCame
   return false;
 }
 
-// ==================== Helper Methods: Device Lock State ====================
+// ============================================================================
+// Helper Methods: Device Lock State
+// ============================================================================
 
 
-/**
- * RemoveVanillaRemoteBreachActions - Remove only vanilla RemoteBreach actions
+/*
+ * Removes only vanilla RemoteBreach actions.
+ * Cleans up vanilla RemoteBreach when device is already breached.
+ * Uses Extract Method pattern with clear single responsibility.
  *
- * PURPOSE: Clean up vanilla RemoteBreach when device is already breached
- * ARCHITECTURE: Extract Method pattern with clear single responsibility
+ * @param outActions - Array of DeviceAction refs to process
  */
 @addMethod(ScriptableDeviceComponentPS)
 private final func RemoveVanillaRemoteBreachActions(outActions: script_ref<array<ref<DeviceAction>>>) -> Void {
@@ -261,24 +294,18 @@ private final func RemoveVanillaRemoteBreachActions(outActions: script_ref<array
   }
 }
 
-// ==================== Quickhack Finalization ====================
+// ============================================================================
+// Quickhack Finalization
+// ============================================================================
 
 /*
- * Finalizes device quickhack actions before presenting to player
+ * Finalizes device quickhack actions before presenting to the player.
  *
- * BETTER NETRUNNING ENHANCEMENTS:
- * - Replaces vanilla RemoteBreach with CustomAccessBreach (when HackingExtensions installed)
- * - Removes RemoteBreach if device already unlocked (Progressive Unlock integration)
- * - Preserves base game Ping and restrictions logic
+ * VANILLA DIFF: Applies post-processing to replace/remove RemoteBreach while
+ * preserving Ping and vanilla restrictions.
  *
- * MOD COMPATIBILITY:
- * - Uses @wrapMethod for better compatibility with other device quickhack mods
- * - Base game processing happens first, then Better Netrunning applies post-processing filters
- *
- * ARCHITECTURE: Hybrid @wrapMethod with conditional post-processing
- * - Base game execution via wrappedMethod() (RemoteBreach + Ping + Restrictions)
- * - Post-processing: Replace base game RemoteBreach with CustomAccessBreach (if HackingExtensions)
- * - Post-processing: Remove RemoteBreach if device already unlocked
+ * @param outActions - Array of DeviceAction refs to finalize
+ * @param context - GetActionsContext for quickhack evaluation
  */
 @wrapMethod(ScriptableDeviceComponentPS)
 protected final func FinalizeGetQuickHackActions(outActions: script_ref<array<ref<DeviceAction>>>, const context: script_ref<GetActionsContext>) -> Void {
@@ -287,16 +314,8 @@ protected final func FinalizeGetQuickHackActions(outActions: script_ref<array<re
     return;
   }
 
-  // DEBUG: Log device breach state
-  let sharedPS: ref<SharedGameplayPS> = this;
-  if IsDefined(sharedPS) {
-    BNTrace("DeviceQuickhacks", s"FinalizeGetQuickHackActions - Timestamps: Basic=\(ToString(sharedPS.m_betterNetrunningUnlockTimestampBasic)), " +
-      s"Camera=\(ToString(sharedPS.m_betterNetrunningUnlockTimestampCameras)), " +
-      s"Turret=\(ToString(sharedPS.m_betterNetrunningUnlockTimestampTurrets)), " +
-      s"NPC=\(ToString(sharedPS.m_betterNetrunningUnlockTimestampNPCs))");
-  }
-
-  BNDebug("DeviceQuickhacks", s"FinalizeGetQuickHackActions: Before wrappedMethod, actions=\(ArraySize(Deref(outActions)))");
+  // Log device quickhack state (debug mode only)
+  DebugUtils.LogDeviceQuickhackState(this, "DeviceQuickhacks");
 
   // Base game processing: Generate RemoteBreach + Ping + Apply restrictions
   wrappedMethod(outActions, context);

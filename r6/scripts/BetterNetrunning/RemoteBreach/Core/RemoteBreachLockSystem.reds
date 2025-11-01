@@ -3,36 +3,28 @@
 // ============================================================================
 //
 // PURPOSE:
-// Manages RemoteBreach failure locks with timestamp-based tracking.
-// Prevents re-attempts on failed RemoteBreach targets for configurable duration
-// (default 10 minutes) to balance risk-free gameplay.
+//   Manages RemoteBreach failure locks with timestamp-based tracking.
+//   Prevents re-attempts on failed RemoteBreach targets for configurable duration
+//   (default 10 minutes) to balance risk-free gameplay.
 //
 // FUNCTIONALITY:
-// - Timestamp Recording: Store RemoteBreach failure timestamps on device PS
-// - Hybrid Locking: Network hierarchy (no distance limit) + radial scan (configurable range)
-// - Lock Expiration: Auto-expire locks after configurable duration
-// - JackIn Management: Disable/Enable JackIn interaction via DeviceInteractionUtils
-//
-// RATIONALE:
-// RemoteBreach-specific functionality belongs in RemoteBreach/Core/ directory
-// following Better Netrunning's architectural principle of module separation.
-// Generic breach penalty logic remains in Breach/Systems/BreachLockSystem.reds.
+//   - Timestamp Recording: Store RemoteBreach failure timestamps on device PS
+//   - Hybrid Locking: Network hierarchy (no distance limit) + radial scan (configurable range)
+//   - Lock Expiration: Auto-expire locks after configurable duration
+//   - JackIn Management: Disable/Enable JackIn interaction via DeviceInteractionUtils
 //
 // ARCHITECTURE:
-// - Static class (no instantiation required)
-// - Persistent fields on SharedGameplayPS (survive save/load)
-// - Unified with AP/NPC breach (timestamp-based locking)
-// - Max nesting depth: 2 levels
+//   - Static class (no instantiation required)
+//   - Persistent fields on SharedGameplayPS (survive save/load)
+//   - Unified with AP/NPC breach (timestamp-based locking)
+//   - Shallow nesting (max 2 levels)
+//   - Separation: RemoteBreach-specific logic in RemoteBreach/Core/
+//   - Generic breach penalty logic remains in Breach/Systems/BreachLockSystem.reds
 //
-// DEPENDENCIES:
-// - BetterNetrunningConfig: Settings control (BreachPenaltyDurationMinutes)
-// - Core/TimeUtils.reds: Timestamp management
-// - Core/DeviceTypeUtils.reds: Radial breach range configuration
-// - Core/Logger.reds: Debug logging
-// - Utils/DeviceInteractionUtils.reds: JackIn interaction management
-// ============================================================================
 
 module BetterNetrunning.RemoteBreach.Core
+
+import BetterNetrunning.Logging.*
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Integration.*
@@ -41,53 +33,28 @@ import BetterNetrunning.Breach.*
 // ============================================================================
 // RemoteBreachLockSystem - Timestamp-Based Lock Management
 // ============================================================================
-//
-// Provides RemoteBreach-specific lock management functionality.
-//
-// ARCHITECTURE:
-// - Static class (no instantiation required)
-// - Timestamp-based locking (unified with AP/NPC breach)
-// - Hybrid locking: Network hierarchy + radial scan (range depends on RadialBreach MOD settings)
-// - JackIn state management via DeviceInteractionUtils
-// ============================================================================
 
 public class RemoteBreachLockSystem {
-  // ============================================================================
-  // GetNetworkDevices() - Network Device Discovery (Shared Logic)
-  // ============================================================================
-  //
-  // FUNCTIONALITY:
-  // Discovers all network-connected devices for a given source device.
-  // Shared by both unlock (success) and lock (failure) operations.
-  //
-  // STRATEGY:
-  // 1. Get all AccessPoint parents via SharedGameplayPS.GetAccessPoints()
-  // 2. For each AccessPoint, get all children via AccessPoint.GetChildren()
-  // 3. If no AccessPoint parent, check if device is MasterControllerPS and get children
-  // 4. No distance filtering (network hierarchy only)
-  //
-  // COVERAGE:
-  // - Device with AccessPoint parent: Get all siblings from parent(s)
-  // - Standalone AccessPoint/Computer/Terminal: Get all children
-  // - Standalone device without network: Returns empty array
-  //
-  // PARAMETERS:
-  // - sourceDevicePS: Source device (failed device for lock, breached device for unlock)
-  // - excludeSource: If true, exclude source device from results
-  //
-  // RETURNS:
-  // - Array of all network-connected devices (ScriptableDeviceComponentPS only)
-  //
-  // USAGE:
-  // ```
-  // // Lock operation (exclude failed device)
-  // let devices = RemoteBreachLockSystem.GetNetworkDevices(failedDevicePS, true);
-  //
-  // // Unlock operation (include all devices)
-  // let devices = RemoteBreachLockSystem.GetNetworkDevices(breachedDevicePS, false);
-  // ```
-  // ============================================================================
-
+  /*
+   * Discovers all network-connected devices for a given source device
+   *
+   * Shared by both unlock (success) and lock (failure) operations.
+   *
+   * Strategy:
+   * 1. Get all AccessPoint parents via SharedGameplayPS.GetAccessPoints()
+   * 2. For each AccessPoint, get all children via AccessPoint.GetChildren()
+   * 3. If no AccessPoint parent, check if device is MasterControllerPS and get children
+   * 4. No distance filtering (network hierarchy only)
+   *
+   * Coverage:
+   * - Device with AccessPoint parent → get all siblings from parent(s)
+   * - Standalone AccessPoint/Computer/Terminal → get all children
+   * - Standalone device without network → returns empty array
+   *
+   * @param sourceDevicePS - Source device (failed device for lock, breached device for unlock)
+   * @param excludeSource - If true, exclude source device from results
+   * @return Array of all network-connected devices (ScriptableDeviceComponentPS only)
+   */
   public static func GetNetworkDevices(
     sourceDevicePS: ref<ScriptableDeviceComponentPS>,
     excludeSource: Bool
@@ -165,26 +132,23 @@ public class RemoteBreachLockSystem {
   // ============================================================================
   //
   // FUNCTIONALITY:
-  // Checks if device is locked by RemoteBreach failure timestamp.
-  // Auto-expires locks after configurable duration (default 10 minutes).
-  //
-  // ARCHITECTURE:
-  // - Uses BreachLockSystem.IsLockedByTimestamp() helper (DRY pattern)
-  // - Guard Clause pattern (max nesting: 1 level)
-  // - QuickHack menu filtering via RemoteBreachVisibility.reds
-  //
-  // PARAMETERS:
-  // - devicePS: Device to check for RemoteBreach lock
-  // - gameInstance: Game instance for timestamp/settings access
-  //
-  // RETURNS:
-  // - true if locked (RemoteBreach hidden from QuickHack menu)
-  // - false if accessible (lock expired or never locked)
-  //
-  // NOTE:
-  // This check ONLY affects QuickHack menu visibility for RemoteBreach actions.
-  // JackIn operation (AP Breach) is independent and unaffected by RemoteBreach locks.
-  // ============================================================================
+  /*
+   * Checks if device is locked by RemoteBreach failure timestamp.
+   *
+   * Auto-expires locks after configurable duration (default 10 minutes).
+   *
+   * Implementation:
+   * - Uses BreachLockSystem.IsLockedByTimestamp() helper (DRY pattern)
+   * - Guard clause pattern (max nesting: 1 level)
+   * - QuickHack menu filtering via RemoteBreachVisibility.reds
+   *
+   * Note: This check ONLY affects QuickHack menu visibility for RemoteBreach actions.
+   * JackIn operation (AP Breach) is independent and unaffected by RemoteBreach locks.
+   *
+   * @param devicePS - Device to check for RemoteBreach lock
+   * @param gameInstance - Game instance for timestamp/settings access
+   * @return true if locked (RemoteBreach hidden from QuickHack menu), false if accessible (lock expired or never locked)
+   */
   public static func IsRemoteBreachLockedByTimestamp(
     devicePS: ref<ScriptableDeviceComponentPS>,
     gameInstance: GameInstance
@@ -208,50 +172,44 @@ public class RemoteBreachLockSystem {
     return isLocked;
   }
 
-  // ============================================================================
-  // RemoteBreach Failure Recording - Hybrid Lock Strategy (Network + Standalone + Vehicles)
-  // ============================================================================
-  //
-  // FUNCTIONALITY:
-  // Records RemoteBreach failure on device PS (persistent timestamp).
-  // Applies hybrid locking using network hierarchy + spatial radius:
-  // - Phase 1: Lock failed device itself
-  // - Phase 2: Lock network-connected devices (via GetNetworkDevices, NO distance limit)
-  // - Phase 3: Lock standalone/network devices in radius (via TargetingSystem, configurable range)
-  // - Phase 3B: Lock vehicles in radius (via TargetingSystem, configurable range)
-  //
-  // CONSISTENCY WITH UNLOCK (DaemonUnlockStrategy):
-  // - Phase 2 (Network): Uses shared GetNetworkDevices() function
-  //   - Iterates ALL AccessPoints (not just first)
-  //   - No distance filtering (network hierarchy only)
-  //   - Unlock affects entire network → Lock must affect entire network
-  // - Phase 3/3B (Standalone/Network/Vehicle): Distance-limited (range depends on RadialBreach MOD)
-  //   - Standalone devices: Lock them
-  //   - Network-connected devices in range: Lock them (handles standalone failure + nearby network devices)
-  //   - Vehicles: Lock them
-  //   - Distance limit prevents excessive locking
-  //
-  // RATIONALE:
-  // TSF_All(TSFMV.Obj_Device) excludes VehicleObject entities.
-  // Vehicles require separate scan with no searchFilter (detects all GameObject types).
-  // VehicleComponentPS extends ScriptableDeviceComponentPS, supports timestamp field.
-  //
-  // ARCHITECTURE:
-  // - Guard Clause pattern (max nesting: 2 levels)
-  // - DRY principle: Reuses FindNearbyDevices() and FindNearbyVehicles()
-  // - Mathematical guarantee: Network ∩ Standalone ∩ Vehicles = ∅ (mutually exclusive)
-  // - Minimal deduplication: Only check failed device PersistentID (O(1))
-  //
-  // PARAMETERS:
-  // - player: Player reference for TargetingSystem spatial scan
-  // - failedDevicePS: Failed breach target device PS
-  // - failedPosition: World position of failed device
-  // - gameInstance: Game instance for timestamp/entity lookup
-  //
-  // NOTE:
-  // This method ONLY records timestamps for QuickHack menu filtering.
-  // JackIn operation (AP Breach) is independent and unaffected by RemoteBreach locks.
-  // ============================================================================
+  /*
+   * Applies hybrid locking using network hierarchy + spatial radius.
+   *
+   * Steps:
+   * 1. Lock failed device itself
+   * 2. Lock network-connected devices (via GetNetworkDevices, NO distance limit)
+   * 3. Lock standalone/network devices in radius (via TargetingSystem, configurable range)
+   * 4. Lock vehicles in radius (via TargetingSystem, configurable range)
+   *
+   * Consistency with unlock (DaemonUnlockStrategy):
+   * - Step 2 (Network) uses shared GetNetworkDevices() - iterates ALL AccessPoints
+   *   (not just first), no distance filtering (network hierarchy only)
+   * - Unlock affects entire network → lock must affect entire network
+   *
+   * Distance-limited steps (Standalone/Network/Vehicle):
+   * - Range depends on RadialBreach MOD
+   * - Locks standalone devices, network-connected devices in range, vehicles
+   * - Distance limit prevents excessive locking
+   *
+   * Rationale:
+   * - TSF_All(TSFMV.Obj_Device) excludes VehicleObject entities
+   * - Vehicles require separate scan with no searchFilter (detects all GameObject types)
+   * - VehicleComponentPS extends ScriptableDeviceComponentPS, supports timestamp field
+   *
+   * Implementation:
+   * - Guard Clause pattern (max nesting: 2 levels)
+   * - DRY principle: Reuses FindNearbyDevices() and FindNearbyVehicles()
+   * - Mathematical guarantee: Network ∩ Standalone ∩ Vehicles = ∅ (mutually exclusive)
+   * - Minimal deduplication: Only check failed device PersistentID (O(1))
+   *
+   * Note: This method ONLY records timestamps for QuickHack menu filtering.
+   * JackIn operation (AP Breach) is independent and unaffected by RemoteBreach locks.
+   *
+   * @param player - Player reference for TargetingSystem spatial scan
+   * @param failedDevicePS - Failed breach target device PS
+   * @param failedPosition - World position of failed device
+   * @param gameInstance - Game instance for timestamp/entity lookup
+   */
   public static func RecordRemoteBreachFailure(
     player: ref<PlayerPuppet>,
     failedDevicePS: ref<ScriptableDeviceComponentPS>,
@@ -267,11 +225,11 @@ public class RemoteBreachLockSystem {
     let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
     let failedDeviceID: PersistentID = failedDevicePS.GetID();
 
-    // Phase 1: Lock failed device itself (guaranteed)
+    // Step 1: Lock failed device itself (guaranteed)
     if IsDefined(failedDevicePS) {
       failedDevicePS.m_betterNetrunningRemoteBreachFailedTimestamp = currentTime;
       let entityID: EntityID = PersistentID.ExtractEntityID(failedDeviceID);
-      BNDebug("RemoteBreachLock", "Phase 1: Locked failed device: " + EntityID.ToDebugString(entityID));
+      BNDebug("RemoteBreachLock", "Step 1: Locked failed device: " + EntityID.ToDebugString(entityID));
     } else {
       BNError("RemoteBreachLock", "Failed device is not SharedGameplayPS - cannot lock");
       return;
@@ -281,12 +239,12 @@ public class RemoteBreachLockSystem {
     let networkLockedCount: Int32 = 0;
     let standaloneLockedCount: Int32 = 0;
 
-    // Phase 2: Lock network-connected devices (entire network, NO distance limit)
-    // Uses shared GetNetworkDevices() - excludeSource=true to skip failed device (already locked in Phase 1)
-    // Note: networkLockedCount also includes network devices discovered in Phase 3 radial scan
+    // Step 2: Lock network-connected devices (entire network, NO distance limit)
+    // Uses shared GetNetworkDevices() - excludeSource=true to skip failed device (already locked in Step 1)
+    // Note: networkLockedCount also includes network devices discovered in Step 3 radial scan
     let networkDevices: array<ref<ScriptableDeviceComponentPS>> = RemoteBreachLockSystem.GetNetworkDevices(
       failedDevicePS,
-      true  // excludeSource: Failed device is locked separately in Phase 1
+      true  // excludeSource: Failed device is locked separately in Step 1
     );
 
     let i: Int32 = 0;
@@ -301,7 +259,7 @@ public class RemoteBreachLockSystem {
       i += 1;
     }
 
-    // Phase 3: Lock devices in radius (TargetingSystem spatial scan)
+    // Step 3: Lock devices in radius (TargetingSystem spatial scan)
     // Locks both standalone and network-connected devices within configurable range
     let targetingSystem: ref<TargetingSystem> = GameInstance.GetTargetingSystem(gameInstance);
     if IsDefined(targetingSystem) {
@@ -334,7 +292,7 @@ public class RemoteBreachLockSystem {
       }
     }
 
-    // Phase 3B: Lock vehicles in radius (VehicleObject-specific scan)
+    // Lock vehicles in radius (VehicleObject-specific scan)
     let vehicleLockedCount: Int32 = 0;
     if IsDefined(targetingSystem) {
       let nearbyVehicles: array<ref<VehicleComponentPS>> = player.FindNearbyVehicles(targetingSystem);
@@ -356,9 +314,9 @@ public class RemoteBreachLockSystem {
     }
 
     // Final summary log
-    // - Network: Phase 2 (connected network) + Phase 3 (network devices in radius)
-    // - Standalone: Phase 3 (standalone devices in radius)
-    // - Vehicles: Phase 3B (vehicles in radius)
+    // - Network: Connected network + network devices in radius
+    // - Standalone: Standalone devices in radius
+    // - Vehicles: Vehicles in radius
     let totalLocked: Int32 = 1 + networkLockedCount + standaloneLockedCount + vehicleLockedCount; // 1 = failed device
     BNInfo("RemoteBreachLock", "Locked " + IntToString(totalLocked) + " devices " +
            "(Network: " + IntToString(networkLockedCount) + " [connected network], " +

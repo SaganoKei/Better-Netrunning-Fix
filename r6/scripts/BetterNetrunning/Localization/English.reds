@@ -18,9 +18,6 @@
 // - Debug (12 entries)
 // - Daemon Names/Descriptions (8 entries)
 //
-// DEPENDENCIES:
-// - Codeware.Localization.ModLocalizationPackage
-// ============================================================================
 
 module BetterNetrunning.Localization
 import Codeware.Localization.*
@@ -38,11 +35,14 @@ public class English extends ModLocalizationPackage {
     this.Text("Description-BetterNetrunning-EnableClassicMode", "If true, the entire network can be breached by uploading any daemon. This disables the subnet system, along with the corresponding breach daemons.");
 
     this.Text("DisplayName-BetterNetrunning-AllowBreachingUnconsciousNPCs", "Allow Breaching Unconscious NPCs");
-    this.Text("Description-BetterNetrunning-AllowBreachingUnconsciousNPCs", "If true, you can perform a network breach on any unconscious NPC connected to a network.");
+    this.Text("Description-BetterNetrunning-AllowBreachingUnconsciousNPCs", "If TRUE, allows breaching unconscious NPCs connected to a network");
+
+    this.Text("DisplayName-BetterNetrunning-RadialUnlockCrossNetwork", "Cross-Network Radial Unlock");
+    this.Text("Description-BetterNetrunning-RadialUnlockCrossNetwork", "If true, unlocks targets belonging to other networks if within range. If false, excludes targets belonging to other networks from radial unlock.");
 
     this.Text("DisplayName-BetterNetrunning-QuickhackUnlockDurationHours", "Quickhack Unlock Duration (Hours)");
     this.Text("Description-BetterNetrunning-QuickhackUnlockDurationHours",
-              "Sets how long quickhacks remain unlocked after a successful breach (in-game time). \nSet to 0: Once breached, devices remain unlocked indefinitely (no expiration). \nSet to 1+: Devices re-lock after the specified hours and require another breach.");
+              "Sets how long quickhacks remain unlocked after a successful breach (in-game time). \nSet to 0: Once breached, targets remain unlocked indefinitely (no expiration). \nSet to 1+: Targets re-lock after the specified hours and require another breach.");
 
     // ===== REMOTE BREACH =====
     this.Text("Category-RemoteBreach", "Remote Breach");
@@ -78,25 +78,25 @@ public class English extends ModLocalizationPackage {
 
     this.Text("DisplayName-BetterNetrunning-APBreachFailurePenaltyEnabled", "Access Point Breach Penalty");
     this.Text("Description-BetterNetrunning-APBreachFailurePenaltyEnabled",
-              "Apply penalty when Access Point breach fails.\nWhen enabled: Disconnection VFX + Re-Jack In unavailable on target + Trace (if netrunner nearby)\nJack In action becomes unavailable on the failed device for a certain duration (other devices remain accessible)");
+              "Apply penalty when Access Point breach fails.\nWhen enabled: Disconnection VFX + Re-Jack In unavailable on target + Trace (if netrunner nearby)\nJack In action becomes unavailable on the failed target for a certain duration (other targets remain accessible)");
 
     this.Text("DisplayName-BetterNetrunning-NPCBreachFailurePenaltyEnabled", "NPC Breach Penalty");
     this.Text("Description-BetterNetrunning-NPCBreachFailurePenaltyEnabled",
               "Apply penalty when Unconscious NPC breach fails.\nWhen enabled: Disconnection VFX + Re-Breach unavailable on target + Trace (if netrunner nearby)\nBreach action becomes unavailable on the failed NPC for a certain duration (other NPCs remain breachable)");
 
-    this.Text("DisplayName-BetterNetrunning-RemoteBreachFailurePenaltyEnabled", "RemoteBreach Penalty");
+    this.Text("DisplayName-BetterNetrunning-RemoteBreachFailurePenaltyEnabled", "Remote Breach Penalty");
     this.Text("Description-BetterNetrunning-RemoteBreachFailurePenaltyEnabled",
-              "Apply penalty when RemoteBreach quickhack fails.\nWhen enabled: Disconnection VFX + RemoteBreach unavailable on entire connected network + standalone/vehicle devices within range + Trace (if netrunner nearby)\nBreach Protocol quickhacks become unavailable on: (1) entire connected network if failed device is network-connected, (2) standalone/vehicle devices within range from failure position for a certain duration");
+              "Apply penalty when RemoteBreach quickhack fails.\nWhen enabled: Disconnection VFX + RemoteBreach unavailable on entire connected network + standalone/vehicle targets within range + Trace (if netrunner nearby)\nBreach Protocol quickhacks become unavailable on: (1) entire connected network if failed target is network-connected, (2) standalone/vehicle targets within range from failure position for a certain duration");
 
-    this.Text("DisplayName-BetterNetrunning-BreachPenaltyDurationMinutes", "Breach Penalty Duration (minutes)");
+    this.Text("DisplayName-BetterNetrunning-BreachPenaltyDurationMinutes", "Breach Penalty Duration (Minutes)");
     this.Text("Description-BetterNetrunning-BreachPenaltyDurationMinutes",
-              "Duration that breach failure penalties persist (in-game time).\nAP Breach: Jack In action locked on failed device\nNPC Breach: Breach action locked on failed NPC\nRemoteBreach: Breach Protocol quickhacks locked on entire connected network (if network-connected) or standalone/vehicle devices within range (if standalone)");
+              "Duration that breach failure penalties persist (in-game time).\nAP Breach: Jack In action locked on failed target\nNPC Breach: Breach action locked on failed NPC\nRemoteBreach: Breach Protocol quickhacks locked on entire connected network (if network-connected) or standalone/vehicle targets within range (if standalone)");
 
     // ===== ACCESS POINTS =====
     this.Text("Category-AccessPoints", "Access Points");
-    this.Text("DisplayName-BetterNetrunning-UnlockIfNoAccessPoint", "Unlock Networks With No Access Points");
+    this.Text("DisplayName-BetterNetrunning-UnlockIfNoAccessPoint", "Unlock Networks Without Access Points");
     this.Text("Description-BetterNetrunning-UnlockIfNoAccessPoint",
-              "If TRUE, devices without access points are always unlocked (no breach required). \nIf FALSE, standalone devices require breach via Radial Unlock System \n(auto-unlocks within breach radius from breached network's center. Radius configurable in Radial Breach settings).");
+              "If TRUE, targets without access points are always unlocked (no breach required). \nIf FALSE, standalone targets are controlled by Radial Unlock System \n(auto-unlocks within breach radius from breached network's center. Radius configurable in Radial Breach settings).");
 
     this.Text("DisplayName-BetterNetrunning-AutoDatamineBySuccessCount", "Auto-Datamine by Success Count");
     this.Text("Description-BetterNetrunning-AutoDatamineBySuccessCount",

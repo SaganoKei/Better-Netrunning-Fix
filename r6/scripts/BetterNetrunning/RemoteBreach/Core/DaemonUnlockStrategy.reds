@@ -1,51 +1,51 @@
-// -----------------------------------------------------------------------------
-// Daemon Unlock Strategy Interfaces
-// -----------------------------------------------------------------------------
-// Provides abstraction layer for daemon unlock execution.
-// Implements Strategy Pattern to eliminate duplicate daemon processing logic.
+// ============================================================================
+// BetterNetrunning - Daemon Unlock Strategy
+// ============================================================================
 //
-// DESIGN RATIONALE:
-// - Strategy Pattern: Encapsulates unlock algorithms per target type
-// - DRY Principle: Eliminates 150+ lines of duplicate code
-// - Open/Closed: Easy to add new daemon types without modifying core logic
+// PURPOSE:
+// Abstraction layer for daemon unlock execution using Strategy Pattern
+//
+// FUNCTIONALITY:
+// - Strategy Pattern implementation for target-specific unlock algorithms
+// - Template Method pattern for common unlock workflow
+// - Unified daemon processing logic for all target types
+// - Extensible design for new daemon types
 //
 // ARCHITECTURE:
-// DeviceDaemonAction.ExecuteProgramSuccess()
-//   └─> ProcessDaemonBase()  [Template Method]
-//        ├─> Set unlock timestamp  [Common - device type specific]
-//        ├─> MarkBreached()  [StateSystem - varies by type]
-//        ├─> ExecuteUnlock()  [Strategy - varies by daemon]
-//        └─> RecordBreachPosition()  [Common]
+// - IDaemonUnlockStrategy interface for unlock algorithms
+// - Concrete strategies: ComputerUnlockStrategy, DeviceUnlockStrategy, VehicleUnlockStrategy
+// - Template Method in ProcessDaemonBase() for common workflow
+// - Open/Closed Principle for easy extension
 //
-// USAGE:
-// let strategy: ref<IDaemonUnlockStrategy> = ComputerUnlockStrategy.Create();
-// this.ProcessDaemonBase(sharedPS, gameInstance, strategy);
-// -----------------------------------------------------------------------------
-
 module BetterNetrunning.RemoteBreach.Core
 
 import BetterNetrunning.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Integration.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Utils.*
 
-// ==================== Strategy Interface ====================
-
 // Abstract interface for daemon unlock execution
-// Each target type (Computer/Device/Vehicle) implements this
 public abstract class IDaemonUnlockStrategy {
 
-  // Executes unlock logic for specific daemon type
-  // Called after breach flags are set and StateSystem is updated
+  /*
+   * ExecuteUnlock() - Daemon Unlock Execution
+   *
+   * Executes unlock logic for specific daemon type.
+   *
+   * @param daemonType Daemon type identifier
+   * @param TargetType Target device type
+   * @param sourcePS Source device PS
+   * @param gameInstance Game instance
+   */
   public func ExecuteUnlock(
     daemonType: String,
-    deviceType: DeviceType,
+    TargetType: TargetType,
     sourcePS: ref<DeviceComponentPS>,
     gameInstance: GameInstance
   ) -> Void {}
 
   // Gets StateSystem for breach tracking
-  // Each target type has different StateSystem
   public func GetStateSystem(gameInstance: GameInstance) -> ref<IScriptable> {
     return null;
   }
@@ -53,16 +53,93 @@ public abstract class IDaemonUnlockStrategy {
   // Marks device as breached in StateSystem
   // Implementation varies by target type
   public func MarkBreached(stateSystem: ref<IScriptable>, deviceID: PersistentID, gameInstance: GameInstance) -> Void {}
+
+  /*
+   * Construct Unlock Flags from Bool Parameters
+   *
+   * ARCHITECTURE: Centralized flag construction used by all strategies
+   * @param unlockBasic Whether to unlock basic devices
+   * @param unlockNPCs Whether to unlock NPCs
+   * @param unlockCameras Whether to unlock cameras
+   * @param unlockTurrets Whether to unlock turrets
+   * @return BreachUnlockFlags structure with appropriate flags set
+   */
+  public static func BuildUnlockFlags(unlockBasic: Bool, unlockNPCs: Bool, unlockCameras: Bool, unlockTurrets: Bool) -> BreachUnlockFlags {
+    let flags: BreachUnlockFlags;
+    flags.unlockBasic = unlockBasic;
+    flags.unlockNPCs = unlockNPCs;
+    flags.unlockCameras = unlockCameras;
+    flags.unlockTurrets = unlockTurrets;
+    return flags;
+  }
+
+  /*
+   * ExecuteUnlockBase() - Template Method for Common Unlock Sequence
+   *
+   * ARCHITECTURE: Template Method Pattern
+   * Defines common unlock workflow with hook for strategy-specific network unlock.
+   *
+   * FUNCTIONALITY:
+   * - Step 1: Unlock devices in radius (all daemon types)
+   * - Step 2: Unlock vehicles (Basic daemon only)
+   * - Step 3: Network unlock (strategy-specific - calls UnlockNetwork hook)
+   * - Step 4: Unlock NPCs in radius (NPC daemon only)
+   * - Step 5: Record breach position for radial unlock
+   *
+   * @param sourcePS Source device PS (any DeviceComponentPS subclass)
+   * @param flags Unlock flags (from BuildUnlockFlags)
+   * @param gameInstance Game instance
+   */
+  protected func ExecuteUnlockBase(
+    sourcePS: ref<DeviceComponentPS>,
+    flags: BreachUnlockFlags,
+    gameInstance: GameInstance
+  ) -> Void {
+    let devicePS: ref<ScriptableDeviceComponentPS> = sourcePS as ScriptableDeviceComponentPS;
+    if !IsDefined(devicePS) {
+      return;
+    }
+
+    // Step 1: Network unlock (strategy-specific implementation)
+    // NOTE: Radial unlock (standalone devices/vehicles/NPCs) is handled separately in RemoteBreachHelpers.reds
+    // via BreachStatisticsCollector.CollectRadialUnlockStats() to avoid duplication
+    this.UnlockNetwork(sourcePS, flags, gameInstance);
+
+    // Step 2: Record breach position for radial unlock
+    RemoteBreachUtils.RecordBreachPosition(devicePS, gameInstance);
+  }
+
+  /*
+   * UnlockNetwork() - Hook Method for Strategy-Specific Network Unlock
+   *
+   * ARCHITECTURE: Template Method hook (Open/Closed Principle)
+   * Override in subclasses to implement target-specific network unlock logic.
+   *
+   * NOTE: Redscript does not support abstract methods.
+   * This base implementation provides empty default behavior (no-op).
+   * Subclasses must override to implement actual network unlock logic.
+   *
+   * @param sourcePS Source device PS
+   * @param flags Unlock flags
+   * @param gameInstance Game instance
+   */
+  protected func UnlockNetwork(
+    sourcePS: ref<DeviceComponentPS>,
+    flags: BreachUnlockFlags,
+    gameInstance: GameInstance
+  ) -> Void {}
 }
 
-// ==================== Computer Unlock Strategy ====================
+// ============================================================================
+// Computer Unlock Strategy
+// ============================================================================
 
 @if(ModuleExists("HackingExtensions"))
 public class ComputerUnlockStrategy extends IDaemonUnlockStrategy {
 
   public func ExecuteUnlock(
     daemonType: String,
-    deviceType: DeviceType,
+    TargetType: TargetType,
     sourcePS: ref<DeviceComponentPS>,
     gameInstance: GameInstance
   ) -> Void {
@@ -72,34 +149,34 @@ public class ComputerUnlockStrategy extends IDaemonUnlockStrategy {
       return;
     }
 
-    // Determine unlock flags based on daemon type
-    let unlockBasic: Bool = Equals(daemonType, DaemonTypes.Basic());
-    let unlockNPCs: Bool = Equals(daemonType, DaemonTypes.NPC());
-    let unlockCameras: Bool = Equals(daemonType, DaemonTypes.Camera());
-    let unlockTurrets: Bool = Equals(daemonType, DaemonTypes.Turret());
-
-    // Execute radius unlock for Basic daemon (standalone devices + vehicles within 50m)
-    if unlockBasic {
-      DeviceUnlockUtils.UnlockDevicesInRadius(computerPS, gameInstance);
-      DeviceUnlockUtils.UnlockVehiclesInRadius(computerPS, gameInstance);
+    this.ExecuteUnlockBase(
+      computerPS,
+      IDaemonUnlockStrategy.BuildUnlockFlags(
+        Equals(daemonType, DaemonTypes.Basic()),
+        Equals(daemonType, DaemonTypes.NPC()),
+        Equals(daemonType, DaemonTypes.Camera()),
+        Equals(daemonType, DaemonTypes.Turret())
+      ),
+      gameInstance
+    );
+  }  // Override network unlock hook for Computer-specific logic
+  protected func UnlockNetwork(
+    sourcePS: ref<DeviceComponentPS>,
+    flags: BreachUnlockFlags,
+    gameInstance: GameInstance
+  ) -> Void {
+    let computerPS: ref<ComputerControllerPS> = sourcePS as ComputerControllerPS;
+    if !IsDefined(computerPS) {
+      return;
     }
 
-    // Execute network unlock
     ComputerRemoteBreachUtils.UnlockNetworkDevices(
       computerPS,
-      unlockBasic,
-      unlockNPCs,
-      unlockCameras,
-      unlockTurrets
+      flags.unlockBasic,
+      flags.unlockNPCs,
+      flags.unlockCameras,
+      flags.unlockTurrets
     );
-
-    // Unlock NPCs in radius if NPC daemon
-    if unlockNPCs {
-      DeviceUnlockUtils.UnlockNPCsInRadius(computerPS, gameInstance);
-    }
-
-    // Record breach position for radial unlock
-    RemoteBreachUtils.RecordBreachPosition(computerPS, gameInstance);
   }
 
   public func GetStateSystem(gameInstance: GameInstance) -> ref<IScriptable> {
@@ -118,14 +195,16 @@ public class ComputerUnlockStrategy extends IDaemonUnlockStrategy {
   }
 }
 
-// ==================== Device Unlock Strategy ====================
+// ============================================================================
+// Device Unlock Strategy
+// ============================================================================
 
 @if(ModuleExists("HackingExtensions"))
 public class DeviceUnlockStrategy extends IDaemonUnlockStrategy {
 
   public func ExecuteUnlock(
     daemonType: String,
-    deviceType: DeviceType,
+    TargetType: TargetType,
     sourcePS: ref<DeviceComponentPS>,
     gameInstance: GameInstance
   ) -> Void {
@@ -135,28 +214,30 @@ public class DeviceUnlockStrategy extends IDaemonUnlockStrategy {
       return;
     }
 
-    // Determine unlock flags based on daemon type
-    let unlockBasic: Bool = Equals(daemonType, DaemonTypes.Basic());
-    let unlockNPCs: Bool = Equals(daemonType, DaemonTypes.NPC());
-    let unlockCameras: Bool = Equals(daemonType, DaemonTypes.Camera());
-    let unlockTurrets: Bool = Equals(daemonType, DaemonTypes.Turret());
+    this.ExecuteUnlockBase(
+      devicePS,
+      IDaemonUnlockStrategy.BuildUnlockFlags(
+        Equals(daemonType, DaemonTypes.Basic()),
+        Equals(daemonType, DaemonTypes.NPC()),
+        Equals(daemonType, DaemonTypes.Camera()),
+        Equals(daemonType, DaemonTypes.Turret())
+      ),
+      gameInstance
+    );
+  }
 
-    // Execute radius unlock for Basic daemon
-    if unlockBasic {
-      DeviceUnlockUtils.UnlockDevicesInRadius(devicePS, gameInstance);
-      DeviceUnlockUtils.UnlockVehiclesInRadius(devicePS, gameInstance);
+  // Override network unlock hook for Device-specific logic
+  protected func UnlockNetwork(
+    sourcePS: ref<DeviceComponentPS>,
+    flags: BreachUnlockFlags,
+    gameInstance: GameInstance
+  ) -> Void {
+    let devicePS: ref<ScriptableDeviceComponentPS> = sourcePS as ScriptableDeviceComponentPS;
+    if !IsDefined(devicePS) {
+      return;
     }
 
-    // Unlock network devices
-    this.UnlockDevicesInNetwork(devicePS, unlockBasic, unlockNPCs, unlockCameras, unlockTurrets);
-
-    // Unlock NPCs in radius if NPC daemon
-    if unlockNPCs {
-      DeviceUnlockUtils.UnlockNPCsInRadius(devicePS, gameInstance);
-    }
-
-    // Record breach position for radial unlock
-    RemoteBreachUtils.RecordBreachPosition(devicePS, gameInstance);
+    this.UnlockDevicesInNetwork(devicePS, flags.unlockBasic, flags.unlockNPCs, flags.unlockCameras, flags.unlockTurrets);
   }
 
   public func GetStateSystem(gameInstance: GameInstance) -> ref<IScriptable> {
@@ -242,14 +323,16 @@ public class DeviceUnlockStrategy extends IDaemonUnlockStrategy {
   }
 }
 
-// ==================== Vehicle Unlock Strategy ====================
+// ============================================================================
+// Vehicle Unlock Strategy
+// ============================================================================
 
 @if(ModuleExists("HackingExtensions"))
 public class VehicleUnlockStrategy extends IDaemonUnlockStrategy {
 
   public func ExecuteUnlock(
     daemonType: String,
-    deviceType: DeviceType,
+    TargetType: TargetType,
     sourcePS: ref<DeviceComponentPS>,
     gameInstance: GameInstance
   ) -> Void {
@@ -265,30 +348,41 @@ public class VehicleUnlockStrategy extends IDaemonUnlockStrategy {
       return;
     }
 
-    // Determine unlock flags based on daemon type
-    let unlockBasic: Bool = Equals(daemonType, DaemonTypes.Basic());
-    let unlockNPCs: Bool = Equals(daemonType, DaemonTypes.NPC());
-    let unlockCameras: Bool = Equals(daemonType, DaemonTypes.Camera());
-    let unlockTurrets: Bool = Equals(daemonType, DaemonTypes.Turret());
-
-    // Execute vehicle unlock in radius (for Basic daemon)
-    if unlockBasic {
-      this.UnlockVehiclesInRange(vehiclePS, gameInstance);
+    this.ExecuteUnlockBase(
+      vehiclePS,
+      IDaemonUnlockStrategy.BuildUnlockFlags(
+        Equals(daemonType, DaemonTypes.Basic()),
+        Equals(daemonType, DaemonTypes.NPC()),
+        Equals(daemonType, DaemonTypes.Camera()),
+        Equals(daemonType, DaemonTypes.Turret())
+      ),
+      gameInstance
+    );
+  }  // Override network unlock hook for Vehicle-specific logic
+  protected func UnlockNetwork(
+    sourcePS: ref<DeviceComponentPS>,
+    flags: BreachUnlockFlags,
+    gameInstance: GameInstance
+  ) -> Void {
+    let vehiclePS: ref<VehicleComponentPS> = sourcePS as VehicleComponentPS;
+    if !IsDefined(vehiclePS) {
+      return;
     }
 
-    // Unlock nearby network devices
+    let vehicleEntity: wref<GameObject> = vehiclePS.GetOwnerEntityWeak() as GameObject;
+    if !IsDefined(vehicleEntity) {
+      return;
+    }
+
     RemoteBreachUtils.UnlockNearbyNetworkDevices(
       vehicleEntity,
       gameInstance,
-      unlockBasic,
-      unlockNPCs,
-      unlockCameras,
-      unlockTurrets,
+      flags.unlockBasic,
+      flags.unlockNPCs,
+      flags.unlockCameras,
+      flags.unlockTurrets,
       "UnlockNetworkDevicesFromVehicle"
     );
-
-    // Record breach position for radial unlock
-    RemoteBreachUtils.RecordBreachPosition(vehiclePS, gameInstance);
   }
 
   public func GetStateSystem(gameInstance: GameInstance) -> ref<IScriptable> {
@@ -304,65 +398,6 @@ public class VehicleUnlockStrategy extends IDaemonUnlockStrategy {
 
     if IsDefined(vehicleBreachSystem) && IsDefined(vehicleEntity) {
       vehicleBreachSystem.MarkVehicleBreached(vehicleEntity.GetEntityID());
-    }
-  }
-
-  // Helper: Unlock vehicles in range (RadialBreach radius)
-  private func UnlockVehiclesInRange(vehiclePS: wref<VehicleComponentPS>, gameInstance: GameInstance) -> Void {
-    let vehicleEntity: wref<GameObject> = vehiclePS.GetOwnerEntityWeak() as GameObject;
-    if !IsDefined(vehicleEntity) {
-      return;
-    }
-
-    let vehiclePos: Vector4 = vehicleEntity.GetWorldPosition();
-    let breachRadius: Float = GetRadialBreachRange(gameInstance);
-
-    let player: ref<PlayerPuppet> = GetPlayer(gameInstance);
-    if !IsDefined(player) {
-      return;
-    }
-
-    let targetingSystem: ref<TargetingSystem> = GameInstance.GetTargetingSystem(gameInstance);
-    if !IsDefined(targetingSystem) {
-      return;
-    }
-
-    let query: TargetSearchQuery;
-    query.testedSet = TargetingSet.Complete;
-    query.maxDistance = breachRadius;
-    query.filterObjectByDistance = true;
-    query.includeSecondaryTargets = false;
-    query.ignoreInstigator = true;
-
-    let parts: array<TS_TargetPartInfo>;
-    targetingSystem.GetTargetParts(player, query, parts);
-
-    let idx: Int32 = 0;
-    while idx < ArraySize(parts) {
-      let entity: wref<GameObject> = TS_TargetPartInfo.GetComponent(parts[idx]).GetEntity() as GameObject;
-
-      if IsDefined(entity) {
-        let vehicle: ref<VehicleObject> = entity as VehicleObject;
-
-        if IsDefined(vehicle) {
-          let vehPS: ref<VehicleComponentPS> = vehicle.GetVehiclePS();
-
-          if IsDefined(vehPS) {
-            let entityPos: Vector4 = entity.GetWorldPosition();
-            let distance: Float = Vector4.Distance(vehiclePos, entityPos);
-
-            if distance <= breachRadius {
-              let vehSharedPS: ref<SharedGameplayPS> = vehPS;
-              if IsDefined(vehSharedPS) {
-                // Record unlock timestamp
-                let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
-                vehSharedPS.m_betterNetrunningUnlockTimestampBasic = currentTime;
-              }
-            }
-          }
-        }
-      }
-      idx += 1;
     }
   }
 

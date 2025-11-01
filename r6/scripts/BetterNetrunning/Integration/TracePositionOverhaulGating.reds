@@ -3,12 +3,12 @@
 // ============================================================================
 //
 // PURPOSE:
-// Provide conditional integration with TracePositionOverhaul MOD for enhanced
+// Provide conditional integration with TracePositionOverhaul MOD for advanced
 // netrunner trace mechanics. Isolates all TracePositionOverhaul dependencies
 // in a single file for maintainability.
 //
 // FUNCTIONALITY:
-// - Netrunner validation (enhanced vs basic)
+// - Netrunner validation (MOD-based vs vanilla)
 // - NPC radius search (real vs stub)
 // - Trace execution support
 //
@@ -41,25 +41,18 @@ import TracePositionOverhaul.*
 
 public abstract class TracePositionOverhaulGating {
 
-  // ============================================================================
-  // IsValidTraceSource() - Validate Netrunner NPC for Trace
-  // ============================================================================
-  //
-  // Determine if NPC can initiate position reveal trace.
-  //
-  // VALIDATION CHECKS:
-  // 1. WITH TracePositionOverhaul:
-  //    - Basic: IsAlive, not defeated, IsNetrunnerPuppet
-  //    - Enhanced: CanTrace() (checks HackInterrupt StatusEffect, unconscious, etc.)
-  // 2. WITHOUT TracePositionOverhaul:
-  //    - Basic only: IsAlive, not defeated, IsNetrunnerPuppet
-  //
-  // RETURNS:
-  // - true: NPC is valid trace source
-  // - false: NPC cannot trace (defeated, hacked, not netrunner, etc.)
-  // ============================================================================
+  /*
+   * Validate if NPC can initiate position reveal trace
+   *
+   * VALIDATION CHECKS:
+   * - WITH TracePositionOverhaul MOD: IsAlive, not defeated, CanTrace(), IsNetrunnerPuppet
+   * - WITHOUT TracePositionOverhaul MOD: IsAlive, not defeated, IsNetrunnerPuppet
+   *
+   * @param npc Target NPC to validate as trace source
+   * @return True if NPC is valid trace source; false if NPC cannot trace
+   */
 
-  // Version 1: TracePositionOverhaul available - use enhanced validation
+  // Version 1: TracePositionOverhaul MOD available - use MOD validation
   @if(ModuleExists("TracePositionOverhaul"))
   public static func IsValidTraceSource(npc: wref<NPCPuppet>) -> Bool {
     // Basic checks
@@ -67,7 +60,7 @@ public abstract class TracePositionOverhaulGating {
     if !ScriptedPuppet.IsAlive(npc) { return false; }
     if ScriptedPuppet.IsDefeated(npc) { return false; }
 
-    // TracePositionOverhaul enhanced validation
+    // TracePositionOverhaul MOD validation
     // - Checks HackInterrupt StatusEffect (prevents trace if netrunner is being hacked)
     // - Checks unconscious state, stunned state, etc.
     if !ScriptedPuppet.CanTrace(npc) { return false; }
@@ -92,24 +85,18 @@ public abstract class TracePositionOverhaulGating {
     return true;
   }
 
-  // ============================================================================
-  // GetNPCsInRadius() - Get NPCs Within Radius
-  // ============================================================================
-  //
-  // Retrieve all NPCs within specified radius of player using TargetingSystem.
-  //
-  // IMPLEMENTATION VARIANTS:
-  // 1. WITH TracePositionOverhaul: Performs actual search (real netrunner support)
-  // 2. WITHOUT TracePositionOverhaul: Returns empty array (skip search, use fallback)
-  //
-  // PARAMETERS:
-  // - player: PlayerPuppet reference
-  // - gameInstance: GameInstance reference
-  // - radius: Search radius in meters
-  //
-  // RETURNS:
-  // - Array of GameObject references (NPCs within radius)
-  // ============================================================================
+  /*
+   * Retrieve all NPCs within specified radius of player using TargetingSystem
+   *
+   * IMPLEMENTATION VARIANTS:
+   * - WITH TracePositionOverhaul: Performs actual search (real netrunner support)
+   * - WITHOUT TracePositionOverhaul: Returns empty array (skip search, use fallback)
+   *
+   * @param player PlayerPuppet reference
+   * @param gameInstance GameInstance reference
+   * @param radius Search radius in meters
+   * @return Array of GameObject references (NPCs within radius)
+   */
 
   // Version 1: TracePositionOverhaul available - perform actual NPC search
   @if(ModuleExists("TracePositionOverhaul"))
@@ -164,26 +151,20 @@ public abstract class TracePositionOverhaulGating {
     return npcs;
   }
 
-  // ============================================================================
-  // FindNearestValidTraceSource() - Find Nearest Valid Netrunner
-  // ============================================================================
-  //
-  // Search for nearest valid netrunner NPC within radius that can initiate trace.
-  //
-  // ALGORITHM:
-  // 1. GetNPCsInRadius() to get all NPCs within range
-  // 2. Filter by IsValidTraceSource() (netrunner validation)
-  // 3. Calculate squared distances (avoid sqrt overhead)
-  // 4. Return nearest valid netrunner
-  //
-  // RETURNS:
-  // - wref<NPCPuppet>: Nearest valid netrunner (if found)
-  // - null: No valid netrunner within radius (or TracePositionOverhaul not installed)
-  //
-  // PERFORMANCE:
-  // - Distance calculation: Vector4.DistanceSquared2D() (no sqrt)
-  // - Early exit: Returns immediately if no NPCs found
-  // ============================================================================
+  /*
+   * Find nearest valid netrunner NPC within radius that can initiate trace
+   *
+   * ARCHITECTURE:
+   * 1. GetNPCsInRadius() to get all NPCs within range
+   * 2. Filter by IsValidTraceSource() (netrunner validation)
+   * 3. Calculate squared distances (avoid sqrt overhead)
+   * 4. Return nearest valid netrunner
+   *
+   * @param player - PlayerPuppet reference
+   * @param gameInstance - GameInstance reference
+   * @param radius - Search radius in meters
+   * @return Nearest valid netrunner (if found); null if no valid netrunner within radius
+   */
 
   public static func FindNearestValidTraceSource(
     player: wref<PlayerPuppet>,

@@ -4,7 +4,6 @@
 //
 // PURPOSE:
 // Provides unified physical distance calculation for device proximity checks
-// Eliminates code duplication across RadialBreach/RemoteBreach/RadialUnlock
 //
 // FUNCTIONALITY:
 // - 2D distance calculation using squared distance (sqrt avoidance)
@@ -15,33 +14,30 @@
 // - Static utility class (no instantiation required)
 // - Performance-optimized: Uses Vector4.DistanceSquared2D (O(1), no sqrt)
 // - Guard Clause pattern for null safety
+// - Used by: RadialUnlockSystem, RemoteBreachLockSystem, PlayerPuppet extensions
 //
-// RATIONALE:
-// Physical distance calculation was duplicated across multiple modules.
-// This module consolidates all distance logic following DRY principle.
-// Used by: RadialUnlockSystem, RemoteBreachLockSystem, PlayerPuppet extensions
-//
-// DEPENDENCIES:
-// - None (pure utility, no external dependencies)
-// ============================================================================
 
 module BetterNetrunning.Core
 
-// ============================================================================
-// Distance Calculation Utilities
-// ============================================================================
-
 public abstract class DeviceDistanceUtils {
 
-  /// Calculates squared 2D distance between two positions (sqrt avoidance)
-  /// Performance: O(1), no sqrt() call
-  /// Use Case: Distance comparison without needing exact distance value
+  /*
+   * Calculates squared 2D distance between two positions
+   * @param pos1 - First position
+   * @param pos2 - Second position
+   * @return Squared distance (avoids sqrt for performance)
+   */
   public static func GetDistanceSquared2D(pos1: Vector4, pos2: Vector4) -> Float {
     return Vector4.DistanceSquared2D(pos1, pos2);
   }
 
-  /// Checks if position is within radius (uses squared distance for performance)
-  /// Performance: O(1), compares squared values to avoid sqrt
+  /*
+   * Checks if position is within radius
+   * @param position - Position to check
+   * @param centerPosition - Center point
+   * @param radiusMeters - Radius in meters
+   * @return True if position is within radius
+   */
   public static func IsPositionWithinRadius(
     position: Vector4,
     centerPosition: Vector4,
@@ -52,9 +48,12 @@ public abstract class DeviceDistanceUtils {
     return distanceSquared <= radiusSquared;
   }
 
-  /// Extracts world position from device entity with validation
-  /// Returns: Device position, or invalid position (error signal) if entity not found
-  /// Error Signal: Vector4(-999999.0, -999999.0, -999999.0, 1.0)
+  /*
+   * Extracts world position from device entity
+   * @param device - Device persistent state
+   * @param gameInstance - Current game instance
+   * @return Device position, or error signal (-999999) if not found
+   */
   public static func GetDevicePosition(
     device: ref<DeviceComponentPS>,
     gameInstance: GameInstance

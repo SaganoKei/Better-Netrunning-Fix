@@ -34,6 +34,11 @@ public abstract class RemoteBreachProgramActionBase extends HackProgramAction {
     private let m_devicePS: ref<ScriptableDeviceComponentPS>;
     private let m_lastBreachRange: Float;
 
+    /*
+     * Gets breach range for current difficulty
+     *
+     * @return Breach range in meters (from RadialBreach integration)
+     */
     protected func GetBreachRangeForDifficulty() -> Float {
         let player: ref<PlayerPuppet> = this.GetPlayer();
         if !IsDefined(player) {
@@ -42,6 +47,10 @@ public abstract class RemoteBreachProgramActionBase extends HackProgramAction {
         return GetRadialBreachRange(player.GetGame());
     }
 
+    /*
+     * Executes RemoteBreach program success logic.
+     * Finalizes breach with success state and clears state system.
+     */
     protected func ExecuteProgramSuccess() -> Void {
 
         let player: ref<PlayerPuppet> = this.GetPlayer();
@@ -75,6 +84,10 @@ public abstract class RemoteBreachProgramActionBase extends HackProgramAction {
         this.m_devicePS.FinalizeNetrunnerDive(HackingMinigameState.Succeeded);
     }
 
+    /*
+     * Executes RemoteBreach program failure logic.
+     * Finalizes breach with failure state (triggers penalties) and clears state system.
+     */
     protected func ExecuteProgramFailure() -> Void {
         let player: ref<PlayerPuppet> = this.GetPlayer();
         if !IsDefined(player) {
@@ -101,9 +114,16 @@ public abstract class RemoteBreachProgramActionBase extends HackProgramAction {
         }
     }
 
-    // ============================================================================
-    // Device Retrieval (Early Return Pattern - Max 2 Nesting Levels)
-    // ============================================================================
+    // ===================================
+    // Device Retrieval
+    // ===================================
+
+    /*
+     * Gets hacked device from cache or state system.
+     * Uses Early Return Pattern with max 2 nesting levels.
+     *
+     * @return Device power state or null
+     */
     protected func GetHackedDevice() -> ref<ScriptableDeviceComponentPS> {
         if IsDefined(this.m_devicePS) {
             return this.m_devicePS;
@@ -117,6 +137,11 @@ public abstract class RemoteBreachProgramActionBase extends HackProgramAction {
         return null;
     }
 
+    /*
+     * Retrieves computer from RemoteBreachStateSystem
+     *
+     * @return ComputerControllerPS or null
+     */
     private func TryGetComputerFromStateSystem() -> ref<ComputerControllerPS> {
         let player: ref<PlayerPuppet> = this.GetPlayer();
         if !IsDefined(player) {
@@ -157,6 +182,11 @@ public class RemoteBreachHardProgramAction extends RemoteBreachProgramActionBase
 // System Initialization
 // -----------------------------------------------------------------------------
 
+/*
+ * Registers RemoteBreach programs with CustomHackingSystem on game start.
+ *
+ * VANILLA DIFF: Injects program registration during OnGameAttached.
+ */
 @if(ModuleExists("HackingExtensions"))
 @wrapMethod(PlayerPuppet)
 protected cb func OnGameAttached() -> Bool {

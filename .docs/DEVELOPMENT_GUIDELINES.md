@@ -415,6 +415,59 @@ public func ValidateDevice(device: ref<DevicePS>) -> Bool {
 }
 ```
 
+**❌ Anti-pattern: One-Time-Use Variables for Function Arguments**
+
+Using temporary variables that are only used once to pass to a function call adds unnecessary verbosity without improving readability.
+
+```redscript
+// ❌ BAD: Unnecessary one-time-use variables (5 lines)
+let unlockBasic: Bool = Equals(daemonType, DaemonTypes.Basic());
+let unlockNPCs: Bool = Equals(daemonType, DaemonTypes.NPC());
+let unlockCameras: Bool = Equals(daemonType, DaemonTypes.Camera());
+let unlockTurrets: Bool = Equals(daemonType, DaemonTypes.Turret());
+let flags: BreachUnlockFlags = IDaemonUnlockStrategy.BuildUnlockFlags(unlockBasic, unlockNPCs, unlockCameras, unlockTurrets);
+
+// ✅ GOOD: Direct argument passing (1 line)
+let flags: BreachUnlockFlags = IDaemonUnlockStrategy.BuildUnlockFlags(
+    Equals(daemonType, DaemonTypes.Basic()),
+    Equals(daemonType, DaemonTypes.NPC()),
+    Equals(daemonType, DaemonTypes.Camera()),
+    Equals(daemonType, DaemonTypes.Turret())
+);
+```
+
+**When One-Time Variables Are Acceptable:**
+- **Complex expressions**: When the expression is long enough to obscure intent
+  ```redscript
+  // ✅ Acceptable: Complex calculation deserves a variable
+  let adjustedDamage: Float = baseDamage * (1.0 + bonusMultiplier) * (1.0 - damageReduction) * critMultiplier;
+  ApplyDamage(target, adjustedDamage);
+  ```
+- **Debugging convenience**: When you need to inspect intermediate values
+  ```redscript
+  // ✅ Acceptable during development: Easy to add breakpoint or log
+  let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(device);
+  ProcessDevice(deviceType); // Can inspect deviceType here
+  ```
+- **Reused values**: When the variable is used multiple times
+  ```redscript
+  // ✅ Good: Value used twice
+  let playerLevel: Int32 = GetPlayer().GetLevel();
+  if playerLevel >= minLevel && playerLevel <= maxLevel { ... }
+  ```
+
+**When to Refactor to Direct Arguments:**
+- ✅ Variable is used exactly once
+- ✅ Expression is simple and self-documenting
+- ✅ No debugging needs (production code)
+- ✅ Function name + parameter names make intent clear
+            }
+        }
+    }
+    return false;
+}
+```
+
 **Use Cases:**
 - Input validation
 - Prerequisite checks
@@ -1222,372 +1275,9 @@ REDscript compiler has **strict encoding requirements**. Violating these will ca
 | **Line Endings** | CRLF (`0D 0A`) | Parser treats multi-line statements as single line |
 | **File Extension** | `.reds` | File not recognized by compiler |
 
----
+**For PowerShell utilities and batch operations, see:** [`POWERSHELL_UTILITIES.md`](POWERSHELL_UTILITIES.md)
 
-#### Anti-Pattern: PowerShell File Editing (Case Study - 2025-10-18)
-
-**Context**: Phase 4A Step 2 (Core/Utils separation) required batch updating 25 files with new import statements.
-
-**Initial Approach** (FAILED):
-```powershell
-# ❌ WRONG: Set-Content adds BOM, uses LF-only line breaks
-$content = Get-Content $file.FullName -Raw
-$newContent = $content -replace 'import BetterNetrunning\.Common\.\*',
-                                 "import BetterNetrunning.Core.*`nimport BetterNetrunning.Utils.*"
-Set-Content $file.FullName $newContent -NoNewline
-```
-
-**Problems**:
-1. **LF-only line breaks** (`` `n `` = `0A`): PowerShell's `` `n `` produces `\n` (LF) instead of `\r\n` (CRLF)
-   - **Result**: 2-line import became 1 line → `import BetterNetrunning.Core.*\nimport BetterNetrunning.Utils.*`
-   - **Error**: Parser treats as single malformed statement
-
-2. **[System.IO.File]::WriteAllText() default behavior** (UTF-8 WITH BOM):
-   ```powershell
-   # ❌ WRONG: Default UTF-8 encoding includes BOM (EF BB BF)
-   [System.IO.File]::WriteAllText($file.FullName, $content, [System.Text.Encoding]::UTF8)
-   ```
-   - **Result**: Files start with `﻿module` (BOM visible as `﻿`)
-   - **Error**: `syntax error, expected one of "@", EOF, a top-level definition` at line 1
-
-**Symptoms**:
-```
-[ERROR] At betterNetrunning.reds:1:1:
-﻿module BetterNetrunning
-^
-syntax error, expected one of "@", EOF, a top-level definition
-```
-
----
-
-#### ✅ Correct PowerShell File Editing Pattern
-
-**Batch File Updates** (Write operations):
-```powershell
-# ✅ CORRECT: Explicit UTF-8 without BOM + CRLF line endings
-$utf8NoBom = New-Object System.Text.UTF8Encoding $false
-$files = Get-ChildItem "path\to\scripts" -Recurse -Filter "*.reds"
-
-foreach ($file in $files) {
-    # Read with UTF-8 (handles BOM automatically)
-    $content = [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8)
-
-    # Replace with EXPLICIT CRLF (use `r`n, not just `n)
-    $newContent = $content -replace 'old_pattern', "new_value`r`nnext_line"
-
-    # Write with UTF-8 NO BOM
-    [System.IO.File]::WriteAllText($file.FullName, $newContent, $utf8NoBom)
-}
-```
-
-**Key Points**:
-1. **Use `` `r`n ``** for line breaks (CRLF), never `` `n `` alone (LF)
-2. **Create UTF-8 encoder**: `New-Object System.Text.UTF8Encoding $false` (no BOM)
-3. **Use [System.IO.File]** methods: Avoid `Set-Content` (always adds BOM)
-
----
-
-#### Verification Commands
-
-**Check for BOM** (UTF-8 BOM = `EF BB BF`):
-```powershell
-$files = Get-ChildItem "path\to\scripts" -Recurse -Filter "*.reds"
-$bomFiles = @()
-
-foreach ($file in $files) {
-    $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
-    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
-        $bomFiles += $file.FullName
-    }
-}
-
-Write-Host "Files with BOM: $($bomFiles.Count)"
-$bomFiles | ForEach-Object { Write-Host "  $_" }
-```
-
-**Check Line Endings** (LF = `0A`, CRLF = `0D 0A`):
-```powershell
-$file = "path\to\file.reds"
-$bytes = [System.IO.File]::ReadAllBytes($file)
-$content = [System.Text.Encoding]::UTF8.GetString($bytes)
-
-# Find first line break
-$lfCount = ($content -split "`n").Count - 1
-$crlfCount = ($content -split "`r`n").Count - 1
-
-if ($crlfCount -eq $lfCount) {
-    Write-Host "✅ CRLF line endings detected"
-} else {
-    Write-Host "❌ Mixed or LF-only line endings detected"
-}
-```
-
----
-
-#### Fixing Encoding Issues
-
-**Remove BOM from all files**:
-```powershell
-$utf8NoBom = New-Object System.Text.UTF8Encoding $false
-$files = Get-ChildItem "path\to\scripts" -Recurse -Filter "*.reds"
-
-foreach ($file in $files) {
-    $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
-    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
-        # Read with UTF-8 (strips BOM automatically)
-        $content = [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8)
-        # Write without BOM
-        [System.IO.File]::WriteAllText($file.FullName, $content, $utf8NoBom)
-        Write-Host "Fixed: $($file.Name)"
-    }
-}
-```
-
-**Fix LF line endings to CRLF**:
-```powershell
-$utf8NoBom = New-Object System.Text.UTF8Encoding $false
-$files = Get-ChildItem "path\to\scripts" -Recurse -Filter "*.reds"
-
-foreach ($file in $files) {
-    $content = [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8)
-
-    # Detect LF-only line breaks (not preceded by CR)
-    if ($content -match '[^\r]\n') {
-        # Replace all LF with CRLF (handles mixed line endings)
-        $content = $content -replace '\r?\n', "`r`n"
-        [System.IO.File]::WriteAllText($file.FullName, $content, $utf8NoBom)
-        Write-Host "Fixed: $($file.Name)"
-    }
-}
-```
-
----
-
-#### Best Practices Summary
-
-**DO**:
-- ✅ Use `` `r`n `` for line breaks in PowerShell string replacements
-- ✅ Create explicit UTF-8 no-BOM encoder: `New-Object System.Text.UTF8Encoding $false`
-- ✅ Use `[System.IO.File]::WriteAllText()` with explicit encoding
-- ✅ Verify encoding after batch operations (BOM + line ending checks)
-- ✅ Test compilation after any file encoding changes
-
-**DON'T**:
-- ❌ Never use `Set-Content` for `.reds` files (adds BOM)
-- ❌ Never use `` `n `` alone (produces LF, not CRLF)
-- ❌ Never use `[System.Text.Encoding]::UTF8` in WriteAllText (adds BOM)
-- ❌ Never assume PowerShell defaults are correct (they're Windows-centric, not REDscript-compatible)
-
----
-
-#### Anti-Pattern: Unicode Box Drawing Characters Corruption
-
-**Problem**: PowerShell's `WriteAllText()` with default UTF-8 encoding can corrupt Unicode Box Drawing Characters (U+2500-U+257F) in string literals, resulting in compilation errors.
-
-**Example of Corrupted Code**:
-
-```redscript
-// Expected:
-BNInfo("BreachStats", "╔═══════════════════════════════════════════════════════════╗");
-BNInfo("BreachStats", "║         BREACH SESSION SUMMARY                           ║");
-BNInfo("BreachStats", "└───────────────────────────────────────────────────────────┘");
-
-// Actual (corrupted):
-BNInfo("BreachStats", "╔═══════════════════════════════════════════════════════════╁E);
-//                                                                                  ^^^ Missing closing quote
-
-BNInfo("BreachStats", "╁E         BREACH SESSION SUMMARY                           ╁E);
-//                     ^^                                                          ^^^ Both quotes missing
-
-BNInfo("BreachStats", "━EType         : " + stats.breachType);
-//                     ^^ Opening quote corrupted
-```
-
-**Compilation Error**:
-```
-[ERROR] At BreachSessionStats.reds:107:11:
-  BNInfo("BreachStats", "╁E         BREACH SESSION SUMMARY                           ╁E);
-          ^
-syntax error, expected one of "!=", "%", "&", ...
-```
-
-**Root Cause**:
-
-PowerShell string replacement (`-replace`) operates on character level, but `WriteAllText()` operates on byte level. When replacing strings containing multi-byte UTF-8 sequences (Box Drawing Characters), the operation may:
-- Misalign byte boundaries
-- Corrupt adjacent characters (especially ASCII quotes `"`)
-- Insert incomplete UTF-8 sequences
-
-**Corruption Pattern Examples**:
-
-| Character | Unicode | UTF-8 Bytes | Potential Corruption |
-|-----------|---------|-------------|---------------------|
-| `╔` | U+2554 | `E2 95 94` | May corrupt adjacent `"` |
-| `╗` | U+2557 | `E2 95 97` | May become `╁E` |
-| `║` | U+2551 | `E2 95 91` | May become `╁E` |
-| `┐` | U+2510 | `E2 94 90` | May become `━E` |
-| `│` | U+2502 | `E2 94 82` | May become `━E` |
-| `✓` | U+2713 | `E2 9C 93` | May become `✁E` |
-
-**Technical Explanation**: When `WriteAllText()` processes multi-byte UTF-8 sequences during string replacement operations, it may:
-1. Misinterpret final UTF-8 byte as part of string terminator
-2. Apply incorrect byte-to-character conversion
-3. Corrupt adjacent ASCII characters (especially quotes)
-
----
-
-#### ✅ Correct Handling of Unicode Box Drawing Characters
-
-**Pattern 1: Avoid Box Drawing Characters (Safest)**
-
-```redscript
-// ✅ SAFE: Use ASCII-only characters
-BNInfo("BreachStats", "===========================================================");
-BNInfo("BreachStats", "         BREACH SESSION SUMMARY                           ");
-BNInfo("BreachStats", "===========================================================");
-BNInfo("BreachStats", "--- BASIC INFO --------------------------------------------");
-BNInfo("BreachStats", "  Type         : " + stats.breachType);
-BNInfo("BreachStats", "-----------------------------------------------------------");
-```
-
-**Pattern 2: Test Encoding Before Batch Operations (If Box Drawing Required)**
-
-```powershell
-# ✅ SAFE: Test file with special characters first
-$testFile = "path\to\test.reds"
-$utf8NoBom = New-Object System.Text.UTF8Encoding $false
-
-# Create test content with box drawing characters
-$testContent = @"
-module Test
-public func TestBoxDrawing() -> Void {
-  BNInfo("Test", "╔═══╗");
-  BNInfo("Test", "║ OK║");
-  BNInfo("Test", "╚═══╝");
-}
-"@
-
-# Write test file
-[System.IO.File]::WriteAllText($testFile, $testContent, $utf8NoBom)
-
-# Read back and verify
-$readBack = [System.IO.File]::ReadAllText($testFile, [System.Text.Encoding]::UTF8)
-if ($readBack -eq $testContent) {
-    Write-Host "✓ Encoding test passed - safe to proceed"
-} else {
-    Write-Host "✗ Encoding test failed - characters corrupted"
-    Write-Host "Expected: $testContent"
-    Write-Host "Got:      $readBack"
-    exit 1
-}
-
-# If test passes, proceed with batch operations
-```
-
-**Pattern 3: Use replace_string_in_file Tool (Recommended for Complex Unicode)**
-
-```
-When editing files with Unicode box drawing characters:
-- ✅ Use replace_string_in_file tool (handles encoding correctly)
-- ❌ Avoid PowerShell batch operations with -replace and WriteAllText()
-```
-
----
-
-#### Diagnosis Commands
-
-**Detect Corrupted String Literals** (unclosed quotes):
-```powershell
-# Search for BNInfo/BNLog calls with potential corruption
-$files = Get-ChildItem "path\to\scripts" -Recurse -Filter "*.reds"
-
-foreach ($file in $files) {
-    $content = Get-Content $file.FullName -Raw
-    # Look for BNInfo/BNLog calls with box drawing chars but missing closing quote
-    if ($content -match 'BN(Info|Log|Debug|Warn|Error)\([^)]*"[^"]*[╔╗║╚╝┌┐│└━✓✗](?!.*")') {
-        Write-Host "⚠️ Potential corruption in: $($file.FullName)"
-        # Extract the suspicious line
-        $lines = $content -split "`r`n"
-        for ($i = 0; $i -lt $lines.Count; $i++) {
-            if ($lines[$i] -match 'BN(Info|Log|Debug|Warn|Error)\([^)]*"[^"]*[╔╗║╚╝┌┐│└━✓✗]') {
-                Write-Host "  Line $($i+1): $($lines[$i])"
-            }
-        }
-    }
-}
-```
-
-**Verify Box Drawing Character Encoding**:
-```powershell
-# Check if box drawing characters are correctly encoded as UTF-8
-$file = "path\to\file.reds"
-$bytes = [System.IO.File]::ReadAllBytes($file)
-$content = [System.Text.Encoding]::UTF8.GetString($bytes)
-
-# Look for box drawing characters
-$boxDrawingChars = @('╔', '╗', '║', '╚', '╝', '┌', '┐', '│', '└', '┘')
-foreach ($char in $boxDrawingChars) {
-    $count = ($content.ToCharArray() | Where-Object { $_ -eq $char }).Count
-    if ($count -gt 0) {
-        Write-Host "Found $count instances of '$char' (U+$([int][char]$char).ToString('X4'))"
-    }
-}
-```
-
----
-
-#### Repair Corrupted Files
-
-**Automated Fix for Common Corruption Patterns**:
-```powershell
-$files = Get-ChildItem "path\to\scripts" -Recurse -Filter "*.reds"
-$utf8NoBom = New-Object System.Text.UTF8Encoding $false
-$fixCount = 0
-
-foreach ($file in $files) {
-    $content = [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8)
-    $originalContent = $content
-
-    # Fix common corruption patterns (add closing quotes)
-    $content = $content -replace '(BN(?:Info|Log|Debug|Warn|Error)\([^)]*"[^"]*[╔╗║╚╝┌┐│└━✓✗][^"]*)(╁E|━E|✁E)\)', '$1");'
-
-    # Restore correct box drawing characters
-    $content = $content -replace '╁E', '║'  # Restore vertical double line
-    $content = $content -replace '━E', '│'  # Restore vertical single line
-    $content = $content -replace '✁E', '✓'  # Restore checkmark
-
-    if ($content -ne $originalContent) {
-        [System.IO.File]::WriteAllText($file.FullName, $content, $utf8NoBom)
-        Write-Host "Fixed: $($file.Name)"
-        $fixCount++
-    }
-}
-
-Write-Host "Total files fixed: $fixCount"
-```
-
-**Manual Verification** (Recommended After Automated Fix):
-```powershell
-# Compile and check for remaining errors
-# If compilation still fails, manually inspect the corrupted lines reported by compiler
-```
-
----
-
-#### Best Practices for Unicode Content
-
-**DO**:
-- ✅ Use `replace_string_in_file` tool for files with Unicode box drawing characters
-- ✅ Test encoding with small sample file before batch operations
-- ✅ Verify file integrity after batch operations (grep for unclosed quotes)
-- ✅ Use ASCII-only characters when possible (avoid Unicode decoration)
-- ✅ Keep box drawing characters in separate, rarely-modified files
-
-**DON'T**:
-- ❌ Use PowerShell `-replace` + `WriteAllText()` on files with Unicode box drawing characters
-- ❌ Assume UTF-8 encoding is "just text" (multi-byte sequences require careful handling)
-- ❌ Batch-edit files without verifying encoding integrity
-- ❌ Mix encoding operations (e.g., read with UTF-8, write with default encoding)
+**For PowerShell utilities and batch operations, see:** [`POWERSHELL_UTILITIES.md`](POWERSHELL_UTILITIES.md)
 
 ---
 
@@ -1595,7 +1285,185 @@ Write-Host "Total files fixed: $fixCount"
 
 ### Language Constraints & Limitations
 
-**⚠️ Unsupported Keywords:**
+#### **🔴 Unsupported Language Features**
+
+| Feature | Support Status | Implementable | Alternative | Proven Examples |
+|---------|---------------|---------------|-------------|-----------------|
+| **Generics (`<T>`)** | ❌ Not Supported | ❌ No | Variant + Reflection (Codeware) | - |
+| **Interfaces** | ❌ Not Supported | ❌ No | abstract class + single inheritance | - |
+| **Traits/Mixins** | ❌ Not Supported | ❌ No | - | - |
+| **Multiple Inheritance** | ❌ Not Supported | ❌ No | Composition pattern | - |
+| **`continue` keyword** | ❌ Not Supported | ❌ No | if-else blocks, flag-based control | See below |
+| **`break` keyword** | ⚠️ Partial Support | ⚠️ Limited | flag-based exit | See below |
+
+#### **🟢 Supported Advanced Features**
+
+| Feature | Support Status | Implementable | Proven MODs | Use Cases |
+|---------|---------------|---------------|-------------|-----------|
+| **abstract class** | ✅ **Fully Supported** | ✅ **Yes** | `auto_drive_enhanced`, `Dark Future`, `BetterNetrunning` | Template Method Pattern |
+| **Inheritance (extends)** | ✅ **Fully Supported** | ✅ **Yes** | 100+ implementations | Single inheritance polymorphism |
+| **Virtual Function Override** | ✅ **Fully Supported** | ✅ **Yes** | `AutoDriveSpeed.GetSpeed()`, `DFDelayCallback.Callback()` | Strategy Pattern |
+| **Polymorphic Arrays** | ✅ **Fully Supported** | ✅ **Yes** | `array<ref<AutoDriveSpeed>>` | Unified processing flow |
+| **Dynamic Dispatch** | ✅ **Fully Supported** | ✅ **Yes** | `for speed in speeds { speed.Match() }` | Runtime type resolution |
+
+#### **📚 Implementation Pattern Examples**
+
+##### **1. abstract class + Inheritance (Strategy Pattern)**
+
+**Source**: `auto_drive_enhanced/driving_ai.reds` (L63-138)
+
+```redscript
+// 1. Define abstract base class
+public abstract class AutoDriveSpeed {
+    protected let m_component: ref<AutoDriveComponent>;
+
+    public func Init(component: ref<AutoDriveComponent>) -> ref<AutoDriveSpeed> {
+        this.m_component = component;
+        return this;
+    }
+
+    // Virtual functions (overridden in derived classes)
+    public func GetSpeed() -> SpeedRange;
+    public func Match() -> Bool;
+}
+
+// 2. Implement concrete classes
+public class StartingSpeed extends AutoDriveSpeed {
+    public func GetSpeed() -> SpeedRange {
+        return this.m_component.GetStartingSpeedRange();
+    }
+
+    public func Match() -> Bool {
+        return this.m_component.IsStarting();
+    }
+}
+
+public class CruisingSpeed extends AutoDriveSpeed {
+    public func GetSpeed() -> SpeedRange {
+        return this.m_component.GetCruisingSpeedRange();
+    }
+
+    public func Match() -> Bool {
+        return !this.m_component.IsStarting();
+    }
+}
+
+// 3. Unified processing with polymorphic arrays
+public class NormalSpeedSelector extends SpeedSelector {
+    private let speeds: array<ref<AutoDriveSpeed>>;  // Polymorphic array
+
+    public func Select() -> SpeedRange {
+        for speed in this.speeds {
+            if speed.Match() {  // Dynamic dispatch
+                return speed.GetSpeed();
+            }
+        }
+        return this.defaultSpeed;
+    }
+}
+```
+
+##### **2. Template Method Pattern (BetterNetrunning Implementation)**
+
+**Source**: `BetterNetrunning/RemoteBreach/Actions/RemoteBreachProgram.reds` (L33)
+
+```redscript
+@if(ModuleExists("HackingExtensions.Programs"))
+public abstract class RemoteBreachProgramActionBase extends HackProgramAction {
+    // Template Method: Define common flow
+    protected func ExecuteProgram() -> Void {
+        let range: Float = this.GetBreachRangeForDifficulty();  // Hook
+        this.UnlockDevicesInRange(range);
+        this.ExecuteProgramSuccess();  // Hook
+    }
+
+    // Hook methods (implemented in derived classes)
+    protected func GetBreachRangeForDifficulty() -> Float;
+    protected func ExecuteProgramSuccess() -> Void;
+}
+
+public class RemoteBreachEasyProgramAction extends RemoteBreachProgramActionBase {
+    protected func GetBreachRangeForDifficulty() -> Float {
+        return 30.0;  // Easy difficulty range
+    }
+
+    protected func ExecuteProgramSuccess() -> Void {
+        // Easy-specific logic
+    }
+}
+
+public class RemoteBreachHardProgramAction extends RemoteBreachProgramActionBase {
+    protected func GetBreachRangeForDifficulty() -> Float {
+        return 50.0;  // Hard difficulty range
+    }
+
+    protected func ExecuteProgramSuccess() -> Void {
+        // Hard-specific logic
+    }
+}
+```
+
+##### **3. Variant + Reflection (Codeware) - Pseudo-Generics**
+
+**⚠️ Warning**: No compile-time type safety, runtime type resolution only
+
+**Source**: [REDscript Wiki - Generic Callbacks](https://wiki.redmodding.org/redscript/references-and-examples/common-patterns/generic-callbacks)
+
+```redscript
+// Codeware Reflection-based generic callback
+public class Callback extends DelayCallback {
+    private let m_target: wref<IScriptable>;
+    private let m_fn: CName;
+    private let m_data: array<Variant>;  // Variant holds any type
+
+    public static func Create(target: wref<IScriptable>,
+                              fn: CName,
+                              opt data: array<Variant>) -> ref<Callback> {
+        let self = new Callback();
+        self.m_target = target;
+        self.m_fn = fn;
+        self.m_data = data;
+        return self;
+    }
+
+    public func Call() {
+        if !IsDefined(this.m_target) { return; }
+
+        // Runtime type resolution
+        Reflection.GetClassOf(ToVariant(this.m_target))
+                  .GetFunction(this.m_fn)
+                  .Call(this.m_target, this.m_data);
+    }
+}
+
+// Usage example
+let callback = Callback.Create(this, n"OnPlay", [42, n"Choom"]);
+callback.Call();  // Resolves type at runtime and calls OnPlay(42, n"Choom")
+```
+
+**Constraints**:
+- ✅ Any type can be held in Variant
+- ✅ Runtime type information available (`Reflection.GetClassOf()`)
+- ✅ Dynamic method invocation (`GetFunction().Call()`)
+- ❌ No compile-time type checking (runtime error risk)
+- ❌ Performance cost (reflection calls are slow)
+- ❌ Codeware dependency (required dependency addition)
+
+**Usage Decision Criteria**:
+- ✅ Use for: Callbacks, event handlers, infrequent execution
+- ❌ Avoid for: Loop processing, high-frequency execution, type-safety critical code
+
+#### **🎯 Design Pattern Selection Guide**
+
+| Requirement | Recommended Pattern | Rationale |
+|-------------|-------------------|-----------|
+| **Unified processing across multiple types** | abstract class + extends | Type safety, performance, readability |
+| **Common flow + partial customization** | Template Method Pattern | Extensibility, maintainability |
+| **Dynamic type resolution** | Variant + Reflection (Codeware) | Flexibility (sacrifices type safety) |
+| **Callback processing** | Variant + Reflection (Codeware) | Runtime type resolution required |
+| **High-frequency execution** | abstract class + extends | Performance priority |
+
+#### **⚠️ Unsupported Keywords:**
 
 REDscript does **NOT** support the following control flow keywords commonly found in other languages:
 

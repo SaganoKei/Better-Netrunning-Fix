@@ -1,3 +1,25 @@
+// ============================================================================
+// BetterNetrunning - Program Filtering Core
+// ============================================================================
+//
+// PURPOSE:
+// Determines which breach programs (daemons) should be available in minigames
+//
+// FUNCTIONALITY:
+// - Network connectivity filtering (remove unlock programs if not connected)
+// - Device type filtering (access points vs backdoor devices)
+// - Access point program restrictions based on user settings
+// - Non-netrunner NPC restrictions (limit programs for regular NPCs)
+// - Already-breached program removal (prevent re-breach of same type)
+// - Device type availability filtering
+// - Datamine V1/V2 removal based on user settings
+//
+// ARCHITECTURE:
+// - Static filtering methods for different contexts
+// - Integration with vanilla MinigameGenerationRuleScalingPrograms
+// - Separate pipeline from CustomHackingSystem RemoteBreach
+//
+
 module BetterNetrunning.Minigame
 
 import BetterNetrunningConfig.*
@@ -5,57 +27,18 @@ import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.Integration.*
 
-/*
- * ============================================================================
- * PROGRAM FILTERING MODULE
- * ============================================================================
- *
- * PURPOSE:
- * Determines which breach programs (daemons) should be available in the
- * breach minigame based on context, settings, and device state.
- *
- * FUNCTIONALITY:
- * - Network connectivity filtering (remove unlock programs if not connected)
- * - Device type filtering (access points vs backdoor devices)
- * - Access point program restrictions (based on user settings)
- * - Non-netrunner NPC restrictions (limit programs for regular NPCs)
- * - Already-breached program removal (prevent re-breach of same type)
- * - Device type availability (remove programs for unavailable device types)
- * - Datamine V1/V2 removal (based on user settings)
- *
- * CRITICAL LIMITATION - CustomHackingSystem RemoteBreach:
- * This filtering applies ONLY to vanilla Access Point and NPC breaches that
- * use MinigameGenerationRuleScalingPrograms.FilterPlayerPrograms().
- *
- * CustomHackingSystem RemoteBreach uses a completely separate pipeline:
- *   - Daemon lists are statically defined in remoteBreach.lua at initialization
- *   - CustomHackingSystem.StartNewHackInstance() bypasses FilterPlayerPrograms()
- *   - Daemon availability is determined by target type (Computer/Device/Vehicle),
- *     NOT by actual network composition
- *   - PhysicalRangeFilter and other dynamic filters do NOT apply to RemoteBreach
- *
- * DESIGN RATIONALE:
- * RemoteBreach daemons represent the CAPABILITIES granted by breaching that
- * target type, not the devices present in the network. This is by design and
- * cannot be changed without modifying CustomHackingSystem API or creating
- * multiple minigame variants per device composition (48+ definitions).
- *
- * MOD COMPATIBILITY:
- * These functions are called from FilterPlayerPrograms() @wrapMethod,
- * ensuring compatibility with other mods that modify breach programs.
- *
- * ============================================================================
- */
-
-
-// ==================== Network & Device Type Filtering ====================
+// ============================================================================
+// Network & Device Type Filtering
+// ============================================================================
 
 /*
- * Returns true if unlock programs should be removed (when target is not connected to network)
+ * ShouldRemoveNetworkPrograms() - Network Program Filter
  *
- * @param actionID - The program's TweakDB ID
- * @param connectedToNetwork - Whether the target is connected to a network
- * @return True if the program should be removed
+ * Returns true if unlock programs should be removed (when target is not connected to network).
+ *
+ * @param actionID Program's TweakDB ID
+ * @param connectedToNetwork Whether target is connected to network
+ * @return True if program should be removed
  */
 public func ShouldRemoveNetworkPrograms(actionID: TweakDBID, connectedToNetwork: Bool) -> Bool {
   if connectedToNetwork {
@@ -65,13 +48,13 @@ public func ShouldRemoveNetworkPrograms(actionID: TweakDBID, connectedToNetwork:
 }
 
 /*
- * Returns true if device-specific programs should be removed (for non-access-point devices)
+ * Returns true if device-specific programs should be removed (for non-access-point devices).
  *
- * CRITICAL FIX: Exclude Computers - they should have full network access (same as Access Points)
+ * Critical: Exclude Computers - they should have full network access (same as Access Points).
  *
- * @param actionID - The program's TweakDB ID
- * @param entity - The target entity (device/NPC)
- * @return True if the program should be removed
+ * @param actionID - Program's TweakDB ID
+ * @param entity - Target entity
+ * @return True if program should be removed
  */
 public func ShouldRemoveDeviceBackdoorPrograms(actionID: TweakDBID, entity: wref<GameObject>) -> Bool {
   // Only applies to non-access-point, non-computer devices (Backdoor devices like Camera/Door)
@@ -83,7 +66,9 @@ public func ShouldRemoveDeviceBackdoorPrograms(actionID: TweakDBID, entity: wref
       || actionID == BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS();
 }
 
-// ==================== Access Point & Remote Breach Filtering ====================
+// ============================================================================
+// Access Point & Remote Breach Filtering
+// ============================================================================
 
 /*
  * Returns true if access point programs should be restricted (based on user settings)
@@ -118,10 +103,6 @@ public func ShouldRemoveNonNetrunnerPrograms(actionID: TweakDBID, miniGameAction
   // Only applies to remote breach on non-netrunner NPCs
   if !IsRemoteNonNetrunner(isRemoteBreach, entity) {
     return false;
-  }
-  // Remove DNR-specific programs if applicable
-  if ShouldRemoveDNRNonNetrunnerPrograms(actionID) {
-    return true;
   }
   // Remove access point programs and device unlock programs
   return Equals(miniGameActionRecord.Type().Type(), gamedataMinigameActionType.AccessPoint)

@@ -4,59 +4,42 @@ import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.Integration.*
+import BetterNetrunning.Logging.*
 
-/*
- * ============================================================================
- * PROGRAM FILTERING MODULE
- * ============================================================================
- *
- * PURPOSE:
- * Determines which breach programs (daemons) should be available in the
- * breach minigame based on context, settings, and device state.
- *
- * FUNCTIONALITY:
- * - Network connectivity filtering (remove unlock programs if not connected)
- * - Device type filtering (access points vs backdoor devices)
- * - Access point program restrictions (based on user settings)
- * - Non-netrunner NPC restrictions (limit programs for regular NPCs)
- * - Already-breached program removal (prevent re-breach of same type)
- * - Device type availability (remove programs for unavailable device types)
- * - Datamine V1/V2 removal (based on user settings)
- *
- * CRITICAL LIMITATION - CustomHackingSystem RemoteBreach:
- * This filtering applies ONLY to vanilla Access Point and NPC breaches that
- * use MinigameGenerationRuleScalingPrograms.FilterPlayerPrograms().
- *
- * CustomHackingSystem RemoteBreach uses a completely separate pipeline:
- *   - Daemon lists are statically defined in remoteBreach.lua at initialization
- *   - CustomHackingSystem.StartNewHackInstance() bypasses FilterPlayerPrograms()
- *   - Daemon availability is determined by target type (Computer/Device/Vehicle),
- *     NOT by actual network composition
- *   - PhysicalRangeFilter and other dynamic filters do NOT apply to RemoteBreach
- *
- * DESIGN RATIONALE:
- * RemoteBreach daemons represent the CAPABILITIES granted by breaching that
- * target type, not the devices present in the network. This is by design and
- * cannot be changed without modifying CustomHackingSystem API or creating
- * multiple minigame variants per device composition (48+ definitions).
- *
- * MOD COMPATIBILITY:
- * These functions are called from FilterPlayerPrograms() @wrapMethod,
- * ensuring compatibility with other mods that modify breach programs.
- *
- * ============================================================================
- */
+// ============================================================================
+// Program Filtering Module
+// ============================================================================
+//
+// PURPOSE:
+//   Determines which breach programs (daemons) should be available in the breach minigame
+//   based on context, settings, and device state
+//
+// FUNCTIONALITY:
+//   - Network connectivity filtering (remove unlock programs if not connected)
+//   - Device type filtering (access points vs backdoor devices)
+//   - Access point program restrictions (based on user settings)
+//   - Non-netrunner NPC restrictions (limit programs for regular NPCs)
+//   - Already-breached program removal (prevent re-breach of same type)
+//   - Device type availability (remove programs for unavailable device types)
+//   - Datamine V1/V2 removal (based on user settings)
+//
+// ARCHITECTURE:
+//   - Called from FilterPlayerPrograms() @wrapMethod for mod compatibility
+//   - CustomHackingSystem RemoteBreach uses separate pipeline (remoteBreach.lua)
+//   - RemoteBreach bypasses FilterPlayerPrograms() entirely
+//   - Daemon lists statically defined at initialization, not dynamically filtered
+//
 
 // ==================== Already-Breached Program Filtering ====================
 
 /*
- * Returns true if already breached programs should be removed
- * CRITICAL: This removes daemons that were added by vanilla logic but already completed
+ * Returns true if already breached programs should be removed. Removes daemons added by vanilla
+ * logic but already completed.
  *
- * TEMPORARY UNLOCK FEATURE:
- * - If QuickhackUnlockDurationHours() > 0: Checks if unlock has expired
- * - If expired: Resets breach flags and timestamp, returns false (allow re-breach)
- * - If still valid: Returns true (remove program)
+ * Temporary unlock feature:
+ * - If QuickhackUnlockDurationHours() > 0: Checks if unlock expired
+ *   - Expired: Resets flags/timestamp, returns false (allow re-breach)
+ *   - Valid: Returns true (remove program)
  * - If QuickhackUnlockDurationHours() == 0: Permanent unlock (legacy behavior)
  *
  * @param actionID - The program's TweakDB ID
@@ -93,7 +76,7 @@ public func ShouldRemoveBreachedPrograms(actionID: TweakDBID, entity: wref<GameO
       unlockDurationSeconds,
       unlockDurationHours,
       sharedPS,
-      "Basic"
+      TargetType.Basic
     );
   }
 
@@ -104,7 +87,7 @@ public func ShouldRemoveBreachedPrograms(actionID: TweakDBID, entity: wref<GameO
       unlockDurationSeconds,
       unlockDurationHours,
       sharedPS,
-      "NPCs"
+      TargetType.NPC
     );
   }
 
@@ -115,7 +98,7 @@ public func ShouldRemoveBreachedPrograms(actionID: TweakDBID, entity: wref<GameO
       unlockDurationSeconds,
       unlockDurationHours,
       sharedPS,
-      "Cameras"
+      TargetType.Camera
     );
   }
 
@@ -126,7 +109,7 @@ public func ShouldRemoveBreachedPrograms(actionID: TweakDBID, entity: wref<GameO
       unlockDurationSeconds,
       unlockDurationHours,
       sharedPS,
-      "Turrets"
+      TargetType.Turret
     );
   }
 
@@ -141,7 +124,7 @@ public func ShouldRemoveBreachedPrograms(actionID: TweakDBID, entity: wref<GameO
  * @param durationSeconds - Unlock duration in seconds (0.0 = permanent)
  * @param durationHours - Unlock duration in hours (0 = permanent, for logging)
  * @param sharedPS - Device PS reference (for resetting expired timestamps)
- * @param daemonType - Daemon type name (for logging)
+ * @param TargetType - Device type enum
  * @return True if program should be removed (still unlocked), False if expired/not breached
  */
 private func HandleTemporaryUnlock(
@@ -150,7 +133,7 @@ private func HandleTemporaryUnlock(
   durationSeconds: Float,
   durationHours: Int32,
   sharedPS: ref<SharedGameplayPS>,
-  daemonType: String
+  TargetType: TargetType
 ) -> Bool {
   // Check if breached (unified state check via timestamp)
   if !BreachStatusUtils.IsBreached(unlockTimestamp) {
@@ -167,7 +150,7 @@ private func HandleTemporaryUnlock(
 
   if elapsedTime > durationSeconds {
     // Expired - reset timestamp
-    ResetDeviceTimestamp(sharedPS, daemonType);
+    ResetDeviceTimestamp(sharedPS, TargetType);
     return false; // Show program (allow re-breach)
   }
 
@@ -178,14 +161,14 @@ private func HandleTemporaryUnlock(
 /*
  * Resets device unlock timestamp to 0.0 (re-locked state)
  */
-private func ResetDeviceTimestamp(sharedPS: ref<SharedGameplayPS>, daemonType: String) -> Void {
-  if Equals(daemonType, "Basic") {
+private func ResetDeviceTimestamp(sharedPS: ref<SharedGameplayPS>, TargetType: TargetType) -> Void {
+  if Equals(TargetType, TargetType.Basic) {
     sharedPS.m_betterNetrunningUnlockTimestampBasic = 0.0;
-  } else if Equals(daemonType, "NPCs") {
+  } else if Equals(TargetType, TargetType.NPC) {
     sharedPS.m_betterNetrunningUnlockTimestampNPCs = 0.0;
-  } else if Equals(daemonType, "Cameras") {
+  } else if Equals(TargetType, TargetType.Camera) {
     sharedPS.m_betterNetrunningUnlockTimestampCameras = 0.0;
-  } else if Equals(daemonType, "Turrets") {
+  } else if Equals(TargetType, TargetType.Turret) {
     sharedPS.m_betterNetrunningUnlockTimestampTurrets = 0.0;
   }
 }
@@ -195,10 +178,10 @@ private func ResetDeviceTimestamp(sharedPS: ref<SharedGameplayPS>, daemonType: S
 /*
  * Returns true if programs should be removed based on device type availability
  *
- * In RadialUnlock mode, delegates filtering to RadialBreach's physical proximity-based system.
- * If RadialBreach is not installed, disables network-based filtering to reduce UI noise.
- *
- * In Classic mode, uses traditional network connectivity-based filtering.
+ * FUNCTIONALITY:
+ * - RadialUnlock mode: Delegates filtering to RadialBreach's physical proximity-based system
+ * - RadialUnlock mode (RadialBreach not installed): Disables network-based filtering for cleaner UI
+ * - Classic mode: Uses traditional network connectivity-based filtering
  *
  * @param actionID - The program's TweakDB ID
  * @param miniGameActionRecord - The program's record data
@@ -206,13 +189,12 @@ private func ResetDeviceTimestamp(sharedPS: ref<SharedGameplayPS>, daemonType: S
  * @return True if the program should be removed
  */
 public func ShouldRemoveDeviceTypePrograms(actionID: TweakDBID, miniGameActionRecord: wref<MinigameAction_Record>, data: ConnectedClassTypes) -> Bool {
-  // In RadialUnlock mode, delegate filtering to RadialBreach's physical proximity-based system if installed
-  // If RadialBreach is not installed, disable network-based filtering to reduce UI noise
+  // RadialUnlock mode: Delegate to RadialBreach if installed, otherwise disable network filtering for cleaner UI
   if !BetterNetrunningSettings.UnlockIfNoAccessPoint() {
     return false;
   }
 
-  // In Classic mode, use traditional network connectivity-based filtering
+  // Classic mode: Use traditional network connectivity-based filtering
   // Remove camera programs if no cameras connected
   if (Equals(miniGameActionRecord.Category().Type(), gamedataMinigameCategory.CameraAccess) || actionID == BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS()) && !data.surveillanceCamera {
     return true;
@@ -247,9 +229,7 @@ public func ShouldRemoveDataminePrograms(actionID: TweakDBID) -> Bool {
   }
 
   // Remove ALL Datamine variants when auto-datamine is enabled
-  return actionID == BNConstants.PROGRAM_DATAMINE_BASIC()
-      || actionID == BNConstants.PROGRAM_DATAMINE_ADVANCED()
-      || actionID == BNConstants.PROGRAM_DATAMINE_MASTER();
+  return BonusDaemonUtils.IsDatamineDaemon(actionID);
 }
 
 // ==================== Physical Range Device Filtering ====================
@@ -257,9 +237,10 @@ public func ShouldRemoveDataminePrograms(actionID: TweakDBID) -> Bool {
 /*
  * Returns true if programs should be removed based on physical range device availability
  *
- * P2 FIX (2025-10-12): Now uses Access Point network (GetChildren) instead of TargetingSystem
- * Scans devices in the Access Point's network and removes subnet programs if no corresponding
- * device types are found. This respects the actual network topology instead of spatial proximity.
+ * P2 FIX (2025-10-12):
+ * Now uses Access Point network (GetChildren) instead of TargetingSystem. Scans devices in the
+ * Access Point's network and removes subnet programs if no corresponding device types are found.
+ * This respects the actual network topology instead of spatial proximity.
  *
  * @param actionID - The program's TweakDB ID
  * @param gameInstance - The game instance
@@ -311,21 +292,15 @@ public struct DeviceTypesInRange {
 }
 
 /*
- * Scans for device types in the Access Point's network and surrounding area
+ * Scans for device types in Access Point's network and surrounding area. Classifies devices by
+ * type (Camera, Turret, NPC, Basic).
  *
- * FUNCTIONALITY:
- * - Scans Access Point's network devices (via GetChildren)
- * - Scans standalone devices within breach radius (via RadialBreach integration)
- * - Classifies devices by type (Camera, Turret, NPC, Basic)
+ * Scan methods:
+ * - Network scan: AccessPointControllerPS.GetChildren()
+ * - Radial scan: GetAllNearbyObjects() when RadialBreach MOD exists
  *
- * ARCHITECTURE:
- * - Network Scan: Uses AccessPointControllerPS.GetChildren()
- * - Radial Scan: Uses AccessPointControllerPS.GetAllNearbyObjects() when RadialBreach MOD exists
- * - Composed Method: Delegates to helper functions for each scan type
- *
- * BREACH RADIUS:
- * - Configurable via RadialBreach MOD settings (default 25m, range 10-50m)
- * - Falls back to 50m when RadialBreach not installed
+ * Breach radius:
+ * Configurable via RadialBreach settings (default 25m, range 10-50m), fallback 50m when not installed.
  *
  * @param gameInstance - The game instance
  * @param breachPosition - The breach position (for logging)
@@ -484,13 +459,10 @@ private func ClassifyDeviceByType(
 // ==================== NETWORK CONNECTIVITY FILTERING (VANILLA RULE 5) ====================
 
 /*
- * Check if program is Better Netrunning subnet daemon
- *
- * PURPOSE:
+ * Checks if program is Better Netrunning subnet daemon.
  * Identifies BetterNetrunning's custom subnet unlock daemons to apply
  * proper network connectivity filtering (vanilla Rule 5 logic).
  *
- * FUNCTIONALITY:
  * Checks if actionID matches any of the 4 BN subnet daemon TweakDBIDs:
  * - UnlockQuickhacks (Basic devices)
  * - UnlockCameraQuickhacks (Cameras)
@@ -509,27 +481,23 @@ public static func IsBetterNetrunningSubnetDaemon(actionID: TweakDBID) -> Bool {
 }
 
 /*
- * Apply vanilla Rule 5 (network connectivity) to BN subnet daemons
+ * Applies vanilla Rule 5 (network connectivity) to BN subnet daemons. Replicates vanilla
+ * FilterPlayerPrograms() Rule 5 logic ensuring BN subnet daemons only appear when corresponding
+ * device types exist in network.
  *
- * PURPOSE:
- * Replicates vanilla FilterPlayerPrograms() Rule 5 logic to ensure BN subnet
- * daemons only appear when corresponding device types exist in the network.
+ * BN subnet daemon issue:
+ * - type="MinigameAction.Both" (not AccessPoint), bypassing vanilla Rule 3/4
+ * - Also skipping Rule 5 (network connectivity check)
+ * - This function manually applies Rule 5 to extracted BN daemons before restoration
  *
- * RATIONALE:
- * BN subnet daemons have type="MinigameAction.Both" (not AccessPoint), which
- * bypasses vanilla Rule 3/4 but also skips Rule 5 (network connectivity check).
- * This function manually applies Rule 5 to extracted BN daemons before restoration.
- *
- * VANILLA RULE 5 LOGIC (hackingMinigameUtils.script Line 910-923):
- * - CameraAccess: Keep if surveillanceCamera exists in network
- * - TurretAccess: Keep if securityTurret exists in network
+ * Vanilla Rule 5 logic (hackingMinigameUtils.script Line 910-923):
+ * - CameraAccess: Keep if surveillanceCamera exists
+ * - TurretAccess: Keep if securityTurret exists
  * - NPC: Keep if puppet exists AND is Active (not unconscious)
  * - Other categories: Always keep
  *
- * ARCHITECTURE:
- * - Uses CheckConnectedClassTypes() to get network topology
- * - Applies category-specific filtering rules
- * - Removes programs from array if conditions not met
+ * Implementation:
+ * Uses CheckConnectedClassTypes() for network topology, applies category-specific filtering.
  *
  * @param entity - Target entity (Access Point, Device, or NPC)
  * @param programs - Array of BN subnet daemons to filter (modified in-place)
@@ -563,12 +531,10 @@ public static func ApplyNetworkConnectivityFilter(
 }
 
 /*
- * Get network topology for connectivity filtering
- *
- * PURPOSE:
+ * Gets network topology for connectivity filtering.
  * Retrieves ConnectedClassTypes struct containing network device composition.
  *
- * FUNCTIONALITY:
+ * Implementation:
  * - Uses vanilla pattern from hackingMinigameUtils.script:875-887
  * - Puppets: Cast to ScriptedPuppet → GetMasterConnectedClassTypes()
  * - Devices: Cast to Device → GetDevicePS().CheckMasterConnectedClassTypes()
@@ -604,22 +570,20 @@ private static func GetNetworkTopology(entity: wref<Entity>) -> ConnectedClassTy
 }
 
 /*
- * Check if program should be removed based on network connectivity (Rule 5)
+ * Checks if program should be removed based on network connectivity (vanilla Rule 5). Applies
+ * vanilla Rule 5 category checks to single program.
  *
- * PURPOSE:
- * Applies vanilla Rule 5 category checks to a single program.
+ * Vanilla categories (minigame_actions.tweak):
+ * - CameraAccess: NetworkCameraShutdown (Line 89)
+ * - TurretAccess: NetworkTurretShutdown (Line 122)
+ * - DataAccess: NetworkDataMineLootAll/Advanced/Master (Line 220-253)
+ * - NPC: No vanilla examples (BN uses for UnlockNPCQuickhacks)
  *
- * VANILLA CATEGORIES (minigame_actions.tweak):
- * - MinigameAction.CameraAccess: NetworkCameraShutdown (Line 89)
- * - MinigameAction.TurretAccess: NetworkTurretShutdown (Line 122)
- * - MinigameAction.DataAccess: NetworkDataMineLootAll/Advanced/Master (Line 220-253)
- * - MinigameAction.NPC: (No vanilla examples, BN uses for UnlockNPCQuickhacks)
- *
- * BN SUBNET DAEMON MAPPING:
- * - UnlockCameraQuickhacks → category="MinigameAction.CameraAccess"
- * - UnlockTurretQuickhacks → category="MinigameAction.TurretAccess"
- * - UnlockNPCQuickhacks → category="MinigameAction.NPC"
- * - UnlockQuickhacks → category="MinigameAction.DataAccess" (Basic devices)
+ * BN subnet daemon mapping:
+ * - UnlockCameraQuickhacks → CameraAccess
+ * - UnlockTurretQuickhacks → TurretAccess
+ * - UnlockNPCQuickhacks → NPC
+ * - UnlockQuickhacks → DataAccess (Basic devices)
  *
  * @param program - Program to check
  * @param networkInfo - Network topology from CheckConnectedClassTypes()

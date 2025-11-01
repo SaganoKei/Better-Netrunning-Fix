@@ -13,6 +13,7 @@ local defaults = {
     -- Breaching
     EnableClassicMode = false,
     AllowBreachUnconscious = true,
+    RadialUnlockCrossNetwork = true,
     QuickhackUnlockDurationHours = 6,
     -- RemoteBreach
     RemoteBreachEnabledDevice = true,

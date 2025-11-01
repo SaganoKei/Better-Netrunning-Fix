@@ -1,46 +1,24 @@
 // ============================================================================
 // BetterNetrunning - Unified Logging System
 // ============================================================================
-// 5-LEVEL LOG SYSTEM WITH DUPLICATE SUPPRESSION
 //
 // PURPOSE:
 //   Provides structured logging with log levels, duplicate suppression,
 //   and settings integration for debug output control
 //
-// LOG LEVELS:
-//   ERROR (0)   - Critical errors (output when EnableDebugLog=false)
-//   WARNING (1) - Warnings + errors
-//   INFO (2)    - Normal information (default)
-//   DEBUG (3)   - Detailed debugging
-//   TRACE (4)   - Very detailed (loop internals, performance impact)
-//
-// EnableDebugLog CONTROL:
-//   When EnableDebugLog=false: Only ERROR logs are output
-//   When EnableDebugLog=true:  Log level controlled by DebugLogLevel setting
-//
-// USAGE:
-//   BNError("Context", "Critical error message");   // Always output if EnableDebugLog=true or for critical errors
-//   BNWarn("Context", "Warning message");            // Requires DebugLogLevel >= 1 (WARNING)
-//   BNInfo("Context", "Information message");        // Requires DebugLogLevel >= 2 (INFO, default)
-//   BNDebug("Context", "Debug message");             // Requires DebugLogLevel >= 3 (DEBUG)
-//   BNTrace("Context", "Trace message");             // Requires DebugLogLevel >= 4 (TRACE)
-//
-// DUPLICATE SUPPRESSION:
-//   Identical messages within 5 seconds are automatically collapsed:
-//   "[DEBUG] Processing device 1"
-//   "[DEBUG] → Previous message repeated 19 times"
+// FUNCTIONALITY:
+//   - 5 log levels: ERROR, WARNING, INFO, DEBUG, TRACE
+//   - EnableDebugLog control: false = ERROR only, true = level-based filtering
+//   - Duplicate suppression: Collapses identical messages within 5 seconds
+//   - Settings integration: Respects DebugLogLevel configuration
 //
 // ARCHITECTURE:
-//   Application Layer (BreachProcessing, etc.)
-//        ↓
-//   Logging Layer (Logger.reds - level filtering + deduplication)
-//        ↓
-//   State Management (LoggerStateSystem - ScriptableSystem for duplicate tracking)
-//        ↓
-//   Framework Layer (RED4ext.ModLog)
-// ============================================================================
+//   - Log level hierarchy: ERROR < WARNING < INFO < DEBUG < TRACE
+//   - Duplicate detection: Hash-based message tracking with timestamp
+//   - Settings-aware: Reads EnableDebugLog and DebugLogLevel from config
+//
 
-module BetterNetrunning.Core
+module BetterNetrunning.Logging
 
 import BetterNetrunningConfig.*
 
@@ -89,7 +67,7 @@ public class LoggerStateSystem extends ScriptableSystem {
 // SETTINGS INTEGRATION
 // ============================================================================
 
-/// Get current log level from CET settings (via config.reds)
+// Get current log level from CET settings (via config.reds)
 private static func GetCurrentLogLevel() -> LogLevel {
   if !BetterNetrunningSettings.EnableDebugLog() {
     return LogLevel.ERROR; // Only errors when debug disabled
@@ -114,33 +92,33 @@ private static func GetCurrentLogLevel() -> LogLevel {
 // PUBLIC API: LOG LEVEL FUNCTIONS
 // ============================================================================
 
-/// Log error (always output, ignores log level)
+// Log error (always output, ignores log level)
 public static func BNError(context: String, message: String) -> Void {
   LogWithLevel(LogLevel.ERROR, context, message);
 }
 
-/// Log warning (WARNING level or higher)
+// Log warning (WARNING level or higher)
 public static func BNWarn(context: String, message: String) -> Void {
   if EnumInt(GetCurrentLogLevel()) >= EnumInt(LogLevel.WARNING) {
     LogWithLevel(LogLevel.WARNING, context, message);
   }
 }
 
-/// Log info (INFO level or higher)
+// Log info (INFO level or higher)
 public static func BNInfo(context: String, message: String) -> Void {
   if EnumInt(GetCurrentLogLevel()) >= EnumInt(LogLevel.INFO) {
     LogWithLevel(LogLevel.INFO, context, message);
   }
 }
 
-/// Log debug (DEBUG level or higher)
+// Log debug (DEBUG level or higher)
 public static func BNDebug(context: String, message: String) -> Void {
   if EnumInt(GetCurrentLogLevel()) >= EnumInt(LogLevel.DEBUG) {
     LogWithLevel(LogLevel.DEBUG, context, message);
   }
 }
 
-/// Log trace (TRACE level only, for loop internals)
+// Log trace (TRACE level only, for loop internals)
 public static func BNTrace(context: String, message: String) -> Void {
   if EnumInt(GetCurrentLogLevel()) >= EnumInt(LogLevel.TRACE) {
     LogWithLevel(LogLevel.TRACE, context, message);
@@ -191,7 +169,7 @@ private static func LogWithLevel(level: LogLevel, context: String, message: Stri
   loggerState.SetLastTimestamp(currentTime);
 }
 
-/// Get log level prefix for output formatting
+// Get log level prefix for output formatting
 private static func GetLevelPrefix(level: LogLevel) -> String {
   switch level {
     case LogLevel.ERROR:   return "[ERROR]  ";

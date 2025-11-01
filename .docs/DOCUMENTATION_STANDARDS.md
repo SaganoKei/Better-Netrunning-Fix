@@ -74,7 +74,7 @@
 
 ## 📝 Comment Writing Standards
 
-### A. File Headers
+### A. Class/Module Headers (Detailed Documentation)
 
 **Structure:**
 ```redscript
@@ -92,10 +92,6 @@
 // ARCHITECTURE:
 // - [Design Pattern]: [Usage]
 // - [Structure]: [Description]
-//
-// DEPENDENCIES:
-// - [Module 1]: [Purpose]
-// - [Module 2]: [Purpose]
 // ============================================================================
 ```
 
@@ -117,42 +113,85 @@
 // - Blackboard listener for minigame completion detection
 // - DeviceTypeUtils for unified device unlock logic
 // - Shallow nesting (max 2 levels) using helper methods
-//
-// DEPENDENCIES:
-// - BetterNetrunning.Common.* (DeviceTypeUtils, BNLog)
-// - BetterNetrunning.CustomHacking.* (RemoteBreachStateSystem)
 // ============================================================================
 ```
-
 ---
 
-### B. Function Comments
+### B. Method Comments (Simplified Format)
 
-**Structure:**
+**Methods with Parameters/Return Values - Detailed Format:**
 ```redscript
 /*
- * [Function purpose in one sentence]
+ * Applies progressive unlock restrictions to device quickhacks
  *
- * VANILLA DIFF: [How it differs from vanilla if @replaceMethod]
- * RATIONALE: [Why this implementation exists]
- * ARCHITECTURE: [Pattern used, nesting depth, helper structure]
- */
-@[annotation](ClassName)
-public func FunctionName() -> ReturnType {
-```
-
-**Example:**
-```redscript
-/*
- * Applies progressive unlock restrictions to device quickhacks before breach
- *
- * VANILLA DIFF: Replaces SetActionsInactiveAll() with progressive unlock logic
- * RATIONALE: Allow players to access more quickhacks as they progress
- * ARCHITECTURE: Shallow nesting (max 2 levels) using Extract Method pattern
+ * @param actions - Array of device actions to filter
+ * @param deviceType - Type of device being processed
+ * @return Number of actions processed
  */
 @addMethod(ScriptableDeviceComponentPS)
-public func SetActionsInactiveUnbreached(actions: script_ref<array<ref<DeviceAction>>>) -> Void {
+public func SetActionsInactiveUnbreached(actions: script_ref<array<ref<DeviceAction>>>, deviceType: DeviceType) -> Int32 {
 ```
+
+**Methods without Parameters/Return Values - Single Line:**
+```redscript
+// Initializes the breach processing system
+@addMethod(AccessPointControllerPS)
+public func InitializeBreachSystem() -> Void {
+```
+
+**Methods with Multiple Features - Bulleted List Format:**
+```redscript
+/*
+ * Checks if device is breached with expiration support
+ *
+ * Features:
+ * - Returns true if device has valid (non-expired) breach timestamp
+ * - Supports permanent unlock (duration = 0)
+ * - Supports temporary unlock with expiration check
+ * - Applies to all breach types (AP/NPC/Remote)
+ */
+@addMethod(ScriptableDeviceComponentPS)
+public func IsBreached() -> Bool {
+```
+
+**Complex Methods - Extended Format:**
+```redscript
+/*
+ * Processes breach completion and unlocks quickhacks network-wide
+ *
+ * ARCHITECTURE: Composed Method pattern with shallow nesting (max 2 levels)
+ * @param devices - Array of network devices to process
+ * @param unlockFlags - Flags indicating which device types to unlock
+ * @return True if processing completed successfully
+ */
+@wrapMethod(AccessPointControllerPS)
+private final func RefreshSlaves(const devices: script_ref<array<ref<DeviceComponentPS>>>, unlockFlags: BreachUnlockFlags) -> Bool {
+```
+
+**Override Methods - Vanilla Diff Required:**
+```redscript
+/*
+ * Replaces SetActionsInactiveAll() with progressive unlock logic
+ *
+ * VANILLA DIFF: Removes power state checks to allow unlocking disabled devices
+ * @param actions - Array of device actions to process
+ * @param deviceState - Current state of the device
+ * @return Number of actions made available
+ */
+@replaceMethod(ScriptableDeviceComponentPS)
+public func SetActionsInactiveAll(actions: script_ref<array<ref<DeviceAction>>>, deviceState: DeviceState) -> Int32 {
+```
+
+**Guidelines for Method Comments:**
+- **Methods with Parameters/Return Values**: Use `/* */` format with `@param` and `@return` documentation
+- **Simple Methods (no params/return)**: Single line describing purpose
+- **Multiple Features**: Use bulleted list format (`Features:`, `Behavior:`, `Operations:`) to avoid long prose
+- **Complex Methods**: Add ARCHITECTURE line if using design patterns
+- **Override Methods**: Include VANILLA DIFF for @replaceMethod/@wrapMethod
+- **Critical Methods**: Add specific warnings or constraints
+- **Parameter Documentation**: `@param name - Description of parameter purpose and type`
+- **Return Documentation**: `@return Description of return value and meaning`
+- **Avoid Long Prose**: Use bullet points instead of multiple connected sentences
 
 ---
 
@@ -176,6 +215,136 @@ let withinRadius: Bool = this.IsWithinRadius(device, position, maxDistance);
 // Improved version (was buggy before) ❌
 // Reduced from 50 lines to 10 lines ❌
 // Better than old implementation ❌
+```
+
+---
+
+### D. Category Headers (Code Section Organization)
+
+**Purpose:** Group related methods within the same file to improve code readability and navigation
+
+**Mandatory Format:**
+```redscript
+// ============================================================================
+// Category Name
+// ============================================================================
+```
+
+**Usage Guidelines:**
+
+1. **When to Use:**
+   - Files with 10+ methods
+   - Files with 300+ lines
+   - Files with multiple functional responsibilities
+   - Utility classes with diverse static methods
+
+2. **When NOT to Use:**
+   - Files with 5 or fewer methods
+   - Single-responsibility classes
+   - Files under 200 lines with clear structure
+
+3. **Naming Conventions:**
+   - Use Title Case: `Device Type Classification`
+   - Be specific and concise (3-5 words maximum)
+   - Use function-based names, not generic labels
+   - ✅ Good: `Distance Calculations`, `Network Traversal`, `Breach State Management`
+   - ❌ Bad: `Helpers`, `Utilities`, `Misc`, `Other Functions`
+
+4. **Placement Rules:**
+   - Place directly before the first method of the group
+   - Insert 1 blank line before the header (after previous method's closing brace)
+   - No blank line between header and first method
+   - Group related methods consecutively under each header
+
+5. **Hierarchy Limit:**
+   - Maximum 2 levels of categorization
+   - Level 1: `// ============================================================================`
+   - Level 2: `// --- Subcategory Name ---`
+   - Never use 3+ levels (indicates need for class splitting)
+
+**Example - Utility Class:**
+```redscript
+module BetterNetrunning.Utils
+
+public abstract class DeviceTypeUtils {
+  // ============================================================================
+  // Device Type Classification
+  // ============================================================================
+
+  // Checks if device is a camera
+  public static func IsCamera(device: ref<DeviceComponentPS>) -> Bool {
+    return device.IsA(n"SecurityCameraController");
+  }
+
+  // Checks if device is a turret
+  public static func IsTurret(device: ref<DeviceComponentPS>) -> Bool {
+    return device.IsA(n"TurretController");
+  }
+
+  // ============================================================================
+  // Device State Queries
+  // ============================================================================
+
+  // Checks if device is currently online
+  public static func IsOnline(device: ref<DeviceComponentPS>) -> Bool {
+    return device.IsON();
+  }
+}
+```
+
+**Example - With Subcategories:**
+```redscript
+// ============================================================================
+// Progressive Unlock Rules
+// ============================================================================
+
+// --- Basic Devices ---
+
+@wrapMethod(ScriptableDeviceComponentPS)
+public func SetActionsInactiveUnbreached(actions: script_ref<array<ref<DeviceAction>>>) -> Void {
+  // Implementation
+}
+
+// --- Cameras ---
+
+@wrapMethod(SecurityCameraControllerPS)
+public func GetActions(actions: script_ref<array<ref<DeviceAction>>>) -> Void {
+  // Implementation
+}
+
+// ============================================================================
+// Unlock Expiration
+// ============================================================================
+
+@addMethod(SharedGameplayPS)
+public func HasUnlockExpired(unlockTime: Uint32, currentTime: Uint32) -> Bool {
+  // Implementation
+}
+```
+
+**Anti-Patterns to Avoid:**
+
+❌ **Over-categorization** (one header per method):
+```redscript
+// ============================================================================
+// Camera Check
+// ============================================================================
+public static func IsCamera() { }
+
+// ============================================================================
+// Turret Check
+// ============================================================================
+public static func IsTurret() { }
+```
+
+✅ **Correct** (group related methods):
+```redscript
+// ============================================================================
+// Device Type Classification
+// ============================================================================
+public static func IsCamera() { }
+public static func IsTurret() { }
+public static func IsComputer() { }
 ```
 
 ---
@@ -277,18 +446,42 @@ let withinRadius: Bool = this.IsWithinRadius(device, position, maxDistance);
 
 ---
 
-## 🔍 Code Review Checklist
+### 🔍 Code Review Checklist
 
 Check the following during review:
 
+**Class/Module Level:**
+- [ ] Detailed PURPOSE section present
+- [ ] Complete FUNCTIONALITY list
+- [ ] ARCHITECTURE patterns specified
+- [ ] DEPENDENCIES clearly listed
+
+**Method Level:**
+- [ ] Single-line comment for methods without parameters/return values
+- [ ] `/* */` format with `@param` and `@return` for methods with parameters/return values
+- [ ] ARCHITECTURE line added for complex methods only
+- [ ] VANILLA DIFF included for @replaceMethod/@wrapMethod
+- [ ] All parameters documented with `@param name - description`
+- [ ] Return values documented with `@return description`
+- [ ] No excessive detail (save for class documentation)
+
+**Category Headers:**
+- [ ] Consistent format used: `// ============================================================================`
+- [ ] Only used in files with 10+ methods or 300+ lines
+- [ ] Title Case naming (e.g., `Device Type Classification`)
+- [ ] Specific, function-based names (not `Helpers`, `Utilities`, `Misc`)
+- [ ] Proper placement: 1 blank line before header, no blank line after
+- [ ] Maximum 2 hierarchy levels (no deeper categorization)
+- [ ] No over-categorization (avoid headers for 1-2 methods)
+- [ ] Consistent format throughout the file
+
+**General Standards:**
 - [ ] No VERSION HISTORY section
 - [ ] No "Release version" / "Latest version" descriptions
 - [ ] No "PHASE N" references
 - [ ] No "Reduced from X to Y" metrics comparisons
 - [ ] No "Improved" / "Better" / "Enhanced" relative evaluations
 - [ ] No "Before / After" comparisons
-- [ ] Architecture patterns are clearly specified
-- [ ] Functionality descriptions are objective
 
 ---
 
@@ -333,7 +526,7 @@ Check the following during review:
 
 ---
 
-### Example 2: Function Comment
+### Example 2: Method Comment
 
 **❌ Bad Example:**
 ```redscript
@@ -348,18 +541,67 @@ Check the following during review:
  */
 ```
 
-**✅ Good Example:**
+**✅ Good Example (Simple Method - No Parameters):**
+```redscript
+// Processes breach completion and unlocks quickhacks network-wide
+@wrapMethod(AccessPointControllerPS)
+private final func ProcessBreachCompletion() -> Void {
+```
+
+**✅ Good Example (Method with Parameters):**
 ```redscript
 /*
  * Processes breach completion and unlocks quickhacks network-wide
  *
- * FUNCTIONALITY:
- * - Auto-execute PING on daemon success
- * - Auto-apply Datamine based on daemon count
- * - Record breach position for radial unlock
+ * @param devices - Array of network devices to unlock
+ * @param unlockFlags - Flags indicating which device types to process
+ * @return True if processing completed successfully
+ */
+@wrapMethod(AccessPointControllerPS)
+private final func ProcessBreachCompletion(devices: array<ref<DeviceComponentPS>>, unlockFlags: BreachUnlockFlags) -> Bool {
+```
+
+**✅ Good Example (Multiple Features - Bulleted List):**
+```redscript
+/*
+ * Returns RadialBreach MOD's configured breach range
+ *
+ * Behavior:
+ * - Reads config.breachRange from RadialBreach Native Settings (10-50m, default 25m)
+ * - Falls back to 50m if RadialBreach disabled or invalid
+ *
+ * @param gameInstance - Game instance
+ * @return Breach range in meters
+ */
+public static func GetRadialBreachRange(gameInstance: GameInstance) -> Float {
+```
+
+**❌ Bad Example (Long Prose):**
+```redscript
+/*
+ * Returns RadialBreach MOD's configured breach range
+ *
+ * Reads config.breachRange from RadialBreach Native Settings which can be configured
+ * between 10-50m with a default of 25m, and falls back to 50m if RadialBreach is
+ * disabled or if the value is invalid.
+ *
+ * @param gameInstance - Game instance
+ * @return Breach range in meters
+ */
+```
+
+**✅ Good Example (Complex Method with Architecture):**
+```redscript
+/*
+ * Processes breach completion and unlocks quickhacks network-wide
  *
  * ARCHITECTURE: Composed Method pattern with shallow nesting (max 2 levels)
+ * @param devices - Array of network devices to unlock
+ * @param unlockFlags - Flags indicating which device types to process
+ * @return True if processing completed successfully
  */
+@wrapMethod(AccessPointControllerPS)
+private final func ProcessBreachCompletion(devices: array<ref<DeviceComponentPS>>, unlockFlags: BreachUnlockFlags) -> Bool {
 ```
 
 ---
@@ -437,14 +679,46 @@ if ($violations.Count -eq 0) {
 
 ## 📚 References
 
-### Recommended Comment Sections
+### Class Documentation Sections (Detailed)
 
 1. **PURPOSE**: Module purpose (1-2 sentences)
 2. **FUNCTIONALITY**: Feature list
 3. **ARCHITECTURE**: Design patterns, structure
-4. **RATIONALE**: Implementation rationale
-5. **DEPENDENCIES**: Dependencies
-6. **VANILLA DIFF**: Differences from vanilla (for @replaceMethod)
+4. **DEPENDENCIES**: Dependencies
+
+### Method Documentation Formats (Enhanced)
+
+1. **Single Line**: Simple methods without parameters/return values
+2. **Detailed Format**: Methods with parameters/return values using `@param` and `@return`
+3. **Bulleted List Format**: Methods with multiple features using `Features:`, `Behavior:`, or `Operations:` section
+4. **Extended Format**: Add ARCHITECTURE line for complex methods
+5. **Override Methods**: Include VANILLA DIFF for @replaceMethod/@wrapMethod
+6. **Parameter Documentation**: `@param name - Description of purpose and constraints`
+7. **Return Documentation**: `@return Description of value and meaning`
+
+**Recommended Section Names for Bulleted Lists:**
+- `Features:` - List of functional capabilities
+- `Behavior:` - Description of method behavior patterns
+- `Operations:` - Step-by-step operation descriptions
+- `Conditions:` - Conditional logic descriptions
+
+**Key Principle:** Use bullet points instead of long prose to improve readability and maintainability.
+
+### Category Header Format (Mandatory)
+
+**Format:**
+```redscript
+// ============================================================================
+// Category Name
+// ============================================================================
+```
+
+**Usage Criteria:**
+- Files with 10+ methods or 300+ lines
+- Title Case naming
+- Function-based, specific names
+- Maximum 2 hierarchy levels
+- 1 blank line before header, no blank line after
 
 ### Discouraged/Prohibited Sections
 

@@ -19,14 +19,10 @@
 // - RadialUnlockSystem for position recording
 // - TransactionSystem for loot rewards
 // - RadialBreachGating for physical distance filtering
-//
-// DEPENDENCIES:
-// - BetterNetrunning.Common.* (DeviceTypeUtils, BNLog)
-// - BetterNetrunning.RemoteBreach.Core.* (RemoteBreachStateSystem variants, RemoteBreachHelpers)
-// - BetterNetrunning.RadialUnlock.* (RecordAccessPointBreachByPosition, RadialBreachGating)
 // ============================================================================
 
 module BetterNetrunning.RadialUnlock
+import BetterNetrunning.Logging.*
 
 import BetterNetrunning.Core.*
 import BetterNetrunning.Integration.*
@@ -54,22 +50,18 @@ public struct RadialUnlockResult {
     public let npcUnlocked: Int32;
 }
 
-// RemoteBreach loot reward accumulator (reduces parameter passing)
-// Using struct instead of class to avoid ref<> requirement
-public struct RemoteBreachLootData {
-  let baseMoney: Float;
-  let craftingMaterial: Bool;
-  let baseShardDropChance: Float;
-  let shouldLoot: Bool;
-}
-// No need for conditional import here - RadialBreachGating manages it
-
 // ============================================================================
 // UNCONSCIOUS NPC BREACH PROCESSING
 // ============================================================================
 
-// Apply network unlock to devices after Unconscious NPC Breach
-// ARCHITECTURE: Uses BreachStatisticsCollector for unified statistics collection
+/*
+ * Applies network unlock to devices after Unconscious NPC Breach. Uses
+ * BreachStatisticsCollector for unified statistics collection.
+ *
+ * @param networkDevices Array of network device persistent states
+ * @param unlockFlags Flags indicating which device types to unlock
+ * @param stats BreachSessionStats for statistics collection
+ */
 @addMethod(PlayerPuppet)
 private func ApplyUnconsciousNPCNetworkUnlockWithStats(
   networkDevices: array<ref<DeviceComponentPS>>,
@@ -84,20 +76,20 @@ private func ApplyUnconsciousNPCNetworkUnlockWithStats(
   while i < ArraySize(networkDevices) {
     let device: ref<DeviceComponentPS> = networkDevices[i];
     if IsDefined(device) {
-      let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(device);
+      let TargetType: TargetType = DeviceTypeUtils.GetDeviceType(device);
 
       // Check if this device type should be unlocked
-      if DeviceTypeUtils.ShouldUnlockByFlags(deviceType, unlockFlags) {
+      if DeviceTypeUtils.ShouldUnlockByFlags(TargetType, unlockFlags) {
         let sharedPS: ref<SharedGameplayPS> = device as SharedGameplayPS;
         if IsDefined(sharedPS) {
           // Apply device-type-specific unlock timestamp
           let currentTime: Float = TimeUtils.GetCurrentTimestamp(this.GetGame());
-          TimeUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
+          TimeUtils.SetDeviceUnlockTimestamp(sharedPS, TargetType, currentTime);
 
           // DEBUG: Log timestamp application
           BNTrace("UnconsciousNPCUnlock", "Applied unlock timestamp: " +
             ToString(currentTime) + " to device type: " +
-            EnumValueToString("DeviceType", Cast<Int64>(EnumInt(deviceType))));
+            EnumValueToString("TargetType", Cast<Int64>(EnumInt(TargetType))));
         }
       }
     }
@@ -192,8 +184,15 @@ private func IsUnconsciousNPCBreachMinigame() -> Bool {
 // NETWORK UNLOCK PROCESSING
 // ============================================================================
 
-// Apply network unlock to devices after RemoteBreach (with statistics)
-// ARCHITECTURE: Uses BreachStatisticsCollector for unified statistics collection
+/*
+ * Applies network unlock to devices after RemoteBreach (with statistics). Uses
+ * BreachStatisticsCollector for unified statistics collection.
+ *
+ * @param targetDevice Target device that was breached
+ * @param networkDevices Array of network device persistent states
+ * @param unlockFlags Flags indicating which device types to unlock
+ * @param stats BreachSessionStats for statistics collection
+ */
 @addMethod(PlayerPuppet)
 private func ApplyRemoteBreachNetworkUnlockWithStats(
   targetDevice: ref<ScriptableDeviceComponentPS>,
@@ -211,15 +210,15 @@ private func ApplyRemoteBreachNetworkUnlockWithStats(
     if IsDefined(device) {
       let scriptableDevice: ref<ScriptableDeviceComponentPS> = device as ScriptableDeviceComponentPS;
       if IsDefined(scriptableDevice) {
-        let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(scriptableDevice);
+        let TargetType: TargetType = DeviceTypeUtils.GetDeviceType(scriptableDevice);
 
         // Check if this device type should be unlocked
-        if DeviceTypeUtils.ShouldUnlockByFlags(deviceType, unlockFlags) {
+        if DeviceTypeUtils.ShouldUnlockByFlags(TargetType, unlockFlags) {
           let sharedPS: ref<SharedGameplayPS> = scriptableDevice;
           if IsDefined(sharedPS) {
             // Apply device-type-specific unlock timestamp
             let currentTime: Float = TimeUtils.GetCurrentTimestamp(this.GetGame());
-            TimeUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
+            TimeUtils.SetDeviceUnlockTimestamp(sharedPS, TargetType, currentTime);
           }
         }
       }
@@ -227,10 +226,6 @@ private func ApplyRemoteBreachNetworkUnlockWithStats(
     i += 1;
   }
 }
-
-// ============================================================================
-// DEBUG LOGGING (REMOVED - now handled by statistics)
-// ============================================================================
 
 // ============================================================================
 // PROGRAM PARSING
@@ -305,9 +300,14 @@ private func GetRemoteBreachTargetDevice() -> ref<ScriptableDeviceComponentPS> {
 // NETWORK DEVICE RETRIEVAL
 // ============================================================================
 
-// Get all network devices connected to RemoteBreach target device
-// Uses GetAccessPoints() + GetChildren() API (same as AccessPoint breach)
-// Architecture: Shallow nesting (max 2 levels) using helper methods
+/*
+ * Gets all network devices connected to RemoteBreach target device. Uses
+ * GetAccessPoints() + GetChildren() API (same as AccessPoint breach). Shallow
+ * nesting (max 2 levels) using helper methods.
+ *
+ * @param targetDevice Target device that was breached
+ * @return Array of network device persistent states
+ */
 @addMethod(PlayerPuppet)
 private func GetRemoteBreachNetworkDevices(
   targetDevice: ref<ScriptableDeviceComponentPS>
@@ -336,7 +336,14 @@ private func GetRemoteBreachNetworkDevices(
   return networkDevices;
 }
 
-// Helper: Collect all devices from a single AccessPoint
+/*
+ * Collects all devices from a single AccessPoint. Helper method for network-wide
+ * device collection during breach processing.
+ *
+ * @param apPS AccessPoint persistent state
+ * @param apIndex Index of the AccessPoint in collection
+ * @param networkDevices Output array to append devices to
+ */
 @addMethod(PlayerPuppet)
 private func CollectAccessPointDevices(
   apPS: ref<AccessPointControllerPS>,
@@ -376,10 +383,10 @@ private func ApplyRemoteBreachDeviceUnlockWithStats(
   }
 
   // Use DeviceTypeUtils for centralized device type detection
-  let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(targetDevice);
+  let TargetType: TargetType = DeviceTypeUtils.GetDeviceType(targetDevice);
 
   // Check if this device type should be unlocked based on flags
-  if !DeviceTypeUtils.ShouldUnlockByFlags(deviceType, unlockFlags) {
+  if !DeviceTypeUtils.ShouldUnlockByFlags(TargetType, unlockFlags) {
     stats.devicesSkipped += 1;
     return;
   }
@@ -390,7 +397,7 @@ private func ApplyRemoteBreachDeviceUnlockWithStats(
 
   // Set breach timestamp
   let currentTime: Float = TimeUtils.GetCurrentTimestamp(this.GetGame());
-  TimeUtils.SetDeviceUnlockTimestamp(targetDevice, deviceType, currentTime);
+  TimeUtils.SetDeviceUnlockTimestamp(targetDevice, TargetType, currentTime);
 
   // Set breached subnet event (propagate unlock timestamps to device)
   let setBreachedSubnetEvent: ref<SetBreachedSubnet> = new SetBreachedSubnet();
@@ -402,11 +409,11 @@ private func ApplyRemoteBreachDeviceUnlockWithStats(
 
   // Update statistics
   stats.devicesUnlocked += 1;
-  if Equals(deviceType, DeviceType.Camera) {
+  if Equals(TargetType, TargetType.Camera) {
     stats.cameraCount += 1;
-  } else if Equals(deviceType, DeviceType.Turret) {
+  } else if Equals(TargetType, TargetType.Turret) {
     stats.turretCount += 1;
-  } else if Equals(deviceType, DeviceType.NPC) {
+  } else if Equals(TargetType, TargetType.NPC) {
     stats.npcNetworkCount += 1;
   } else {
     stats.basicCount += 1;
@@ -434,54 +441,34 @@ private func RecordRemoteBreachPosition(targetDevice: ref<ScriptableDeviceCompon
 }
 
 // ============================================================================
-// NEARBY STANDALONE DEVICE UNLOCK (PR #5 Feature)
+// DEVICE SEARCH (TargetingSystem Integration)
 // ============================================================================
 
 /*
- * Unlock nearby standalone devices after breaching any device
+ * Finds all devices within RadialBreach radius using TargetingSystem
  *
- * FEATURE: Auto-unlock standalone devices within 50m radius
- * RATIONALE: Extends RemoteBreach effectiveness to nearby isolated devices
+ * Visibility: Public (used by RemoteBreachLockSystem for Option C implementation)
  *
- * TODO: Maybe add NPC subnets here too to make hacking regular civilian NPCs lorefriendly. - Pierre
+ * @param targetingSystem - TargetingSystem instance
+ * @return Mixed array (network + standalone devices)
  */
-@addMethod(PlayerPuppet)
-private func UnlockNearbyStandaloneDevices(breachPosition: Vector4, unlockFlags: BreachUnlockFlags) -> Void {
-  let gameInstance: GameInstance = this.GetGame();
-  let targetingSystem: ref<TargetingSystem> = GameInstance.GetTargetingSystem(gameInstance);
-
-  if !IsDefined(targetingSystem) {
-    BNWarn("[RadialUnlock]", "TargetingSystem not available, cannot unlock nearby devices");
-    return;
-  }
-
-  // Search for nearby devices
-  let nearbyDevices: array<ref<ScriptableDeviceComponentPS>> = this.FindNearbyDevices(targetingSystem);
-
-  // Filter and unlock standalone devices (with unlockFlags check)
-  this.UnlockStandaloneDevices(nearbyDevices, unlockFlags);
-}
-
-/// Finds all devices within RadialBreach radius using TargetingSystem
-/// Visibility: Public (used by RemoteBreachLockSystem for Option C implementation)
-/// Returns: Mixed array (network + standalone devices)
 @addMethod(PlayerPuppet)
 public func FindNearbyDevices(
   targetingSystem: ref<TargetingSystem>
 ) -> array<ref<ScriptableDeviceComponentPS>> {
   let devices: array<ref<ScriptableDeviceComponentPS>>;
 
-  // Setup device search query
-  let query: TargetSearchQuery;
-  query.searchFilter = TSF_All(TSFMV.Obj_Device);
-  query.testedSet = TargetingSet.Complete;
-  query.maxDistance = GetRadialBreachRange(this.GetGame()); // Syncs with RadialBreach range
-  query.filterObjectByDistance = true;
-  query.includeSecondaryTargets = false;
-  query.ignoreInstigator = true;
+  // Setup device search query using DeviceUnlockUtils abstraction
+  let setup: TargetingSetup = DeviceUnlockUtils.SetupDeviceTargeting(this, this.GetGame());
+  if !setup.isValid {
+    return devices;
+  }
+
+  // Override query for device-specific search
+  setup.query.searchFilter = TSF_All(TSFMV.Obj_Device);
 
   let parts: array<TS_TargetPartInfo>;
-  targetingSystem.GetTargetParts(this, query, parts);
+  targetingSystem.GetTargetParts(this, setup.query, parts);
 
   // Extract ScriptableDeviceComponentPS from target parts
   let i: Int32 = 0;
@@ -504,26 +491,30 @@ public func FindNearbyDevices(
   return devices;
 }
 
-/// Finds all vehicles within RadialBreach radius using TargetingSystem
-/// RATIONALE: TSF_All(TSFMV.Obj_Device) excludes VehicleObject, requires no searchFilter
-/// Visibility: Public (used by RemoteBreachLockSystem for failure penalty)
-/// Returns: Array of VehicleComponentPS (extends ScriptableDeviceComponentPS)
+/*
+ * Finds all vehicles within RadialBreach radius using TargetingSystem
+ *
+ * RATIONALE: TSF_All(TSFMV.Obj_Device) excludes VehicleObject, requires no searchFilter
+ * Visibility: Public (used by RemoteBreachLockSystem for failure penalty)
+ *
+ * @param targetingSystem - TargetingSystem instance
+ * @return Array of VehicleComponentPS (extends ScriptableDeviceComponentPS)
+ */
 @addMethod(PlayerPuppet)
 public func FindNearbyVehicles(
   targetingSystem: ref<TargetingSystem>
 ) -> array<ref<VehicleComponentPS>> {
   let vehicles: array<ref<VehicleComponentPS>>;
 
-  // Setup vehicle search query (no searchFilter = all entity types)
-  let query: TargetSearchQuery;
-  query.testedSet = TargetingSet.Complete;
-  query.maxDistance = GetRadialBreachRange(this.GetGame());
-  query.filterObjectByDistance = true;
-  query.includeSecondaryTargets = false;
-  query.ignoreInstigator = true;
+  // Setup vehicle search query using DeviceUnlockUtils abstraction
+  let setup: TargetingSetup = DeviceUnlockUtils.SetupDeviceTargeting(this, this.GetGame());
+  if !setup.isValid {
+    return vehicles;
+  }
 
+  // No searchFilter for vehicle search (excludes devices, includes VehicleObject)
   let parts: array<TS_TargetPartInfo>;
-  targetingSystem.GetTargetParts(this, query, parts);
+  targetingSystem.GetTargetParts(this, setup.query, parts);
 
   // Extract VehicleComponentPS from target parts
   let i: Int32 = 0;
@@ -545,59 +536,3 @@ public func FindNearbyVehicles(
 
   return vehicles;
 }
-
-// Helper: Filter for standalone devices and unlock them
-// Only unlocks devices whose type matches the successful daemons (unlockFlags)
-@addMethod(PlayerPuppet)
-private func UnlockStandaloneDevices(
-  devices: array<ref<ScriptableDeviceComponentPS>>,
-  unlockFlags: BreachUnlockFlags
-) -> Int32 {
-  let unlockedCount: Int32 = 0;
-  let gameInstance: GameInstance = this.GetGame();
-
-  let i: Int32 = 0;
-  while i < ArraySize(devices) {
-    let devicePS: ref<ScriptableDeviceComponentPS> = devices[i];
-    let sharedPS: ref<SharedGameplayPS> = devicePS;
-
-    if IsDefined(sharedPS) {
-      let apControllers: array<ref<AccessPointControllerPS>> = sharedPS.GetAccessPoints();
-
-      // Standalone = no AccessPoints
-      if ArraySize(apControllers) == 0 {
-        if this.UnlockSingleDevice(sharedPS, devicePS, gameInstance, unlockFlags) {
-          unlockedCount += 1;
-        }
-      }
-    }
-
-    i += 1;
-  }
-
-  return unlockedCount;
-}
-
-// Helper: Unlock a single device based on type and unlockFlags
-@addMethod(PlayerPuppet)
-private func UnlockSingleDevice(
-  sharedPS: ref<SharedGameplayPS>,
-  devicePS: ref<ScriptableDeviceComponentPS>,
-  gameInstance: GameInstance,
-  unlockFlags: BreachUnlockFlags
-) -> Bool {
-  // Use DeviceTypeUtils for centralized device type detection
-  let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(devicePS);
-
-  // Check if this device type should be unlocked based on unlockFlags
-  if !DeviceTypeUtils.ShouldUnlockByFlags(deviceType, unlockFlags) {
-    return false; // Device type not unlocked by current breach
-  }
-
-  // Prepare timestamp and set device unlock
-  let currentTime: Float = TimeUtils.GetCurrentTimestamp(gameInstance);
-  TimeUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
-
-  return true;
-}
-

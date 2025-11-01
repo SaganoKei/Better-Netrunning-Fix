@@ -1,54 +1,38 @@
+// ============================================================================
+// BetterNetrunning - Breach Processing
+// ============================================================================
+//
+// PURPOSE:
+// Access Point minigame completion handling with Better Netrunning extensions
+//
+// FUNCTIONALITY:
+// - Bonus daemon injection before base game processing
+// - Progressive subnet unlocking per device type
+// - Radial unlock integration (50m radius breach tracking)
+// - NPC Breach PING execution
+// - Base game daemon effects preservation
+//
+// ARCHITECTURE:
+// - @wrapMethod pattern for mod compatibility
+// - 3-step workflow: pre-processing → base game → post-processing
+// - Composed Method pattern with shallow nesting (max 2 levels)
+// - Blackbox base game processing (acceptable trade-off)
+//
+
 module BetterNetrunning.Breach
 
 import BetterNetrunning.*
 import BetterNetrunningConfig.*
 import BetterNetrunning.Core.*
-
-import BetterNetrunningConfig.*
-import BetterNetrunning.Core.*
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Utils.*
 import BetterNetrunning.RadialUnlock.*
 
 /*
- * Breach processing module for Access Point minigame completion
- * Handles bonus daemon injection, base game processing, and Better Netrunning extensions
+ * Wraps base game RefreshSlaves() with Better Netrunning extensions.
  *
- * ARCHITECTURE:
- * - RefreshSlaves(): @wrapMethod pattern (3-step workflow)
- * - Pre-processing: Bonus daemon injection before base game execution
- * - Base Game Processing: wrappedMethod black box (acceptable for mod compatibility)
- * - Post-processing: Progressive Subnet Unlocking, radial unlock, NPC PING
- *
- * MOD COMPATIBILITY (2025-10-12 Policy):
- * - Uses @wrapMethod to preserve mod compatibility
- * - Base game daemon effects (180s camera/turret) + Better Netrunning permanent unlocks coexist
- * - Acceptable trade-off: wrappedMethod() is black box, but compatibility is prioritized
- *
- * FEATURES:
- * - Bonus daemon injection (settings-based auto-add)
- * - Progressive unlock per device type (cameras, turrets, NPCs, basic devices)
- * - Radial unlock integration (50m radius breach tracking)
- * - NPC Breach PING execution
- */
-
-/*
- * Wraps base game RefreshSlaves() with Better Netrunning extensions
- *
- * VANILLA DIFF: Wraps base game processing with pre/post-processing steps
- * RATIONALE: Preserves base game daemon effects while adding Better Netrunning features
- * @replaceMethod REJECTED (2025-10-12): Mod compatibility prioritized over Composed Method pattern
- *
- * MOD COMPATIBILITY:
- * - Allows other mods to hook RefreshSlaves() (e.g., Daemon Netrunning Revamp)
- * - Tested with: CustomHackingSystem, RadialBreach
- *
- * ACCEPTABLE TRADE-OFFS:
- * - wrappedMethod() is black box (76 lines of base game code from accessPointController.script:416-490)
- * - Debug complexity manageable with base game source reference
- * - Base game daemons (180s) + Better Netrunning permanent unlocks coexist
- *
- * ARCHITECTURE: 3-step workflow (max nesting depth 2 in post-processing)
- * REVIEW DATE: 2025-10-12
+ * VANILLA DIFF: Adds pre-processing (bonus daemons, stats) and post-processing
+ * (extensions + statistics) around base game daemon handling.
  */
 @wrapMethod(AccessPointControllerPS)
 private final func RefreshSlaves(const devices: script_ref<array<ref<DeviceComponentPS>>>) -> Void {
@@ -56,6 +40,11 @@ private final func RefreshSlaves(const devices: script_ref<array<ref<DeviceCompo
   // Pre-processing Step 1: Check if Unconscious NPC Breach
   // ========================================
   let isUnconsciousNPCBreach: Bool = this.IsUnconsciousNPCBreach();
+
+  // Log breach target information (debug mode only)
+  if !isUnconsciousNPCBreach {
+    DebugUtils.LogAccessPointBreachTarget(this, "BreachStart");
+  }
 
   // Create statistics object with correct breach type
   let breachType: String = isUnconsciousNPCBreach ? "UnconsciousNPC" : "AccessPoint";
@@ -70,11 +59,23 @@ private final func RefreshSlaves(const devices: script_ref<array<ref<DeviceCompo
   }
 
   // ========================================
-  // Pre-processing Step 2: Bonus Daemon Injection
+  // Pre-processing Step 2: Collect Displayed Daemons (Before Bonus Injection)
+  // ========================================
+  // CRITICAL: Must collect displayed daemons BEFORE InjectBonusDaemons()
+  // Retrieve from ScriptableSystem (stored in FilterPlayerPrograms)
+  let stateSystem: ref<DisplayedDaemonsStateSystem> = GameInstance.GetScriptableSystemsContainer(this.GetGameInstance())
+    .Get(BNConstants.CLASS_DISPLAYED_DAEMONS_STATE_SYSTEM()) as DisplayedDaemonsStateSystem;
+  if IsDefined(stateSystem) {
+    let displayedDaemons: array<TweakDBID> = stateSystem.GetDisplayedDaemons();
+    BreachStatisticsCollector.CollectDisplayedDaemons(displayedDaemons, stats);
+  }
+
+  // ========================================
+  // Pre-processing Step 3: Bonus Daemon Injection
   // ========================================
   this.InjectBonusDaemons();
 
-  // Get minigame programs for statistics
+  // Get minigame programs for statistics (after bonus injection)
   let minigamePrograms: array<TweakDBID> = FromVariant<array<TweakDBID>>(
     this.GetMinigameBlackboard().GetVariant(GetAllBlackboardDefs().HackingMinigame.ActivePrograms)
   );
@@ -87,9 +88,6 @@ private final func RefreshSlaves(const devices: script_ref<array<ref<DeviceCompo
   stats.unlockTurrets = unlockFlags.unlockTurrets;
   stats.unlockNPCs = unlockFlags.unlockNPCs;
 
-  // Collect executed daemon information for display
-  BreachStatisticsCollector.CollectExecutedDaemons(minigamePrograms, stats);
-
   // ========================================
   // Base Game Processing (Black Box)
   // ========================================
@@ -97,7 +95,7 @@ private final func RefreshSlaves(const devices: script_ref<array<ref<DeviceCompo
   stats.minigameSuccess = true; // RefreshSlaves only called on success
 
   // ========================================
-  // Post-processing: Better Netrunning Extensions + Statistics
+  // Better Netrunning Extensions + Statistics
   // ========================================
   this.ApplyBetterNetrunningExtensionsWithStats(devices, unlockFlags, stats, isUnconsciousNPCBreach);
 
@@ -109,13 +107,13 @@ private final func RefreshSlaves(const devices: script_ref<array<ref<DeviceCompo
 }
 
 // ============================================================================
-// Pre-processing Helpers
+// Pre-processing Helper Methods
 // ============================================================================
 
 /*
  * Checks if current breach is an Unconscious NPC breach
  *
- * DETECTION METHOD: Check if Entity in blackboard is a ScriptedPuppet
+ * @return True if breach target is an NPC puppet
  */
 @addMethod(AccessPointControllerPS)
 private final func IsUnconsciousNPCBreach() -> Bool {
@@ -129,7 +127,6 @@ private final func IsUnconsciousNPCBreach() -> Bool {
 
 /*
  * Injects bonus daemons into Blackboard before base game processing
- * Statistics: Records program count after injection
  */
 @addMethod(AccessPointControllerPS)
 private final func InjectBonusDaemons() -> Void {
@@ -139,7 +136,7 @@ private final func InjectBonusDaemons() -> Void {
   );
 
   // Apply bonus daemons (from Common/BonusDaemonUtils.reds)
-  ApplyBonusDaemons(minigamePrograms, this.GetGameInstance(), "[AccessPoint]");
+  BonusDaemonUtils.ApplyBonusDaemons(minigamePrograms, this.GetGameInstance(), "[AccessPoint]");
 
   // Write back to Blackboard
   minigameBB.SetVariant(
@@ -152,14 +149,19 @@ private final func InjectBonusDaemons() -> Void {
 // Post-processing Helpers
 // ============================================================================
 
+// ============================================================================
+// Post-processing Extensions
+// ============================================================================
+
 /*
- * Applies Better Netrunning extensions after base game processing
- * NEW: Collects statistics during processing
+ * Applies Better Netrunning extensions after base game processing.
  *
- * BUG FIX (2025-10-18):
- * - Issue: Unconscious NPC breach rolls back its own unlocks
- * - Root Cause: RollbackIncorrectVanillaUnlocks() runs after ProcessUnconsciousNPCBreachCompletion()
- * - Solution: Skip RollbackIncorrectVanillaUnlocks() for Unconscious NPC breaches
+ * Uses Composed Method pattern with shallow nesting (max 2 levels).
+ *
+ * @param devices Array of network devices to process
+ * @param unlockFlags Flags indicating which device types to unlock
+ * @param stats Statistics collector for breach session
+ * @param isUnconsciousNPCBreach Whether this is an unconscious NPC breach
  */
 @addMethod(AccessPointControllerPS)
 private final func ApplyBetterNetrunningExtensionsWithStats(
@@ -175,19 +177,13 @@ private final func ApplyBetterNetrunningExtensionsWithStats(
 
   BNTrace("BreachProcessing", s"ApplyBetterNetrunningExtensions - isUnconsciousNPCBreach: \(ToString(isUnconsciousNPCBreach))");
 
+  // Collect executed daemon information AFTER minigame completion
+  BreachStatisticsCollector.CollectExecutedDaemons(minigamePrograms, stats);
+
   // Step 0.5: Rollback incorrect vanilla unlocks (Problem ② fix)
-  // CRITICAL: Skip for Unconscious NPC breaches (they handle unlocks in ProcessUnconsciousNPCBreachCompletion)
-  if !isUnconsciousNPCBreach {
-    BNTrace("BreachProcessing", "Executing RollbackIncorrectVanillaUnlocks (NOT Unconscious NPC breach)");
-    this.RollbackIncorrectVanillaUnlocks(devices, unlockFlags);
-  } else {
-    BNTrace("BreachProcessing", "SKIPPED RollbackIncorrectVanillaUnlocks (Unconscious NPC breach detected)");
-  }
+  this.RollbackIncorrectVanillaUnlocks(devices, unlockFlags);
 
-  // Step 1: Execute Bonus Daemons
-  ProcessMinigamePrograms(minigamePrograms, this, this.GetGameInstance(), stats.executedNormalDaemons, "[AccessPoint]");
-
-  // Step 1.5: Unlock standalone devices/vehicles/NPCs in radius (using unified collector)
+  // Step 1: Unlock standalone devices/vehicles/NPCs in radius (using unified collector)
   this.UnlockStandaloneDevicesInBreachRadius(unlockFlags, stats);
 
   // Step 2: Apply Progressive Subnet Unlocking + Collect Statistics
@@ -201,14 +197,13 @@ private final func ApplyBetterNetrunningExtensionsWithStats(
 }
 
 // ============================================================================
-// Pre-processing Helpers
+// Unconscious NPC Breach Processing
 // ============================================================================
 
 /*
- * Marks unconscious NPC as directly breached (Problem ① fix)
+ * Marks unconscious NPC as directly breached.
  *
- * NOTE: ProcessUnconsciousNPCBreachCompletion() is now called from
- * NPCBreachExperience.reds, not here (to avoid duplicate processing)
+ * VANILLA DIFF: Problem ① fix - Sets m_betterNetrunningWasDirectlyBreached flag.
  */
 @addMethod(AccessPointControllerPS)
 private final func MarkUnconsciousNPCAsDirectlyBreached() -> Void {
@@ -221,62 +216,39 @@ private final func MarkUnconsciousNPCAsDirectlyBreached() -> Void {
     return;  // Not an NPC breach
   }
 
-  BNInfo("UnconsciousNPC", "Detected unconscious NPC breach");
-
   let npcPS: ref<ScriptedPuppetPS> = npcPuppet.GetPuppetPS();
   if IsDefined(npcPS) {
     npcPS.m_betterNetrunningWasDirectlyBreached = true;
+    DebugUtils.LogUnconsciousNPCBreachTarget(npcPuppet, npcPS, "BreachStart");
   }
 }
 
 /*
- * Unlock standalone devices in breach radius (Problem ① fix)
- * ARCHITECTURE: Uses BreachStatisticsCollector for unified radial unlock statistics
+ * Unlocks standalone devices in breach radius.
+ *
+ * Uses BreachStatisticsCollector for unified radial unlock statistics.
+ *
+ * @param unlockFlags Flags indicating which device types to unlock
+ * @param stats Statistics collector for breach session
  */
 @addMethod(AccessPointControllerPS)
 private final func UnlockStandaloneDevicesInBreachRadius(unlockFlags: BreachUnlockFlags, stats: ref<BreachSessionStats>) -> Void {
-  // Collect radial unlock statistics using unified collector
-  BreachStatisticsCollector.CollectRadialUnlockStats(this, unlockFlags, stats, this.GetGameInstance());
-}
-
-/*
- * Unlock vehicles in breach radius (Problem ② fix)
- * DEPRECATED: Functionality merged into BreachStatisticsCollector.CollectRadialUnlockStats()
- * Kept for backward compatibility but not called
- */
-@addMethod(AccessPointControllerPS)
-private final func UnlockVehiclesInBreachRadius(unlockFlags: BreachUnlockFlags, stats: ref<BreachSessionStats>) -> Void {
-  // No-op: Functionality moved to CollectRadialUnlockStats
-}
-
-/*
- * Unlock NPCs in breach radius (Problem ② fix)
- * DEPRECATED: Functionality merged into BreachStatisticsCollector.CollectRadialUnlockStats()
- * Kept for backward compatibility but not called
- */
-@addMethod(AccessPointControllerPS)
-private final func UnlockNPCsInBreachRadius(unlockFlags: BreachUnlockFlags, stats: ref<BreachSessionStats>) -> Void {
-  // No-op: Functionality moved to CollectRadialUnlockStats
+  // Collect radial unlock statistics using unified collector with network separation
+  BreachStatisticsCollector.CollectRadialUnlockStats(this, this.GetID(), unlockFlags, stats, this.GetGameInstance());
 }
 
 /*
  * Rollbacks incorrect vanilla unlocks (Problem ② fix)
  *
- * PURPOSE: Vanilla ProcessMinigameNetworkActions() unlocks ALL devices without checking unlockFlags
- *          This method reverts unlocks for device types that weren't successfully breached
- * ARCHITECTURE: Early return pattern, iterates devices and reverts incorrect breach flags
+ * VANILLA DIFF: ProcessMinigameNetworkActions() unlocks ALL devices without checking unlockFlags
  *
- * BUG FIX (2025-10-12):
- * - Issue: NPC Subnet only success still unlocks vehicles (Basic devices)
- * - Root Cause: Vanilla wrappedMethod() calls ProcessMinigameNetworkActions() on all devices
- * - Solution: Revert breach flags for device types not in unlockFlags
+ * Operations:
+ * - Reverts unlocks for device types that weren't successfully breached
+ * - Only reverts if device was not previously unlocked (timestamp == 0.0)
+ * - Preserves existing unlocks from prior breaches
  *
- * BUG FIX (2025-10-18):
- * - Issue: Unconscious NPC breach rolls back previously unlocked devices
- * - Root Cause: RollbackIncorrectVanillaUnlocks() unconditionally sets timestamp to 0.0,
- *               overwriting existing unlocks from previous breaches
- * - Solution: Only rollback if device was NOT already unlocked (timestamp == 0.0)
- *             Preserve existing unlock timestamps from previous breaches
+ * @param devices Array of network devices
+ * @param unlockFlags Flags indicating successfully breached device types
  */
 @addMethod(AccessPointControllerPS)
 private final func RollbackIncorrectVanillaUnlocks(const devices: script_ref<array<ref<DeviceComponentPS>>>, unlockFlags: BreachUnlockFlags) -> Void {
@@ -286,51 +258,51 @@ private final func RollbackIncorrectVanillaUnlocks(const devices: script_ref<arr
     let sharedPS: ref<SharedGameplayPS> = device as SharedGameplayPS;
 
     if IsDefined(sharedPS) {
-      let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(device);
+      let TargetType: TargetType = DeviceTypeUtils.GetDeviceType(device);
 
       // Check if this device type should NOT be unlocked
-      if !DeviceTypeUtils.ShouldUnlockByFlags(deviceType, unlockFlags) {
+      if !DeviceTypeUtils.ShouldUnlockByFlags(TargetType, unlockFlags) {
         // Get current timestamp to check if device was already unlocked
         let currentTimestamp: Float = 0.0;
-        switch deviceType {
-          case DeviceType.NPC:
+        switch TargetType {
+          case TargetType.NPC:
             currentTimestamp = sharedPS.m_betterNetrunningUnlockTimestampNPCs;
             break;
-          case DeviceType.Camera:
+          case TargetType.Camera:
             currentTimestamp = sharedPS.m_betterNetrunningUnlockTimestampCameras;
             break;
-          case DeviceType.Turret:
+          case TargetType.Turret:
             currentTimestamp = sharedPS.m_betterNetrunningUnlockTimestampTurrets;
             break;
-          default: // DeviceType.Basic
+          default: // TargetType.Basic
             currentTimestamp = sharedPS.m_betterNetrunningUnlockTimestampBasic;
             break;
         }
 
         // Only rollback if device was NOT already unlocked (preserve existing unlocks)
         if currentTimestamp == 0.0 {
-          switch deviceType {
-            case DeviceType.NPC:
+          switch TargetType {
+            case TargetType.NPC:
               sharedPS.m_betterNetrunningUnlockTimestampNPCs = 0.0;
               break;
-            case DeviceType.Camera:
+            case TargetType.Camera:
               sharedPS.m_betterNetrunningUnlockTimestampCameras = 0.0;
               break;
-            case DeviceType.Turret:
+            case TargetType.Turret:
               sharedPS.m_betterNetrunningUnlockTimestampTurrets = 0.0;
               break;
-            default: // DeviceType.Basic
+            default: // TargetType.Basic
               sharedPS.m_betterNetrunningUnlockTimestampBasic = 0.0;
               break;
           }
 
           // DEBUG: Rollback only logged at DEBUG level (non-critical operation)
           BNDebug("RollbackUnlock", "Reverted vanilla unlock for device (Type: " +
-            DeviceTypeUtils.DeviceTypeToString(deviceType) + ")");
+            DeviceTypeUtils.DeviceTypeToString(TargetType) + ")");
         } else {
           // Device was already unlocked by a previous breach - preserve it
           BNDebug("RollbackUnlock", "Preserved existing unlock for device (Type: " +
-            DeviceTypeUtils.DeviceTypeToString(deviceType) +
+            DeviceTypeUtils.DeviceTypeToString(TargetType) +
             ", Timestamp: " + ToString(currentTimestamp) + ")");
         }
       }
@@ -341,7 +313,12 @@ private final func RollbackIncorrectVanillaUnlocks(const devices: script_ref<arr
 }
 
 /*
- * Executes NPC Breach PING if PING program is present (DISABLED - feature removed)
+ * Executes NPC Breach PING if PING program is present
+ *
+ * DISABLED:
+ * Feature removed - single-device PING cannot be implemented without extensive vanilla overrides
+ *
+ * @param minigamePrograms - Array of completed minigame programs
  */
 @addMethod(AccessPointControllerPS)
 private final func ExecuteNPCBreachPingIfNeeded(minigamePrograms: array<TweakDBID>) -> Void {
@@ -350,22 +327,31 @@ private final func ExecuteNPCBreachPingIfNeeded(minigamePrograms: array<TweakDBI
 }
 
 // ============================================================================
-// Supporting Helpers (Reused by Pre/Post-processing)
+// Supporting Helpers
 // ============================================================================
 
-// Helper: Gets hacking minigame blackboard (centralized access)
+/*
+ * Gets hacking minigame blackboard
+ *
+ * @return HackingMinigame blackboard reference
+ */
 @addMethod(AccessPointControllerPS)
 private final func GetMinigameBlackboard() -> ref<IBlackboard> {
   return GameInstance.GetBlackboardSystem(this.GetGameInstance()).Get(GetAllBlackboardDefs().HackingMinigame);
 }
 
 // ============================================================================
-// Device Unlock Implementation (Statistics Version)
+// Device Unlock Implementation
 // ============================================================================
 
 /*
- * Applies breach unlock to devices and collects statistics
- * ARCHITECTURE: Uses BreachStatisticsCollector for unified statistics collection
+ * Applies breach unlock to devices and collects statistics.
+ *
+ * Uses BreachStatisticsCollector for unified statistics collection.
+ *
+ * @param devices Array of network devices to unlock
+ * @param unlockFlags Flags indicating which device types to unlock
+ * @param stats Statistics collector for breach session
  */
 @addMethod(AccessPointControllerPS)
 private final func ApplyBreachUnlockToDevicesWithStats(
@@ -388,7 +374,12 @@ private final func ApplyBreachUnlockToDevicesWithStats(
 }
 
 /*
- * Unlocks single device (statistics collection handled by BreachStatisticsCollector)
+ * Unlocks single device based on unlock flags.
+ *
+ * Statistics collection handled by BreachStatisticsCollector.
+ *
+ * @param device Device power state to unlock
+ * @param unlockFlags Flags indicating which device types to unlock
  */
 @addMethod(AccessPointControllerPS)
 private final func UnlockDevice(
@@ -401,10 +392,10 @@ private final func UnlockDevice(
   }
 
   // Determine device type
-  let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(device);
+  let TargetType: TargetType = DeviceTypeUtils.GetDeviceType(device);
 
   // Check if device should be unlocked
-  if !DeviceTypeUtils.ShouldUnlockByFlags(deviceType, unlockFlags) {
+  if !DeviceTypeUtils.ShouldUnlockByFlags(TargetType, unlockFlags) {
     return;
   }
 
@@ -420,7 +411,11 @@ private final func UnlockDevice(
   );
 }
 
-// Helper: Records network centroid position for radial unlock
+/*
+ * Records network centroid position for radial unlock
+ *
+ * @param devices - Array of network devices
+ */
 @addMethod(AccessPointControllerPS)
 private final func RecordNetworkBreachPosition(const devices: script_ref<array<ref<DeviceComponentPS>>>) -> Void {
   let centroid: Vector4 = this.CalculateNetworkCentroid(devices);
@@ -431,7 +426,12 @@ private final func RecordNetworkBreachPosition(const devices: script_ref<array<r
   }
 }
 
-// Helper: Calculates average position of all network devices
+/*
+ * Calculates average position of all network devices
+ *
+ * @param devices - Array of network devices
+ * @return Network centroid position, or invalid position if no devices
+ */
 @addMethod(AccessPointControllerPS)
 private final func CalculateNetworkCentroid(const devices: script_ref<array<ref<DeviceComponentPS>>>) -> Vector4 {
   let sumX: Float = 0.0;
@@ -462,49 +462,12 @@ private final func CalculateNetworkCentroid(const devices: script_ref<array<ref<
   return Vector4(-999999.0, -999999.0, -999999.0, 1.0);
 }
 
-// Helper: Processes final rewards (money + XP)
-@addMethod(AccessPointControllerPS)
-private final func ProcessFinalRewards(lootResult: BreachLootResult) -> Void {
-  if lootResult.baseMoney >= 1.00 && this.ShouldRewardMoney() {
-    this.RewardMoney(lootResult.baseMoney);
-  }
-  RPGManager.GiveReward(this.GetGameInstance(), t"RPGActionRewards.Hacking", Cast<StatsObjectID>(this.GetMyEntityID()));
-}
-
-// NOTE: ProcessMinigamePrograms() moved to MinigameProgramUtils.reds (shared utility)
-// RATIONALE: DRY principle - shared by AccessPoint and RemoteBreach
-
-// Helper: Processes loot program and updates result data
-// NOTE: This is still used for vanilla loot processing (not daemon execution)
-@addMethod(AccessPointControllerPS)
-private final func ProcessLootProgram(programID: TweakDBID, result: script_ref<BreachLootResult>) -> Void {
-  if programID == BNConstants.PROGRAM_DATAMINE_BASIC() {
-    Deref(result).baseMoney += 1.00;
-  } else if programID == BNConstants.PROGRAM_DATAMINE_ADVANCED() {
-    Deref(result).baseMoney += 1.00;
-    Deref(result).craftingMaterial = true;
-  } else if programID == BNConstants.PROGRAM_DATAMINE_MASTER() {
-    Deref(result).baseShardDropChance += 1.00;
-  }
-  Deref(result).shouldLoot = true;
-  Deref(result).markForErase = true;
-}
-
-// Helper: Processes unlock program and updates unlock flags
-@addMethod(AccessPointControllerPS)
-private final func ProcessUnlockProgram(programID: TweakDBID, flags: script_ref<BreachUnlockFlags>) -> Void {
-  if programID == BNConstants.PROGRAM_UNLOCK_QUICKHACKS() {
-    Deref(flags).unlockBasic = true;
-  } else if programID == BNConstants.PROGRAM_UNLOCK_NPC_QUICKHACKS() {
-    Deref(flags).unlockNPCs = true;
-  } else if programID == BNConstants.PROGRAM_UNLOCK_CAMERA_QUICKHACKS() {
-    Deref(flags).unlockCameras = true;
-  } else if programID == BNConstants.PROGRAM_UNLOCK_TURRET_QUICKHACKS() {
-    Deref(flags).unlockTurrets = true;
-  }
-}
-
-// Helper: Unlocks quickhacks based on device type (legacy compatibility - rarely used)
+/*
+ * Unlocks quickhacks based on device type. Legacy compatibility method - rarely used.
+ *
+ * @param device Device power state to unlock
+ * @param unlockFlags Flags indicating which device types to unlock
+ */
 @addMethod(AccessPointControllerPS)
 public final func ApplyDeviceTypeUnlock(device: ref<DeviceComponentPS>, unlockFlags: BreachUnlockFlags) -> Void {
   let sharedPS: ref<SharedGameplayPS> = device as SharedGameplayPS;
@@ -512,9 +475,9 @@ public final func ApplyDeviceTypeUnlock(device: ref<DeviceComponentPS>, unlockFl
     return;
   }
 
-  let deviceType: DeviceType = DeviceTypeUtils.GetDeviceType(device);
+  let TargetType: TargetType = DeviceTypeUtils.GetDeviceType(device);
 
-  if !DeviceTypeUtils.ShouldUnlockByFlags(deviceType, unlockFlags) {
+  if !DeviceTypeUtils.ShouldUnlockByFlags(TargetType, unlockFlags) {
     return;
   }
 
@@ -522,5 +485,5 @@ public final func ApplyDeviceTypeUnlock(device: ref<DeviceComponentPS>, unlockFl
   this.QueuePSEvent(device, this.ActionSetExposeQuickHacks());
 
   let currentTime: Float = TimeUtils.GetCurrentTimestamp(this.GetGameInstance());
-  TimeUtils.SetDeviceUnlockTimestamp(sharedPS, deviceType, currentTime);
+  TimeUtils.SetDeviceUnlockTimestamp(sharedPS, TargetType, currentTime);
 }
