@@ -147,6 +147,8 @@ function SettingsManager.OverrideConfigFunctions()
         function() return current.EnableClassicMode end)
     Override("BetterNetrunningConfig.BetterNetrunningSettings", "AllowBreachingUnconsciousNPCs;",
         function() return current.AllowBreachUnconscious end)
+    Override("BetterNetrunningConfig.BetterNetrunningSettings", "RadialUnlockCrossNetwork;",
+        function() return current.RadialUnlockCrossNetwork end)
     Override("BetterNetrunningConfig.BetterNetrunningSettings", "QuickhackUnlockDurationHours;",
         function() return current.QuickhackUnlockDurationHours end)
     -- RemoteBreach
@@ -162,6 +164,17 @@ function SettingsManager.OverrideConfigFunctions()
         function() return current.RemoteBreachEnabledVehicle end)
     Override("BetterNetrunningConfig.BetterNetrunningSettings", "RemoteBreachRAMCostPercent;",
         function() return current.RemoteBreachRAMCostPercent end)
+    -- Breach Failure Penalty
+    Override("BetterNetrunningConfig.BetterNetrunningSettings", "BreachFailurePenaltyEnabled;",
+        function() return current.BreachFailurePenaltyEnabled end)
+    Override("BetterNetrunningConfig.BetterNetrunningSettings", "APBreachFailurePenaltyEnabled;",
+        function() return current.APBreachFailurePenaltyEnabled end)
+    Override("BetterNetrunningConfig.BetterNetrunningSettings", "NPCBreachFailurePenaltyEnabled;",
+        function() return current.NPCBreachFailurePenaltyEnabled end)
+    Override("BetterNetrunningConfig.BetterNetrunningSettings", "RemoteBreachFailurePenaltyEnabled;",
+        function() return current.RemoteBreachFailurePenaltyEnabled end)
+    Override("BetterNetrunningConfig.BetterNetrunningSettings", "BreachPenaltyDurationMinutes;",
+        function() return current.BreachPenaltyDurationMinutes end)
     -- Unlocked Quickhacks
     Override("BetterNetrunningConfig.BetterNetrunningSettings", "AlwaysAllowPing;",
         function() return current.AlwaysAllowPing end)

@@ -154,6 +154,15 @@ public abstract class BNConstants {
     return "LocKey#27398";
   }
 
+  // ==================== Device Localization ====================
+  //
+  // Localization prefixes for device name cleanup
+  // ========================================================================
+
+  public static func DEVICE_NAME_PREFIX() -> String {
+    return "Gameplay-Devices-DisplayNames-";
+  }
+
   // ==================== TweakDB IDs ====================
   //
   // TweakDB record identifiers for game data (Daemon Programs, Minigame Difficulty, etc.)

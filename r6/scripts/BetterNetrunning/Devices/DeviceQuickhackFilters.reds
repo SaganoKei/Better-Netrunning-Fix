@@ -1,3 +1,25 @@
+// ============================================================================
+// BetterNetrunning - Device Quickhack Filters
+// ============================================================================
+//
+// PURPOSE:
+//   Post-processes device quickhack actions after base game generation
+//   Integrates CustomHackingSystem actions with Progressive Unlock
+//
+// FUNCTIONALITY:
+//   - RemoteBreach replacement: Replaces vanilla RemoteBreach with CustomAccessBreach
+//   - Duplicate removal: Removes RemoteBreach/CustomAccessBreach if device already unlocked
+//   - Breach lock enforcement: Removes RemoteBreach when device locked by failure
+//   - Quickhack marking: Extends MarkActionsAsQuickHacks for CustomAccessBreach (PuppetAction)
+//   - Common restrictions: Applies power state, RPG checks, illegality to all quickhacks
+//
+// ARCHITECTURE:
+//   - Conditional compilation: Separate implementations for HackingExtensions vs fallback
+//   - Type-based detection: Uses IsDefined(action as RemoteBreach/CustomAccessBreach)
+//   - Helper method pattern: Shared logic extracted to reusable methods
+//   - Guard clause pattern: Early returns for invalid states
+// ============================================================================
+
 module BetterNetrunning.Devices
 import BetterNetrunning.Logging.*
 

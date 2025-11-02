@@ -79,8 +79,8 @@ public enum BreachType {
  */
 @wrapMethod(ScriptableDeviceComponentPS)
 public func FinalizeNetrunnerDive(state: HackingMinigameState) -> Void {
-  // Early Return: Success or penalty disabled
-  if NotEquals(state, HackingMinigameState.Failed) || !BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
+  // Early Return: Success state
+  if NotEquals(state, HackingMinigameState.Failed) {
     wrappedMethod(state);
     return;
   }
@@ -88,8 +88,8 @@ public func FinalizeNetrunnerDive(state: HackingMinigameState) -> Void {
   // Detect breach type for type-specific penalty
   let breachType: BreachType = this.DetectBreachType();
 
-  // Early Return: Type-specific penalty disabled
-  if !this.IsBreachPenaltyEnabledForType(breachType) {
+  // Early Return: Penalty disabled (master switch or type-specific)
+  if !ShouldApplyBreachPenalty(breachType) {
     wrappedMethod(state);
     return;
   }
@@ -165,7 +165,11 @@ public func FinalizeNetrunnerDive(state: HackingMinigameState) -> Void {
     if IsDefined(playerPuppet) {
       let gameInstance: GameInstance = this.GetGameInstance();
       let breachType: BreachType = this.DetectBreachType();
-      ApplyFailurePenalty(playerPuppet, this, gameInstance, breachType);
+
+      // Apply failure penalty if enabled in settings
+      if ShouldApplyBreachPenalty(breachType) {
+        ApplyFailurePenalty(playerPuppet, this, gameInstance, breachType);
+      }
     }
 
     BNInfo("BreachPenalty", "AP breach failed - NPC alert suppressed (SendMinigameFailedToAllNPCs skipped)");
@@ -353,22 +357,54 @@ private func IsBreachPenaltyEnabledForType(breachType: BreachType) -> Bool {
 }
 
 /*
- * Applies penalty based on breach type with unified VFX and trace, but
- * type-specific lock recording (deviceID for AP, timestamp for NPC, position
- * for RemoteBreach).
+ * Validates if breach failure penalty should be applied based on hierarchical settings
  *
- * Penalty breakdown:
- * - AccessPoint: VFX + Device Lock (PersistentID) + Trace
- * - UnconsciousNPC: VFX + NPC Lock (timestamp on PS) + Trace
- * - RemoteBreach: VFX + Position Lock (50m radius) + Trace
+ * Functionality:
+ * - Layer 1 check: Master switch (BreachFailurePenaltyEnabled)
+ * - Layer 2 check: Type-specific switch (AP/NPC/RemoteBreach)
+ * - Returns false if either layer disables penalty
  *
- * Guard Clause pattern for entity validation, type-specific lock recording
- * strategies, unified VFX and trace application for consistency.
+ * @param breachType - Type of breach that failed
+ * @return True if penalty should be applied, false if disabled by settings
+ */
+private static func ShouldApplyBreachPenalty(breachType: BreachType) -> Bool {
+  // Layer 1: Master switch
+  if !BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
+    return false;
+  }
+
+  // Layer 2: Type-specific switch
+  if Equals(breachType, BreachType.AccessPoint) {
+    return BetterNetrunningSettings.APBreachFailurePenaltyEnabled();
+  }
+  if Equals(breachType, BreachType.UnconsciousNPC) {
+    return BetterNetrunningSettings.NPCBreachFailurePenaltyEnabled();
+  }
+  if Equals(breachType, BreachType.RemoteBreach) {
+    return BetterNetrunningSettings.RemoteBreachFailurePenaltyEnabled();
+  }
+
+  // Unknown type: Default to RemoteBreach setting
+  return BetterNetrunningSettings.RemoteBreachFailurePenaltyEnabled();
+}
+
+/*
+ * Applies breach failure penalty with type-specific lock recording
  *
- * @param player Player reference
- * @param devicePS Device persistent state
- * @param gameInstance Game instance
- * @param breachType Type of breach that failed
+ * Penalty components:
+ * - VFX: Red glitch effect (2-3 seconds)
+ * - Lock recording: Device-specific (PersistentID for AP, timestamp for NPC, position for RemoteBreach)
+ * - Trace: Position reveal attempt (60s upload, requires netrunner NPC)
+ *
+ * Architecture: Guard Clause pattern for entity validation
+ *
+ * CRITICAL: Caller must verify penalty should be applied using ShouldApplyBreachPenalty()
+ * before calling this function. No settings check is performed internally.
+ *
+ * @param player - Player reference
+ * @param devicePS - Device persistent state
+ * @param gameInstance - Game instance
+ * @param breachType - Type of breach that failed (AccessPoint/UnconsciousNPC/RemoteBreach)
  */
 public static func ApplyFailurePenalty(
   player: ref<PlayerPuppet>,
@@ -406,20 +442,22 @@ public static func ApplyFailurePenalty(
 }
 
 /*
- * ApplyFailurePenalty() overload for UnconsciousNPC breach using ScriptedPuppet directly
- * to avoid sibling class casting issues (PuppetDeviceLinkPS ↔ ScriptableDeviceComponentPS).
+ * ApplyFailurePenalty() overload for UnconsciousNPC breach
+ *
+ * Uses ScriptedPuppet directly to avoid sibling class casting issues
+ * (PuppetDeviceLinkPS ↔ ScriptableDeviceComponentPS).
  *
  * Penalty components:
- * - Red glitch VFX
- * - Timestamp on ScriptedPuppetPS.m_betterNetrunningNPCBreachFailedTimestamp
- * - Position reveal trace attempt
+ * - VFX: Red glitch effect
+ * - Lock: Timestamp on ScriptedPuppetPS.m_betterNetrunningNPCBreachFailedTimestamp
+ * - Trace: Position reveal attempt
  *
- * Reuses ApplyBreachFailurePenaltyVFX(), TriggerTraceAttempt(), and
- * RecordBreachFailureTimestamp() for DRY principle.
+ * CRITICAL: Caller must verify penalty should be applied using ShouldApplyBreachPenalty()
+ * before calling this function. No settings check is performed internally.
  *
- * @param player Player reference
- * @param npcPuppet Target NPC puppet
- * @param gameInstance Game instance
+ * @param player - Player reference
+ * @param npcPuppet - Target NPC puppet
+ * @param gameInstance - Game instance
  */
 public static func ApplyFailurePenalty(
   player: ref<PlayerPuppet>,

@@ -94,11 +94,11 @@ private final func ActionCustomRemoteBreach() -> ref<RemoteBreachAction> {
     let canExecute: Bool;
     let inactiveReason: String = RemoteBreachLockUtils.GetRemoteBreachInactiveReason(action, this, player, canExecute);
 
-    // SetInactiveWithReason: Only call if action should be inactive
-    // - 1st arg: inactive flag (true = inactive, false = active)
+    // SetInactiveWithReason: Only call if action cannot be executed
+    // - 1st arg: isActiveIf (false = mark as inactive, true = keep active)
     // - 2nd arg: LocKey string (reason for being inactive)
     if !canExecute {
-      action.SetInactiveWithReason(true, inactiveReason);
+      action.SetInactiveWithReason(false, inactiveReason);
     }
 
     // Directly call InitializePrograms() on the concrete type

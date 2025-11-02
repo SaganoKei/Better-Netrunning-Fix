@@ -314,13 +314,9 @@ protected final func FinalizeGetQuickHackActions(outActions: script_ref<array<re
     return;
   }
 
-  // Log device quickhack state (debug mode only)
-  DebugUtils.LogDeviceQuickhackState(this, "DeviceQuickhacks");
-
   // Base game processing: Generate RemoteBreach + Ping + Apply restrictions
   wrappedMethod(outActions, context);
 
   // Post-processing: Apply Better Netrunning enhancements
   this.ApplyBetterNetrunningDeviceFilters(outActions);
 }
-

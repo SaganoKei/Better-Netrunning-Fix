@@ -6,6 +6,7 @@
 // RESPONSIBILITIES:
 // - RemoteBreach visibility control (show/hide based on device state)
 // - RemoteBreach action injection (Computer, Vehicle, Device)
+// - RemoteBreach RAM insufficient display fix (red/locked UI state)
 // - Device unlock state detection (daemon flags + RemoteBreach daemon completion)
 // - RemoteBreach action removal from unlocked devices
 //
@@ -14,6 +15,11 @@
 //   1. Device unlocked via daemon (UnlockQuickhacks/Camera/Turret)
 //   2. RemoteBreach completed ANY daemon (Basic/NPC/Camera/Turret)
 // Both conditions use OR logic.
+//
+// RAM INSUFFICIENT DISPLAY:
+// RemoteBreach shows red/locked state when player RAM < RemoteBreach RAM cost.
+// Vanilla only checks RAM for cyberdeck QuickHacks (playerQHacksList).
+// RemoteBreach is CET-generated (not in cyberdeck) → requires custom RAM check.
 //
 // ARCHITECTURE:
 // - AccessPointBreach: Dynamic filtering via vanilla hooks (betterNetrunning.reds)
@@ -28,6 +34,8 @@
 // ============================================================================
 
 module BetterNetrunning.RemoteBreach.UI
+
+import BetterNetrunning.Logging.*
 import BetterNetrunning.Core.*
 import BetterNetrunning.RemoteBreach.Core.*
 import BetterNetrunning.RemoteBreach.Common.*
@@ -300,6 +308,88 @@ private final func RemoveCustomRemoteBreachAction(outActions: script_ref<array<r
       ArrayErase(Deref(outActions), i);
       break;
     }
+    i += 1;
+  }
+}
+
+// ============================================================================
+// RAM Insufficient Display Fix
+// ============================================================================
+
+/*
+ * Post-processes QuickHack UI translation to add RemoteBreach RAM checks.
+ *
+ * CRITICAL: This @wrapMethod wraps CustomHackingSystem's @replaceMethod implementation.
+ * wrappedMethod() calls CustomHackingSystem version (NOT vanilla QuickHackableHelper).
+ *
+ * VANILLA DIFF: Adds RemoteBreach-specific RAM check after CustomHackingSystem processing.
+ * CustomHackingSystem @replaceMethod only checks RAM for cyberdeck QuickHacks (playerQHacksList).
+ * RemoteBreach is CET-generated (not in cyberdeck) → requires explicit check.
+ *
+ * @param actions - Array of device actions (CustomHackingSystem signature: array<ref<DeviceAction>>)
+ * @param commands - Array of QuickhackData UI structures (CustomHackingSystem signature: script_ref<array<ref<QuickhackData>>>)
+ * @param gameObject - Target game object (CustomHackingSystem signature: ref<GameObject>)
+ * @param scriptableComponentPS - Device persistent state (CustomHackingSystem signature: ref<ScriptableDeviceComponentPS>)
+ */
+@if(ModuleExists("HackingExtensions"))
+@wrapMethod(QuickHackableHelper)
+public static func TranslateActionsIntoQuickSlotCommands(const actions: array<ref<DeviceAction>>, commands: script_ref<array<ref<QuickhackData>>>, gameObject: ref<GameObject>, scriptableComponentPS: ref<ScriptableDeviceComponentPS>) -> Void {
+  // Step 1: Call CustomHackingSystem @replaceMethod (wrappedMethod = CustomHackingSystem version, NOT vanilla)
+  wrappedMethod(actions, commands, gameObject, scriptableComponentPS);
+
+  // Step 2: Get player reference (needed for CanPayCost check)
+  let playerRef: ref<PlayerPuppet> = GetPlayer(gameObject.GetGame());
+  if !IsDefined(playerRef) {
+    BNDebug("RemoteBreachVisibility", "Player not defined - EXIT");
+    return; // Early return if player not available
+  }
+
+  // Step 3: Process RemoteBreach actions for RAM check
+  let i: Int32 = 0;
+  let commandsSize: Int32 = ArraySize(Deref(commands));
+  while i < commandsSize {
+    let action: ref<ScriptableDeviceAction> = Deref(commands)[i].m_action as ScriptableDeviceAction;
+
+    // Check if this is a RemoteBreach action and perform RAM-based locking
+    if IsDefined(action) && BNConstants.IsRemoteBreachAction(action.GetClassName()) {
+      // Cast to BaseRemoteBreachAction to access RemoteBreach-specific methods
+      let remoteBreachAction: ref<BaseRemoteBreachAction> = action as BaseRemoteBreachAction;
+      if IsDefined(remoteBreachAction) {
+        // Check RAM sufficiency using action's CanPayCost method
+        let canPay: Bool = remoteBreachAction.CanPayCost(playerRef, true);
+
+        // Log RAM check details (structured logging)
+        let playerStatPoolSystem: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(playerRef.GetGame());
+        if IsDefined(playerStatPoolSystem) {
+          DebugUtils.LogRemoteBreachRAMCheck(
+            action.GetClassName(),
+            remoteBreachAction.GetCost(),
+            playerStatPoolSystem.GetStatPoolValue(Cast<StatsObjectID>(playerRef.GetEntityID()), gamedataStatPoolType.Memory, false),
+            playerStatPoolSystem.GetStatPoolValue(Cast<StatsObjectID>(playerRef.GetEntityID()), gamedataStatPoolType.Memory, true),
+            canPay,
+            "RemoteBreachVisibility"
+          );
+        }
+
+        if !canPay {
+          BNDebug("RemoteBreachVisibility", "RAM insufficient - setting locked state");
+          Deref(commands)[i].m_isLocked = true;
+          Deref(commands)[i].m_inactiveReason = BNConstants.LOCKEY_RAM_INSUFFICIENT();
+        }
+      } else {
+        BNDebug("RemoteBreachVisibility", "Failed to cast to BaseRemoteBreachAction - skipping");
+      }
+    }
+
+    // Ensure QuickhackData reflects the action's own inactive state (some systems set inactivity on the action at creation)
+    if !Deref(commands)[i].m_isLocked && IsDefined(Deref(commands)[i].m_action) {
+      let linkedAction: ref<ScriptableDeviceAction> = Deref(commands)[i].m_action as ScriptableDeviceAction;
+      if IsDefined(linkedAction) && linkedAction.IsInactive() {
+        Deref(commands)[i].m_isLocked = true;
+        Deref(commands)[i].m_inactiveReason = linkedAction.GetInactiveReason();
+      }
+    }
+
     i += 1;
   }
 }

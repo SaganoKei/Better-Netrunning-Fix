@@ -256,6 +256,7 @@ public abstract class BaseRemoteBreachAction extends CustomAccessBreach {
         }
 
         if !IsDefined(executor) {
+            BNDebug("BaseRemoteBreachAction", "CanPayCost: executor not defined, returning false");
             return false;
         }
 

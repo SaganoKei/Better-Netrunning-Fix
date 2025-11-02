@@ -57,7 +57,7 @@ Better Netrunning supports three breach types with distinct characteristics:
 | Item | AP Breach | Unconscious NPC Breach | Remote Breach |
 |------|-----------|------------------------|---------------|
 | **Entity & Interaction** | AccessPoint entity interaction | Unconscious NPC interaction<br>("Breach Unconscious Officer") | CustomHackingSystem API<br>(Quickhack on Computer/Device/Camera/etc.) |
-| **Blackboard Flags** | `RemoteBreach = false`<br>`OfficerBreach = false` | `RemoteBreach = false`<br>`OfficerBreach = true` | `RemoteBreach = true`<br>`OfficerBreach = false` |
+| **Blackboard Flags** | (Vanilla NetworkBlackboard setup) | (Detected via Entity type check:<br>ScriptedPuppet) | `RemoteBreach = true`<br>`OfficerBreach = false` |
 | **Target Entity** | AccessPoint | ScriptedPuppet (unconscious state) | Device, Computer, Camera, Turret, Vehicle, ScriptedPuppet |
 | **Network Connection Requirement** | ❌ Not required (AP itself is hub) | ✅ Required via `IsConnectedToBackdoorDevice()` | ⚠️ Network access relaxation<br>(Always returns true for standalone devices) |
 | **Breach Failure Penalty** | ✅ Applied (all penalties) | ✅ Applied (all penalties) | ✅ Applied (all penalties) |
@@ -375,7 +375,7 @@ AutoDatamineBySuccessCount = false:
 |------|-----------|------------------------|---------------|
 | **RAM Cost** | ❌ None | ❌ None | ✅ Yes (configurable) |
 | **Cost Calculation** | - | - | `RemoteBreachRAMCostPercent` × Max RAM |
-| **Default** | - | - | 35% |
+| **Default** | - | - | 50% |
 
 ---
 
@@ -575,19 +575,18 @@ BetterNetrunningSettings.* (REDscript static functions)
 REDscript Game Logic
 ```
 
-**Settings Categories (12 total):**
+**Settings Categories (11 total):**
 1. Controls - Breaching hotkey configuration
 2. Breaching - Classic mode, Unconscious NPC breach toggle
 3. RemoteBreach - Device-specific toggles, RAM cost
 4. BreachPenalty - Failure penalties, RemoteBreach lock duration
 5. AccessPoints - Auto-datamine, Auto-ping, Daemon visibility
-6. RemovedQuickhacks - Block camera/turret disable quickhacks
-7. UnlockedQuickhacks - Always-available quickhacks (Ping, Whistle, Distract)
-8. Progression - Requirement toggles (Cyberdeck, Intelligence, Rarity)
-9. ProgressionCyberdeck - Cyberdeck tier requirements per subnet
-10. ProgressionIntelligence - Intelligence level requirements per subnet
-11. ProgressionEnemyRarity - Enemy rarity requirements per subnet
-12. Debug - Debug logging toggle
+6. UnlockedQuickhacks - Always-available quickhacks (Ping, Whistle, Distract)
+7. Progression - Requirement toggles (Cyberdeck, Intelligence, Rarity)
+8. ProgressionCyberdeck - Cyberdeck tier requirements per subnet
+9. ProgressionIntelligence - Intelligence level requirements per subnet
+10. ProgressionEnemyRarity - Enemy rarity requirements per subnet
+11. Debug - Debug logging toggle
 
 **Total Settings:** 76 configuration options
 
@@ -1049,7 +1048,7 @@ Purpose: Control based on physical distance (UnlockIfNoAccessPoint setting)
 | Parameter | AP Breach | Unconscious NPC Breach | Remote Breach |
 |-----------|-----------|------------------------|---------------|
 | **Timer** | 1.0x | **1.5x** | 1.0x |
-| **RAM Cost** | ❌ None | ❌ None | ✅ Yes (35% default) |
+| **RAM Cost** | ❌ None | ❌ None | ✅ Yes (50% default) |
 | **Configuration Source** | NetworkTDBID | Character Record | TweakDB (CET Registration) |
 
 ---

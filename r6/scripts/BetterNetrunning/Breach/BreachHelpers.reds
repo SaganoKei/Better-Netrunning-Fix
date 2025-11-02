@@ -136,15 +136,13 @@ protected cb func OnAccessPointMiniGameStatus(evt: ref<AccessPointMiniGameStatus
     // Vanilla alarm trigger disabled - prevents hostility on failed breach attempt
   }
 
-  // BREACH PENALTY: Apply failure penalty if breach failed
-  // NOTE: Uses ApplyFailurePenalty(player, npcPuppet, gameInstance) overload
-  // because PuppetDeviceLinkPS and ScriptableDeviceComponentPS are sibling classes
-  // and cannot be cast to each other.
-  if Equals(evt.minigameState, HackingMinigameState.Failed) && BetterNetrunningSettings.BreachFailurePenaltyEnabled() {
+  // Apply breach failure penalty if enabled (NPC-specific overload)
+  // Uses ApplyFailurePenalty(player, npcPuppet, gameInstance) overload to avoid
+  // sibling class casting issues (PuppetDeviceLinkPS ↔ ScriptableDeviceComponentPS)
+  if Equals(evt.minigameState, HackingMinigameState.Failed) && ShouldApplyBreachPenalty(BreachType.UnconsciousNPC) {
     let player: ref<PlayerPuppet> = GetPlayer(this.GetGame());
 
     if IsDefined(player) && IsDefined(this) {
-      // Use NPC-specific overload: ApplyFailurePenalty(player, npcPuppet, gameInstance)
       ApplyFailurePenalty(player, this, this.GetGame());
       BNInfo("OnAccessPointMiniGameStatus", "Unconscious NPC breach failed - penalty applied via overload");
     } else {

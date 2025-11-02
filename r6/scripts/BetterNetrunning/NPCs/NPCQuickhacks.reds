@@ -73,14 +73,12 @@ public func OnSetExposeQuickHacks(evt: ref<SetExposeQuickHacks>) -> EntityNotifi
  * - Pre-processing: Calculate permissions
  * - Base Game: 76-line black box (wrappedMethod)
  * - Post-processing: Remove AccessBreach + apply Progressive Unlock
+ * - Debug Logging: Log actual quickhack state (wrappedMethod後)
  */
 @wrapMethod(ScriptedPuppetPS)
 public final const func GetAllChoices(const actions: script_ref<array<wref<ObjectAction_Record>>>, const context: script_ref<GetActionsContext>, puppetActions: script_ref<array<ref<PuppetAction>>>) -> Void {
   // Pre-processing: Calculate NPC permissions (breach state + progression)
   let permissions: NPCHackPermissions = this.CalculateNPCHackPermissions();
-
-  // Log NPC quickhack state (debug mode only)
-  DebugUtils.LogNPCQuickhackState(this, "NPCQuickhacks");
 
   // Base Game Processing: Generate quickhacks with wrappedMethod()
   wrappedMethod(actions, context, puppetActions);
@@ -88,6 +86,9 @@ public final const func GetAllChoices(const actions: script_ref<array<wref<Objec
   // Post-processing: Apply Better Netrunning filter
   let attiudeTowardsPlayer: EAIAttitude = this.GetOwnerEntity().GetAttitudeTowards(GetPlayer(this.GetGameInstance()));
   this.ApplyBetterNetrunningQuickhackFilter(puppetActions, permissions, attiudeTowardsPlayer);
+
+  // Debug Logging: Log NPC quickhack state with actual action list (after wrappedMethod)
+  DebugUtils.LogNPCQuickhackState(this, puppetActions, "NPCQuickhacks");
 }
 
 /*

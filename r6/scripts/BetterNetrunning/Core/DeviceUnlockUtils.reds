@@ -72,10 +72,6 @@ enum NetworkClassification {
  * - ProcessEntity(): Template method defining common processing flow
  * - Hook methods: CastToSpecificType(), ClassifyNetwork(), UnlockEntity()
  * - Stats tracking: Standalone/CrossNetwork counts and unlock success counts
- *
- * DEPENDENCIES:
- * - ExtractAndValidateEntity() for entity extraction + distance check
- * - NetworkClassification enum, ClassifyXxxNetwork() helpers
  */
 public abstract class EntityUnlockProcessor {
     // Context parameters (set via Initialize())
@@ -224,10 +220,6 @@ public abstract class EntityUnlockProcessor {
  * - CastToSpecificType(): Casts to Device → DevicePS → SharedGameplayPS
  * - ClassifyNetwork(): Uses ClassifyDeviceNetwork() helper
  * - UnlockEntity(): Calls UnlockDeviceInRadius()
- *
- * DEPENDENCIES:
- * - ClassifyDeviceNetwork() helper
- * - UnlockDeviceInRadius() function
  */
 public class DeviceUnlockProcessor extends EntityUnlockProcessor {
     // Device-specific references (cached during CastToSpecificType)
@@ -287,9 +279,6 @@ public class DeviceUnlockProcessor extends EntityUnlockProcessor {
  * - CastToSpecificType(): Casts to VehicleObject
  * - ClassifyNetwork(): Always returns PureStandalone (vehicles have no network)
  * - UnlockEntity(): Calls TryUnlockVehicle()
- *
- * DEPENDENCIES:
- * - TryUnlockVehicle() function
  */
 public class VehicleUnlockProcessor extends EntityUnlockProcessor {
     // Vehicle-specific reference (cached during CastToSpecificType)
@@ -340,10 +329,6 @@ public class VehicleUnlockProcessor extends EntityUnlockProcessor {
  * - CastToSpecificType(): Casts to ScriptedPuppet, gets ScriptedPuppetPS
  * - ClassifyNetwork(): Uses ClassifyNPCNetwork() helper
  * - UnlockEntity(): Calls UnlockStandaloneNPC()
- *
- * DEPENDENCIES:
- * - ClassifyNPCNetwork() helper
- * - UnlockStandaloneNPC() function
  */
 public class NPCUnlockProcessor extends EntityUnlockProcessor {
     // NPC-specific references (cached during CastToSpecificType)

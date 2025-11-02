@@ -131,7 +131,7 @@ public static func BNTrace(context: String, message: String) -> Void {
 
 private static func LogWithLevel(level: LogLevel, context: String, message: String) -> Void {
   let gameInstance: GameInstance = GetGameInstance();
-  let loggerState: ref<LoggerStateSystem> = GameInstance.GetScriptableSystemsContainer(gameInstance).Get(n"BetterNetrunning.Common.LoggerStateSystem") as LoggerStateSystem;
+  let loggerState: ref<LoggerStateSystem> = GameInstance.GetScriptableSystemsContainer(gameInstance).Get(n"BetterNetrunning.Logging.LoggerStateSystem") as LoggerStateSystem;
 
   if !IsDefined(loggerState) {
     // Fallback: Output without deduplication if system not available

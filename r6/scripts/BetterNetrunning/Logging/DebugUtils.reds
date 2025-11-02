@@ -7,16 +7,19 @@
 //   Built on top of Logger.reds (BNInfo/BNDebug/BNWarn functions)
 //
 // FUNCTIONALITY:
-//   - Device quickhack state logging (locked/unlocked state)
-//   - NPC quickhack state logging (breach flags, network state)
-//   - Breach target information logging (location, device type, network info)
-//   - Network device type scanning (cameras, turrets, NPCs, doors)
+//   - Device scan logging: Outputs quickhack state when player completes scanning
+//   - Device quickhack state logging: Locked/unlocked state per action
+//   - NPC quickhack state logging: Breach flags, network state
+//   - Breach target information logging: Location, device type, network info
+//   - Program filtering logging: Daemon removal tracking with before/after counts
+//   - RemoteBreach RAM check logging: Cost validation with current/max RAM
 //
 // ARCHITECTURE:
 //   - Layered logging: DebugUtils → Logger.reds → RED4ext.ModLog
 //   - Settings-aware: Checks EnableDebugLog before output
 //   - Structured output: Section headers (INFO) + detailed data (DEBUG)
 //   - Location tracking: X/Y/Z coordinates for all targets
+//   - Event-driven: OnScanningActionFinishedEvent hook for scan-time logging
 //
 
 module BetterNetrunning.Logging
@@ -40,7 +43,7 @@ public abstract class DebugUtils {
   // Removes "Gameplay-Devices-DisplayNames-" prefix from device name
   // and converts LocKey to localized string
   public static func CleanDeviceName(rawName: String) -> String {
-    let prefix: String = "Gameplay-Devices-DisplayNames-";
+    let prefix: String = BNConstants.DEVICE_NAME_PREFIX();
     let cleaned: String = rawName;
 
     // Remove prefix if present
@@ -50,85 +53,127 @@ public abstract class DebugUtils {
 
     // Convert LocKey to localized string
     if StrBeginsWith(cleaned, "LocKey#") {
-      return GetLocalizedTextByKey(StringToName(cleaned));
+      return GetLocalizedText(cleaned);
     }
 
     return cleaned;
   }
 
   // ============================================================================
+  // QUICKHACK LIST LOGGING (COMMON HELPER)
+  // ============================================================================
+
+  /*
+   * Logs quickhack list with localized names and lock status
+   *
+   * Common helper for both device and NPC quickhack logging
+   * Accepts DeviceAction parent type (compatible with PuppetAction via inheritance)
+   *
+   * @param actions - Array of device actions (DeviceAction or PuppetAction)
+   * @param logContext - Context label for log output
+   */
+  private static func LogQuickhackListFromDeviceActions(
+    actions: array<ref<DeviceAction>>,
+    logContext: String
+  ) -> Void {
+    BNDebug(logContext, "--- Available Quickhacks (" + ToString(ArraySize(actions)) + ") ---");
+
+    let i: Int32 = 0;
+    while i < ArraySize(actions) {
+      let action: ref<DeviceAction> = actions[i];
+      if IsDefined(action) {
+        let baseAction: ref<BaseScriptableAction> = action as BaseScriptableAction;
+        if IsDefined(baseAction) {
+          let isInactive: Bool = baseAction.IsInactive();
+          let status: String = isInactive ? "[LOCKED]" : "[AVAILABLE]";
+
+          let record: ref<ObjectAction_Record> = baseAction.GetObjectActionRecord();
+          if IsDefined(record) {
+            let displayName: String = GetLocalizedTextByKey(record.ObjectActionUI().Caption());
+            let actionName: CName = record.ActionName();
+
+            BNDebug(logContext, "  " + status + " " + displayName + " (" + NameToString(actionName) + ")");
+          }
+        }
+      }
+      i += 1;
+    }
+  }
+
+  // ============================================================================
   // DEVICE QUICKHACK STATE LOGGING
   // ============================================================================
 
-  // Log all quickhack states for a device (locked/unlocked)
-  public static func LogDeviceQuickhackState(devicePS: ref<ScriptableDeviceComponentPS>, opt logContext: String) -> Void {
+  /*
+   * Logs device quickhack state when player completes scanning
+   *
+   * Called from Device.OnScanningActionFinishedEvent wrapper
+   * Outputs device name, location, and available quickhacks
+   *
+   * @param devicePS - Device persistent state to log
+   * @param actions - Array of quickhack actions (already evaluated)
+   */
+  public static func LogDeviceQuickhackStateOnScan(devicePS: ref<ScriptableDeviceComponentPS>, actions: array<ref<DeviceAction>>) -> Void {
     if !BetterNetrunningSettings.EnableDebugLog() {
       return;
     }
 
-    let context: String = NotEquals(logContext, "") ? logContext : "[Debug]";
-    // ScriptableDeviceComponentPS already extends SharedGameplayPS
     let sharedPS: ref<SharedGameplayPS> = devicePS;
-
     if !IsDefined(sharedPS) {
-      BNWarn(context, "Device is not SharedGameplayPS, skipping quickhack state logging");
+      BNWarn("[SCAN]", "Device is not SharedGameplayPS, skipping scan log");
       return;
     }
 
-    BNInfo(context, "===== DEVICE QUICKHACK STATE =====");
-    BNInfo(context, "Device: " + DebugUtils.CleanDeviceName(devicePS.GetDeviceName()));
+    // Get device type and localized name
+    let deviceType: String = DaemonFilterUtils.GetDeviceTypeName(devicePS);
+    let rawDeviceName: String = devicePS.GetDeviceName();
+    let deviceName: String = DebugUtils.CleanDeviceName(rawDeviceName);
+
+    BNInfo("[SCAN]", "===== DEVICE SCANNED =====");
+    BNInfo("[SCAN]", "Device: " + deviceName + " (" + deviceType + ")");
 
     // Location information
     let deviceEntity: ref<GameObject> = devicePS.GetOwnerEntityWeak() as GameObject;
     if IsDefined(deviceEntity) {
       let position: Vector4 = deviceEntity.GetWorldPosition();
-      BNDebug(context, "--- Location ---");
-      BNDebug(context, "x = " + ToString(position.X) + ", y = " + ToString(position.Y) + ", z = " + ToString(position.Z));
+      BNDebug("[SCAN]", "Location: X=" + ToString(position.X) + " Y=" + ToString(position.Y) + " Z=" + ToString(position.Z));
     }
 
-    // Breach state (timestamp-based)
-    BNDebug(context, "--- Breach State (Timestamp) ---");
-    BNDebug(context, "Basic Subnet Breached: " + ToString(BreachStatusUtils.IsBasicBreached(sharedPS)) + " (ts: " + ToString(sharedPS.m_betterNetrunningUnlockTimestampBasic) + ")");
-    BNDebug(context, "Camera Subnet Breached: " + ToString(BreachStatusUtils.IsCamerasBreached(sharedPS)) + " (ts: " + ToString(sharedPS.m_betterNetrunningUnlockTimestampCameras) + ")");
-    BNDebug(context, "Turret Subnet Breached: " + ToString(BreachStatusUtils.IsTurretsBreached(sharedPS)) + " (ts: " + ToString(sharedPS.m_betterNetrunningUnlockTimestampTurrets) + ")");
-    BNDebug(context, "NPC Subnet Breached: " + ToString(BreachStatusUtils.IsNPCsBreached(sharedPS)) + " (ts: " + ToString(sharedPS.m_betterNetrunningUnlockTimestampNPCs) + ")");
+    // Breach state summary
+    BNDebug("[SCAN]", "--- Breach State ---");
+    BNDebug("[SCAN]", "Basic Breached: " + ToString(BreachStatusUtils.IsBasicBreached(sharedPS)));
+    BNDebug("[SCAN]", "Camera Breached: " + ToString(BreachStatusUtils.IsCamerasBreached(sharedPS)));
+    BNDebug("[SCAN]", "Turret Breached: " + ToString(BreachStatusUtils.IsTurretsBreached(sharedPS)));
+    BNDebug("[SCAN]", "NPC Breached: " + ToString(BreachStatusUtils.IsNPCsBreached(sharedPS)));
 
-    // Network connectivity
-    BNDebug(context, "--- Network State ---");
-    BNDebug(context, "Connected to Network: " + ToString(sharedPS.IsConnectedToPhysicalAccessPoint()));
-    BNDebug(context, "Has Network Backdoor: " + ToString(sharedPS.HasNetworkBackdoor()));
+    // Network state
+    let isConnected: Bool = sharedPS.IsConnectedToPhysicalAccessPoint();
+    let hasBackdoor: Bool = sharedPS.HasNetworkBackdoor();
+    let isStandalone: Bool = !isConnected && !hasBackdoor;
+    BNDebug("[SCAN]", "Network: " + (isConnected ? "Connected" : (hasBackdoor ? "Backdoor" : "Standalone")));
 
-    // Explicit standalone computation for clarity in logs
-    let isStandaloneDevice: Bool = !sharedPS.IsConnectedToPhysicalAccessPoint() && !sharedPS.HasNetworkBackdoor();
-    BNDebug(context, "Is Standalone: " + ToString(isStandaloneDevice));
+    // Quickhack availability (use common helper)
+    DebugUtils.LogQuickhackListFromDeviceActions(actions, "[SCAN]");
 
-    // Quickhack availability (basic examples)
-    BNDebug(context, "--- Quickhack Availability ---");
-
-    // Camera-specific quickhacks
-    if DaemonFilterUtils.IsCamera(devicePS) {
-      BNDebug(context, "[Camera] Remote Disable: Available");
-      BNDebug(context, "[Camera] Friendly Turret: " + ToString(BreachStatusUtils.IsCamerasBreached(sharedPS)));
-    }
-
-    // Turret-specific quickhacks
-    if DaemonFilterUtils.IsTurret(devicePS) {
-      BNDebug(context, "[Turret] Remote Disable: Available");
-      BNDebug(context, "[Turret] Friendly Turret: " + ToString(BreachStatusUtils.IsTurretsBreached(sharedPS)));
-    }
-
-    // Basic device quickhacks
-    BNDebug(context, "[Basic] Distract: " + ToString(BreachStatusUtils.IsBasicBreached(sharedPS)));
-
-    BNInfo(context, "==================================");
+    BNInfo("[SCAN]", "==========================");
   }
 
 // ============================================================================
 // NPC QUICKHACK STATE LOGGING
 // ============================================================================
 
-  // Log all quickhack states for an NPC (locked/unlocked)
-  public static func LogNPCQuickhackState(npcPS: ref<ScriptedPuppetPS>, opt logContext: String) -> Void {
+  /*
+   * Logs NPC quickhack state with actual quickhack list
+   *
+   * @param npcPS - NPC persistent state
+   * @param puppetActions - Array of NPC quickhack actions (script_ref)
+   * @param logContext - Optional context label
+   */
+  public static func LogNPCQuickhackState(
+    npcPS: ref<ScriptedPuppetPS>,
+    puppetActions: script_ref<array<ref<PuppetAction>>>,
+    opt logContext: String
+  ) -> Void {
     if !BetterNetrunningSettings.EnableDebugLog() {
       return;
     }
@@ -172,13 +217,18 @@ public abstract class DebugUtils {
     let isStandaloneNPC: Bool = !npcPS.IsConnectedToAccessPoint() && !deviceLinkPS.IsConnectedToPhysicalAccessPoint() && !deviceLinkPS.HasNetworkBackdoor();
     BNDebug(context, "Is Standalone: " + ToString(isStandaloneNPC));
 
-    // Quickhack availability categories
-    let npcBreached: Bool = BreachStatusUtils.IsNPCsBreached(deviceLinkPS);
-    BNDebug(context, "--- Quickhack Availability ---");
-    BNDebug(context, "[Covert] Memory Wipe, Reboot Optics: " + ToString(npcBreached));
-    BNDebug(context, "[Combat] Short Circuit, Overheat: " + ToString(npcBreached));
-    BNDebug(context, "[Control] Cyberware Malfunction, Weapon Glitch: " + ToString(npcBreached));
-    BNDebug(context, "[Ultimate] Cyberpsychosis, Suicide: " + ToString(npcBreached));
+    // Quickhack availability (use common helper with PuppetAction → DeviceAction upcast)
+    let deviceActions: array<ref<DeviceAction>>;
+    let i: Int32 = 0;
+    while i < ArraySize(Deref(puppetActions)) {
+      let puppetAction: ref<PuppetAction> = Deref(puppetActions)[i];
+      if IsDefined(puppetAction) {
+        ArrayPush(deviceActions, puppetAction);
+      }
+      i += 1;
+    }
+
+    DebugUtils.LogQuickhackListFromDeviceActions(deviceActions, context);
 
     BNInfo(context, "===============================");
   }
@@ -334,4 +384,85 @@ public abstract class DebugUtils {
     BNInfo(context, "=============================");
   }
 
+  // ============================================================================
+  // REMOTEBREACH RAM CHECK LOGGING
+  // ============================================================================
+
+  /*
+   * Log RemoteBreach RAM check details (cost vs current/max RAM)
+   *
+   * @param actionClassName - RemoteBreach action class name
+   * @param ramCost - Required RAM cost
+   * @param currentRAM - Player's current RAM
+   * @param maxRAM - Player's max RAM
+   * @param canPay - Whether player can pay the cost
+   * @param logContext - Optional context label
+   */
+  public static func LogRemoteBreachRAMCheck(
+    actionClassName: CName,
+    ramCost: Int32,
+    currentRAM: Float,
+    maxRAM: Float,
+    canPay: Bool,
+    opt logContext: String
+  ) -> Void {
+    if !BetterNetrunningSettings.EnableDebugLog() {
+      return;
+    }
+
+    let context: String = NotEquals(logContext, "") ? logContext : "[RemoteBreach]";
+
+    BNInfo(context, "===== REMOTEBREACH RAM CHECK =====");
+    BNInfo(context, "Action: " + NameToString(actionClassName));
+    BNDebug(context, "--- RAM Status ---");
+    BNDebug(context, "Cost: " + ToString(ramCost));
+    BNDebug(context, "Current: " + ToString(currentRAM));
+    BNDebug(context, "Max: " + ToString(maxRAM));
+    BNDebug(context, "Can Pay: " + ToString(canPay));
+    BNInfo(context, "==================================");
+  }
+
+}
+
+// ============================================================================
+// DEVICE SCAN EVENT HOOK
+// ============================================================================
+
+/*
+ * Logs device quickhack state when player completes scanning
+ *
+ * VANILLA DIFF: Adds debug logging after scan completion
+ * Called by native engine when scan finishes (ScanningActionFinishedEvent)
+ */
+@wrapMethod(Device)
+protected cb func OnScanningActionFinishedEvent(evt: ref<ScanningActionFinishedEvent>) -> Void {
+  wrappedMethod(evt);
+
+  // Log quickhack state if debug logging enabled
+  if BetterNetrunningSettings.EnableDebugLog() {
+    let devicePS: ref<ScriptableDeviceComponentPS> = this.GetDevicePS();
+    if !IsDefined(devicePS) {
+      return;
+    }
+
+    // Generate context for quickhack evaluation
+    let player: ref<GameObject> = GetPlayer(this.GetGame());
+    if !IsDefined(player) {
+      return;
+    }
+
+    let context: GetActionsContext = devicePS.GenerateContext(
+      gamedeviceRequestType.Remote,
+      Device.GetInteractionClearance(),
+      player,
+      player.GetEntityID()
+    );
+
+    // Get current quickhack actions
+    let actions: array<ref<DeviceAction>>;
+    devicePS.GetQuickHackActions(actions, context);
+
+    // Delegate to logging function
+    DebugUtils.LogDeviceQuickhackStateOnScan(devicePS, actions);
+  }
 }
