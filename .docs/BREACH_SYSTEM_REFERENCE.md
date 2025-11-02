@@ -1,7 +1,8 @@
 # Better Netrunning - Breach System Technical Reference
 
-**Last Updated:** 2025-10-24
-**Purpose:** Technical reference for Breach System implementation
+**Last Updated:** 2025-11-02
+**Purpose:** Technical reference for Breach System functionality
+**Version:** Current
 
 **IMPORTANT DEPENDENCY:** Remote Breach functionality requires CustomHackingSystem (HackingExtensions mod). All RemoteBreach-related code is wrapped with `@if(ModuleExists("HackingExtensions"))`.
 
@@ -33,15 +34,19 @@ Better Netrunning supports three breach types with distinct characteristics:
 
 ### Network Access Relaxation
 
-**Implementation:** `DeviceNetworkAccess.reds`
+**Status:** ⚠️ **DISABLED**
 
-Better Netrunning includes network access relaxation features that enhance player freedom:
+**Reason:** Network access relaxation caused softlock bugs where devices would remain permanently locked. The feature has been disabled to maintain game stability.
 
-1. **Door QuickHack Menu:** All doors show QuickHack menu regardless of AP connection
-2. **Standalone Device RemoteBreach:** All devices can use RemoteBreach (not just networked ones)
-3. **Universal Ping:** Ping works on all devices for reconnaissance
+**Previous Features (now disabled):**
+1. ~~Door QuickHack Menu: All doors show QuickHack menu regardless of AP connection~~
+2. ~~Standalone Device RemoteBreach: All devices can use RemoteBreach (not just networked ones)~~
+3. ~~Universal Ping: Ping works on all devices for reconnaissance~~
 
-**Purpose:** Remove arbitrary network topology limitations and provide consistent player experience.
+**Current Behavior:**
+- Default vanilla network topology restrictions apply
+- Devices require proper network connections for RemoteBreach
+- Standard accessibility rules enforced
 
 ---
 
@@ -54,7 +59,7 @@ Better Netrunning includes network access relaxation features that enhance playe
 | **Entity & Interaction** | AccessPoint entity interaction | Unconscious NPC interaction<br>("Breach Unconscious Officer") | CustomHackingSystem API<br>(Quickhack on Computer/Device/Camera/etc.) |
 | **Blackboard Flags** | `RemoteBreach = false`<br>`OfficerBreach = false` | `RemoteBreach = false`<br>`OfficerBreach = true` | `RemoteBreach = true`<br>`OfficerBreach = false` |
 | **Target Entity** | AccessPoint | ScriptedPuppet (unconscious state) | Device, Computer, Camera, Turret, Vehicle, ScriptedPuppet |
-| **Network Connection Requirement** | ❌ Not required (AP itself is hub) | ✅ Required via `IsConnectedToBackdoorDevice()` | ⚠️ Relaxed via `DeviceNetworkAccess.reds`<br>(Always returns true for standalone devices) |
+| **Network Connection Requirement** | ❌ Not required (AP itself is hub) | ✅ Required via `IsConnectedToBackdoorDevice()` | ⚠️ Network access relaxation<br>(Always returns true for standalone devices) |
 | **Breach Failure Penalty** | ✅ Applied (all penalties) | ✅ Applied (all penalties) | ✅ Applied (all penalties) |
 | **Statistics Collection** | ✅ Implemented | ✅ Implemented | ✅ Implemented |
 
@@ -71,13 +76,11 @@ Better Netrunning includes network access relaxation features that enhance playe
 ✅ AllowBreachingUnconsciousNPCs = true
 ✅ NPC is unconscious
 ✅ IsConnectedToBackdoorDevice() = true
-   (Relaxed by DeviceNetworkAccess.reds - always true for standalone)
+   (Network access relaxation - always true for standalone)
 ✅ RadialUnlock Mode enabled (UnlockIfNoAccessPoint = false)
    OR physically connected to AP
 ✅ Not directly breached (m_betterNetrunningWasDirectlyBreached = false)
 ```
-
-**Implementation:** `NPCLifecycle.reds`
 
 #### Remote Breach
 ```
@@ -88,11 +91,9 @@ Better Netrunning includes network access relaxation features that enhance playe
    - RemoteBreachEnabledDevice (Device)
    - RemoteBreachEnabledVehicle (Vehicle)
 ✅ RadialUnlock Mode enabled (UnlockIfNoAccessPoint = false)
-✅ Target available (network connection relaxed by DeviceNetworkAccess.reds)
-✅ Not breached (checked by RemoteBreachStateSystem)
+✅ Target available (network connection relaxed)
+✅ Not breached
 ```
-
-**Implementation:** `RemoteBreachAction_*.reds`, `DeviceNetworkAccess.reds`
 
 #### Breach Failure Penalty
 ```
@@ -102,8 +103,6 @@ Better Netrunning includes network access relaxation features that enhance playe
    - Timeout (timer expires)
    - ESC skip (player aborts)
 ```
-
-**Implementation:** `Breach/BreachPenaltySystem.reds`, `RemoteBreach/Core/RemoteBreachLockSystem.reds`
 
 ---
 
@@ -121,10 +120,10 @@ Better Netrunning includes network access relaxation features that enhance playe
 - **Vehicle RemoteBreach:** Vehicle-specific (always `basic` daemon only)
 
 **Architecture:**
-- Computer: Managed by `RemoteBreachStateSystem` (RemoteBreachAction_Computer.reds)
-- Device: Managed by `DeviceRemoteBreachStateSystem` (RemoteBreachAction_Device.reds)
-- Vehicle: Managed by `VehicleRemoteBreachStateSystem` (RemoteBreachAction_Vehicle.reds)
-- Daemon determination: Computer uses fixed "camera,basic", Device uses `GetAvailableDaemonsForDevice()`
+- Computer: Dedicated state management for Computer devices
+- Device: Dedicated state management for non-Computer/non-Vehicle devices
+- Vehicle: Dedicated state management for vehicles
+- Daemon determination: Computer uses fixed "camera,basic", Device uses dynamic detection
 
 | Daemon Type | AP Breach | Unconscious NPC Breach<br>(Regular NPC) | Unconscious NPC Breach<br>(Netrunner) | Remote Breach<br>(Device - Computer) | Remote Breach<br>(Device - Camera) | Remote Breach<br>(Device - Turret) | Remote Breach<br>(Device - Terminal) | Remote Breach<br>(Device - Other) | Remote Breach<br>(Vehicle) |
 |------------|-----------|--------------------------|------------------------------|-------------------------------|------------------------|------------------------|---------------------------|------------------------|-------------------------|
@@ -134,8 +133,6 @@ Better Netrunning includes network access relaxation features that enhance playe
 | **Basic Subnet** | ✅ Injected | ✅ Injected | ✅ Injected | ✅ Injected | ✅ Injected | ✅ Injected | ✅ Injected | ✅ Injected | ✅ Injected |
 
 ### Injection Logic (AP Breach / Unconscious NPC Breach)
-
-**Implementation:** `ProgramInjection.reds` Line 73-175
 
 ```redscript
 // Breach point type detection
@@ -158,17 +155,15 @@ NPCs: (isAccessPoint || isUnconsciousNPC || isNetrunner)
 BASIC: Always injected
 ```
 
-**Important Implementation Constraints:**
-- **`isComputer` is used for AP Breach from Computer devices** (reachable)
-- **`isBackdoor` is used for AP Breach from regular devices** (reachable)
+**Important Design Constraints:**
 - In-game, you can interact directly with Computer/Terminal devices to initiate AP Breach
 - AP Breach is also possible from regular devices like Camera/Door/Vending
-- `isBackdoor` judgment uses different detection methods depending on implementation location:
-  - **ProgramInjection**: `IsRegularDevice()` - Type-based detection (regular device like Camera/Door?)
-  - **RadialBreach**: `IsConnectedToBackdoorDevice()` - Network connection state detection (actually via Backdoor?)
-  - This difference is **intentional design** (different purposes and performance requirements)
+- `isBackdoor` judgment uses different detection methods depending on context:
+  - Type-based detection (regular device like Camera/Door?)
+  - Network connection state detection (actually via Backdoor?)
+  - This difference is intentional design (different purposes and performance requirements)
 
-**Conclusion:** `isComputer` and `isBackdoor` code are **normal code used in regular gameplay**
+**Conclusion:** `isComputer` and `isBackdoor` code are normal code used in regular gameplay
 
 **Important:** Not all injected daemons are **necessarily displayed**
 - Filtered based on network scan results according to `UnlockIfNoAccessPoint` setting
@@ -176,30 +171,28 @@ BASIC: Always injected
 
 ### Injection Logic (Remote Breach)
 
-**Implementation:** `RemoteBreach/Actions/RemoteBreachAction_Device.reds`, `RemoteBreach/Actions/RemoteBreachAction_Vehicle.reds`
-
 ```redscript
 // Remote Breach daemon injection is determined by target device type and RemoteBreach action class
 
-Computer RemoteBreach (RemoteBreach/Actions/RemoteBreachAction_Computer.reds):
+Computer RemoteBreach:
   → Computer → Camera/Basic injection (fixed: "camera,basic")
 
-Device RemoteBreach (RemoteBreach/Actions/RemoteBreachAction_Device.reds):
+Device RemoteBreach:
   → Camera → Camera/Basic injection
   → Turret → Turret/Basic injection
   → Terminal → NPC/Basic injection
   → Other → Basic only injection
 
-Vehicle RemoteBreach (RemoteBreach/Actions/RemoteBreachAction_Vehicle.reds):
+Vehicle RemoteBreach:
   → Vehicle → Basic only injection
 ```
 
-**Implementation Details:**
-- **Computer RemoteBreach**: Dedicated class `RemoteBreachAction` (RemoteBreach/Actions/RemoteBreachAction_Computer.reds) for ComputerControllerPS (fixed daemon list)
-- **Device RemoteBreach**: Dedicated class `DeviceRemoteBreachAction` (RemoteBreach/Actions/RemoteBreachAction_Device.reds) for non-Computer/non-Vehicle devices (dynamic daemon detection via `GetAvailableDaemonsForDevice()`)
-- **Vehicle RemoteBreach**: Dedicated class `VehicleRemoteBreachAction` (RemoteBreach/Actions/RemoteBreachAction_Vehicle.reds) for VehicleComponentPS
+**Architecture:**
+- Computer: Three separate action classes handle daemon injection
+- Device: Dynamic daemon detection based on device type
+- Vehicle: Dedicated action class for vehicles
 
-**Important:** Remote Breach does not use `isBackdoor` flag (direct device type detection via three separate action classes)
+**Important:** Remote Breach uses direct device type detection via three separate action classes
 
 ### Daemon Injection Design Philosophy
 
@@ -214,20 +207,18 @@ Vehicle RemoteBreach (RemoteBreach/Actions/RemoteBreachAction_Vehicle.reds):
   - Other: Basic Subnet only
 - **Vehicle RemoteBreach:** Minimum access (Basic Subnet only)
 
-**Note:** `isBackdoor` judgment is implemented in ProgramInjection.reds and functions normally for AP Breach from Backdoor devices
-
 ---
 
 ## Program Filtering
 
 ### Filtering Application Order
 
-**Injection-time Control (ProgramInjection.reds):**
+**Injection-time Control:**
 - Backdoor device detection (Camera + Basic only injection)
 - Device type availability check (injection control based on UnlockIfNoAccessPoint setting)
 - Breach point type detection (AccessPoint/Computer/NPC/Netrunner)
 
-**Filter-time Control (betterNetrunning.reds & Minigame/ProgramFiltering*.reds):**
+**Filter-time Control:**
 ```
 1. ShouldRemoveBreachedPrograms() - Remove already breached daemons
 2. ShouldRemoveNetworkPrograms() - Network connectivity filter
@@ -253,8 +244,6 @@ Vehicle RemoteBreach (RemoteBreach/Actions/RemoteBreachAction_Vehicle.reds):
 
 ### 1. Already-Breached Program Filter
 
-**Implementation:** `betterNetrunning.reds` Line 86-91 / `Minigame/ProgramFilteringCore.reds` `ShouldRemoveBreachedPrograms()`
-
 **Description:** Removes programs for device types that have already been breached on the current network.
 
 | Item | AP Breach | Unconscious NPC Breach | Remote Breach |
@@ -276,8 +265,6 @@ Vehicle RemoteBreach (RemoteBreach/Actions/RemoteBreachAction_Vehicle.reds):
 
 ### 2. Non-AccessPoint Type Program Filter
 
-**Implementation:** `Minigame/ProgramFilteringRules.reds` `ShouldRemoveAccessPointPrograms()` Line 76
-
 **Description:** Removes non-AccessPoint type programs (except Subnet type programs).
 
 | Item | AP Breach | Unconscious NPC Breach | Remote Breach |
@@ -286,16 +273,9 @@ Vehicle RemoteBreach (RemoteBreach/Actions/RemoteBreachAction_Vehicle.reds):
 | **Removal Condition** | - | - | - |
 | **Removal Target** | - | - | - |
 
-**Implementation Code:**
-```redscript
-// Remove non-access-point programs and non-subnet programs
-return NotEquals(miniGameActionRecord.Type().Type(), gamedataMinigameActionType.AccessPoint)
-    && !IsUnlockQuickhackAction(actionID);
-```
+**Important 1:** Remote Breach completely bypasses this filter
 
-**Important 1:** Remote Breach **completely bypasses** this filter due to `isRemoteBreach = true`
-
-**Important 2:** Programs defined in Remote Breach are **all Subnet type programs**
+**Important 2:** Programs defined in Remote Breach are all Subnet type programs
 
 **Behavior (Post-deletion):**
 ```
@@ -310,11 +290,9 @@ Non-AccessPoint type program filter (deprecated):
 
 ### 3. RadialBreach Physical Range Filter
 
-**Implementation:** `RadialUnlock/Core/RadialUnlockSystem.reds` Line 169-196 / `Minigame/ProgramInjection.reds` Line 98-106
-
 **Operation:**
-- **Injection-time control:** Control injection based on UnlockIfNoAccessPoint setting
-- **RadialBreach integration:** Unlock devices within physical range based on injected programs
+- Injection-time control: Control injection based on UnlockIfNoAccessPoint setting
+- RadialBreach integration: Unlock devices within physical range based on injected programs
 
 | Item | AP Breach | Unconscious NPC Breach<br>(Regular NPC) | Unconscious NPC Breach<br>(Netrunner) | Remote Breach<br>(Regular) | Remote Breach<br>(Netrunner NPC) |
 |------|-----------|--------------------------|------------------------------|---------------------|------------------------------|
@@ -322,7 +300,7 @@ Non-AccessPoint type program filter (deprecated):
 | **Injection Strategy** | Depends on UnlockIfNoAccessPoint setting | Same | Same | - | Same |
 | **RadialBreach** | Unlock physical range with successful programs | Same | Same | - | Same |
 
-**Injection Strategy (ProgramInjection.reds):**
+**Injection Strategy:**
 ```
 UnlockIfNoAccessPoint = true (Network priority):
   → Inject based on network scan results
@@ -333,20 +311,18 @@ UnlockIfNoAccessPoint = false (RadialBreach priority):
   → Inject Camera Subnet even if no Cameras exist
 ```
 
-**RadialBreach Operation (RadialUnlock/Core/RadialUnlockSystem.reds):**
+**RadialBreach Operation:**
 1. After minigame success, retrieve successful programs
 2. Unlock devices within physical range based on successful programs
 3. Devices not on network can be controlled if within physical range
 
-**Important:** Remote Breach basically **skips** physical range filter, except for **Netrunner NPC targets**
+**Important:** Remote Breach basically skips physical range filter, except for Netrunner NPC targets
 
 **Result:** Only devices within physical range can be breached
 
 ---
 
 ### 4. Datamine Program Filter
-
-**Implementation:** `Minigame/ProgramFilteringRules.reds` `ShouldRemoveDataminePrograms()`
 
 **Description:** Removes ALL Datamine programs when auto-datamine feature is enabled. Datamine programs are automatically added POST-breach based on success count.
 
@@ -356,19 +332,6 @@ UnlockIfNoAccessPoint = false (RadialBreach priority):
 | **Removal Condition** | `AutoDatamineBySuccessCount = true` | Same | Same |
 | **Removal Target** | ALL Datamine variants (V1/V2/V3) | Same | Same |
 | **Timing** | During `FilterPlayerPrograms()` | Same | Same |
-
-**Implementation Code:**
-```redscript
-public func ShouldRemoveDataminePrograms(actionID: TweakDBID) -> Bool {
-  if !BetterNetrunningSettings.AutoDatamineBySuccessCount() {
-    return false;
-  }
-
-  return actionID == t"MinigameAction.NetworkDataMineLootAll"
-      || actionID == t"MinigameAction.NetworkDataMineLootAllAdvanced"
-      || actionID == t"MinigameAction.NetworkDataMineLootAllMaster";
-}
-```
 
 **Purpose:** Prevent duplicate Datamine programs from appearing in minigame when auto-datamine feature handles them POST-breach.
 
@@ -384,9 +347,9 @@ AutoDatamineBySuccessCount = false:
 ```
 
 **Related Features:**
-- **Pre-Breach:** This filter removes Datamine from display
-- **Post-Breach:** `BonusDaemonUtils.ApplyBonusDaemons()` adds appropriate Datamine
-- **See Also:** [Auto Datamine Operation](#auto-datamine-operation) section
+- Pre-Breach: This filter removes Datamine from display
+- Post-Breach: Auto-add appropriate Datamine based on success count
+- See Also: [Auto Datamine Operation](#auto-datamine-operation) section
 
 ---
 
@@ -394,26 +357,16 @@ AutoDatamineBySuccessCount = false:
 
 ### Timer Multiplier
 
-**Implementation:** `hackingMinigameUtils.script` Line 589
-
 | Item | AP Breach | Unconscious NPC Breach | Remote Breach |
 |------|-----------|------------------------|---------------|
 | **Timer Multiplier** | 1.0x (standard) | **1.5x (50% increase)** | 1.0x (standard) |
 | **Reason** | Normal breach | Time leeway with physical direct connection | Same difficulty even remotely |
 
-**Implementation:** `hackingMinigameUtils.script` Line 589-591
-```redscript
-timerNotRemoteMultiplier = 1.5;
-if( !( m_isRemoteBreach ) && m_isOfficerBreach ) {
-    time *= timerNotRemoteMultiplier;  // Increase by 1.5x
-}
-```
-
 ### Minigame Configuration Source
 
 | Item | AP Breach | Unconscious NPC Breach | Remote Breach |
 |------|-----------|------------------------|---------------|
-| **Configuration Source** | NetworkTDBID | Character Record<br>`characterRecord.MinigameInstance()` | NetworkTDBID<br>(Registered in TweakDB via remoteBreach.lua) |
+| **Configuration Source** | NetworkTDBID | Character Record<br>`characterRecord.MinigameInstance()` | NetworkTDBID<br>(Registered in TweakDB via CET) |
 | **Difficulty** | Target's PowerLevel | Target NPC's record definition | Target's PowerLevel |
 
 ### RAM Cost
@@ -430,22 +383,13 @@ if( !( m_isRemoteBreach ) && m_isOfficerBreach ) {
 
 ### Bonus Daemon Auto-Add
 
-**Implementation:** `Utils/BonusDaemonUtils.reds` `ApplyBonusDaemons()`
-
 | Item | AP Breach | Unconscious NPC Breach | Remote Breach |
 |------|-----------|------------------------|---------------|
 | **Auto PING** | ✅ Implemented | ✅ Implemented | ✅ Implemented |
 | **Auto Datamine** | ✅ Implemented | ✅ Implemented | ✅ Implemented |
 | **Application Conditions** | `AutoExecutePingOnSuccess = true`<br>`AutoDatamineBySuccessCount = true` | Same | Same |
 
-**Implementation Locations:**
-- ✅ `Breach/BreachProcessing.reds` (AP Breach) - Calls BonusDaemonUtils.ApplyBonusDaemons()
-- ✅ `NPCs/NPCLifecycle.reds` (Unconscious NPC Breach) - Calls BonusDaemonUtils.ApplyBonusDaemons()
-- ✅ `RadialUnlock/RemoteBreachNetworkUnlock.reds` (Remote Breach) - Calls BonusDaemonUtils.ApplyBonusDaemons()
-
 ### Auto PING Operation
-
-**Implementation:** `Utils/BonusDaemonUtils.reds` `ApplyBonusDaemons()`
 
 ```
 Condition: AutoExecutePingOnSuccess = true
@@ -472,8 +416,6 @@ If PING is not auto-executing:
 
 ### Auto Datamine Operation
 
-**Implementation:** `Utils/BonusDaemonUtils.reds` `ApplyBonusDaemons()` + `Minigame/ProgramFilteringRules.reds` `ShouldRemoveDataminePrograms()`
-
 ```
 Condition: AutoDatamineBySuccessCount = true
 Operation:
@@ -487,16 +429,16 @@ Operation:
 
 **Important:** Datamine programs are NOT displayed during minigame. They are added POST-breach based on success count.
 
-**Implementation Details:**
+**Architecture:**
 
-1. **Pre-Breach Filtering (Minigame/ProgramFilteringRules.reds):**
-   - `ShouldRemoveDataminePrograms()` removes ALL Datamine programs from minigame display
+1. Pre-Breach Filtering:
+   - Removes ALL Datamine programs from minigame display
    - Only active when `AutoDatamineBySuccessCount = true`
    - Removes: DatamineV1, DatamineV2, DatamineV3
 
-2. **Post-Breach Addition (Utils/BonusDaemonUtils.reds):**
-   - `ApplyBonusDaemons()` adds appropriate Datamine based on success count
-   - Counts non-Datamine daemons (via `CountNonDataminePrograms()`)
+2. Post-Breach Addition:
+   - Adds appropriate Datamine based on success count
+   - Counts non-Datamine daemons
    - Adds only ONE Datamine variant matching success level
 
 **Setting Effects:**
@@ -515,8 +457,6 @@ AutoDatamineBySuccessCount = false:
 ```
 
 ### Breach Failure Penalties
-
-**Implementation:** `Breach/BreachPenaltySystem.reds` (736 lines) `ApplyFailurePenalty()`
 
 ```
 Condition: BreachFailurePenaltyEnabled = true AND state == HackingMinigameState.Failed
@@ -537,9 +477,9 @@ Operation:
    - Scope: Hybrid locking (network hierarchy + radial scan)
    - Duration: 10 minutes (default, configurable via `BreachPenaltyDurationMinutes`)
    - Target: Only affects RemoteBreach actions (no effect on AP Breach, Unconscious NPC Breach)
-   - Persistence: Timestamp stored on device PS (`m_betterNetrunningRemoteBreachFailedTimestamp`)
+   - Persistence: Timestamp stored on device PS
 
-   **Lock Logic (RemoteBreachLockSystem.reds):**
+   **Lock Logic:**
    ```
    Device RemoteBreach failure
      ↓
@@ -550,7 +490,7 @@ Operation:
      ↓
    Device RemoteBreach attempt
      ↓
-   Check device timestamp (SharedGameplayPS.m_betterNetrunningRemoteBreachFailedTimestamp)
+   Check device timestamp
      ├─ Timestamp > 0 AND (currentTime - timestamp) <= lockDuration
      └─ → Remove RemoteBreach actions from QuickHack menu
    ```
@@ -562,9 +502,9 @@ Operation:
    - Purpose: Failure detected by enemy netrunner
 
 **Coverage:**
-- **AP Breach:** Covered via `FinalizeNetrunnerDive()` wrapper
-- **Unconscious NPC Breach:** Covered via `AccessBreach.CompleteAction()` → `FinalizeNetrunnerDive()`
-- **Remote Breach:** Covered via `RemoteBreachProgram` → `FinalizeNetrunnerDive()`
+- AP Breach: Covered via minigame wrapper
+- Unconscious NPC Breach: Covered via action completion
+- Remote Breach: Covered via program execution
 
 **Skip vs Failure:**
 - Currently: Both ESC skip and timeout treated as `HackingMinigameState.Failed`
@@ -577,24 +517,6 @@ When `EnableDebugLog = true`, the following logs are output:
 - `Locked X devices (Network: Y [connected network], Standalone: Z [Rm], Vehicles: W [Rm])`
 - `Red VFX applied (2-3 seconds)`
 - `Trace triggered at nearest netrunner: NPC_ID` (if TracePositionOverhaul)
-
-**Persistent Fields:**
-```redscript
-@addField(SharedGameplayPS)
-public persistent let m_betterNetrunningRemoteBreachFailedTimestamp: Float;
-
-@addField(ScriptedPuppetPS)
-public persistent let m_betterNetrunningNPCBreachFailedTimestamp: Float;
-
-@addField(SharedGameplayPS)
-public persistent let m_betterNetrunningAPBreachFailedTimestamp: Float;
-```
-
-**Related Utilities:**
-- `Utils/BreachLockUtils.reds` (153 lines) - Entity/Player/Position retrieval aggregation (DRY principle)
-  - `IsDeviceLockedByBreachFailure()` - Device context check
-  - `IsNPCLockedByBreachFailure()` - NPC context check
-  - Called from 8 files (RemoteBreachAction_*, DeviceProgressiveUnlock, DeviceRemoteActions, RemoteBreachVisibility, NPCQuickhacks)
 
 ---
 
@@ -618,7 +540,7 @@ public persistent let m_betterNetrunningAPBreachFailedTimestamp: Float;
 After Remote Breach success, nearby standalone devices are automatically unlocked:
 
 ```
-Implementation: RadialUnlock/RemoteBreachNetworkUnlock.reds (603 lines)
+Main logic:
   ├─ UnlockNearbyStandaloneDevices() - Main logic
   ├─ FindNearbyDevices() - Search within 50m radius
   ├─ UnlockStandaloneDevices() - Filter standalone + unlock
@@ -633,7 +555,7 @@ Implementation: RadialUnlock/RemoteBreachNetworkUnlock.reds (603 lines)
   - Turret → `m_betterNetrunningBreachedTurrets`
   - Other → `m_betterNetrunningBreachedBasic`
 
-**Important:** AP Breach, Remote Breach, and Unconscious NPC Breach **share the same network's breached state**
+**Important:** AP Breach, Remote Breach, and Unconscious NPC Breach share the same network's breached state
 
 ---
 
@@ -646,18 +568,12 @@ Better Netrunning uses a hybrid configuration system combining **CET Lua** (init
 ```
 settings.json (JSON file)
      ↕ (Load/Save)
-settingsManager.lua (CET Runtime)
+CET Settings Manager (Runtime)
      ↕ (Override)
 BetterNetrunningSettings.* (REDscript static functions)
      ↕ (Query)
 REDscript Game Logic
 ```
-
-**Implementation Files:**
-- `bin/x64/plugins/cyber_engine_tweaks/mods/BetterNetrunning/settingsManager.lua` - Settings management
-- `bin/x64/plugins/cyber_engine_tweaks/mods/BetterNetrunning/settings.json` - Persistent storage
-- `bin/x64/plugins/cyber_engine_tweaks/mods/BetterNetrunning/nativeSettingsUI.lua` - UI builder
-- `r6/scripts/BetterNetrunning/config.reds` - Default values (overridden by Lua)
 
 **Settings Categories (12 total):**
 1. Controls - Breaching hotkey configuration
@@ -682,9 +598,10 @@ REDscript Game Logic
 | **EnableClassicMode** | ✅ No injection when Classic enabled | ✅ Same | ✅ Same | `false` |
 | **AllowBreachingUnconsciousNPCs** | ❌ | ✅ Disable with false | ❌ | `true` |
 | **UnlockIfNoAccessPoint** | ✅ RadialBreach enabled with false | ✅ Affects activation conditions | ✅ Enabled with false | `false` |
+| **RadialUnlockCrossNetwork** | ✅ Control cross-network unlock | ✅ Same | ✅ Same | `true` |
 | **AutoDatamineBySuccessCount** | ✅ Remove Datamine + auto-add with true | ✅ Same | ✅ Same | `true` |
 | **AutoExecutePingOnSuccess** | ✅ Auto-add PING with true | ✅ Same | ✅ Same | `true` |
-| **RemoteBreachEnabledComputer** | ❌ | ❌ | ✅ Control Computer Device RemoteBreach | `true` |
+| **RemoteBreachEnabledComputer** | ❌ | ❌ | ✅ Control Computer Device RemoteBreach | `false` |
 | **RemoteBreachEnabledCamera** | ❌ | ❌ | ✅ Control Camera Device RemoteBreach | `true` |
 | **RemoteBreachEnabledTurret** | ❌ | ❌ | ✅ Control Turret Device RemoteBreach | `true` |
 | **RemoteBreachEnabledDevice** | ❌ | ❌ | ✅ Control non-Computer/Camera/Turret Device RemoteBreach | `true` |
@@ -727,6 +644,26 @@ true: RadialUnlock Mode disabled
   - RemoteBreach: Disabled
   - Standalone devices: Auto-unlock
 ```
+
+#### RadialUnlockCrossNetwork
+```
+true (default): Cross-network unlock enabled
+  - Radial breach unlocks ALL devices/NPCs within 50m radius
+  - Ignores network boundaries
+  - Unlocks standalone targets regardless of network connection
+
+false: Network-restricted unlock
+  - Radial breach only unlocks standalone targets (no network connection)
+  - Devices with DeviceLink or network connection are excluded
+  - NPCs with DeviceLink are excluded
+```
+
+**Purpose:** Controls whether radial breach respects network boundaries
+
+**Affects:**
+- Device unlock during radial breach
+- NPC unlock during radial breach
+- Network topology enforcement
 
 #### AutoDatamineBySuccessCount
 ```
@@ -772,7 +709,7 @@ false:
   - Minigame failure has no consequences
 ```
 
-**See Also:** [Breach Failure Penalties](#breach-failure-penalties) section for detailed implementation and penalty mechanics
+**See Also:** [Breach Failure Penalties](#breach-failure-penalties) section for detailed mechanics and penalty system
 
 #### APBreachFailurePenaltyEnabled
 
@@ -976,7 +913,7 @@ true:
    - Target connected to network
    - Not breached
    ↓
-3. remoteBreach.lua
+3. CET Remote Breach Registration
    - Register static program list to TweakDB
    ↓
 4. NetworkBlackboard Setup
@@ -1023,7 +960,7 @@ true:
 
 Better Netrunning Mod filters programs at **three stages**:
 
-#### Stage 1: Injection-time Control (ProgramInjection.reds)
+#### Stage 1: Injection-time Control
 ```
 Timing: When injecting programs into network
 Control:
@@ -1033,7 +970,7 @@ Control:
 Purpose: Optimize injected daemons, minimize filtering overhead
 ```
 
-#### Stage 2: Filter-time Control (betterNetrunning.reds & ProgramFiltering.reds)
+#### Stage 2: Filter-time Control
 ```
 Timing: Before minigame start (after vanilla wrappedMethod)
 Control:
@@ -1046,7 +983,7 @@ Control:
 Purpose: Filter based on user settings, network state, and breach state
 ```
 
-#### Stage 3: RadialBreach Control (RadialBreach.reds)
+#### Stage 3: RadialBreach Control
 ```
 Timing: Before minigame start (after Stage 2)
 Control:
@@ -1065,12 +1002,12 @@ Purpose: Control based on physical distance (UnlockIfNoAccessPoint setting)
 |-------------|-------------|-------------------|
 | **AP Breach** | AccessPoint entity | None |
 | **Unconscious NPC Breach** | Unconscious NPC + Network connection (relaxed) | `AllowBreachingUnconsciousNPCs = true`<br>RadialUnlock Mode enabled |
-| **Remote Breach** | Any scannable device (network relaxed) | Device-specific RemoteBreachEnabled settings<br>RadialUnlock Mode enabled<br>`DeviceNetworkAccess.reds` provides universal access |
+| **Remote Breach** | Any scannable device (network relaxed) | Device-specific RemoteBreachEnabled settings<br>RadialUnlock Mode enabled<br>Network access relaxation provides universal access |
 
 **Network Access Relaxation:**
-- `DeviceNetworkAccess.reds` removes network topology restrictions
-- `IsConnectedToBackdoorDevice()` always returns true for standalone devices
-- `HasNetworkBackdoor()` always returns true for all devices
+- Removes network topology restrictions
+- Connection check always returns true for standalone devices
+- Network backdoor check always returns true for all devices
 - This enables RemoteBreach and QuickHack access regardless of AP connection
 
 ---
@@ -1103,7 +1040,7 @@ Purpose: Control based on physical distance (UnlockIfNoAccessPoint setting)
 | **Device Type Filter** | ✅ Applied | ✅ Applied | ✅ Applied |
 | **RadialBreach Physical Range Filter** | ✅ Applied | ✅ Applied | ❌ Skipped (except Netrunner NPC) |
 
-**Note on Datamine:** Datamine programs are NOT filtered because they are NOT present during minigame. They are added POST-breach by `BonusDaemonUtils.reds`.
+**Note on Datamine:** Datamine programs are NOT filtered because they are NOT present during minigame. They are added POST-breach by bonus daemon utilities.
 
 ---
 
@@ -1113,7 +1050,7 @@ Purpose: Control based on physical distance (UnlockIfNoAccessPoint setting)
 |-----------|-----------|------------------------|---------------|
 | **Timer** | 1.0x | **1.5x** | 1.0x |
 | **RAM Cost** | ❌ None | ❌ None | ✅ Yes (35% default) |
-| **Configuration Source** | NetworkTDBID | Character Record | TweakDB (remoteBreach.lua) |
+| **Configuration Source** | NetworkTDBID | Character Record | TweakDB (CET Registration) |
 
 ---
 
@@ -1130,8 +1067,8 @@ All breach types support:
 - ✅ Device-type-specific breach flag assignment
 - ✅ Integration with RadialUnlock system
 
-**Implementation:**
-- `RemoteBreachNetworkUnlock.reds` - Extract Method pattern with shallow nesting
+**Design:**
+- Extract Method pattern with shallow nesting
 - Nesting depth: Maximum 3 levels
 - Modular design: 4 separate helper methods for maintainability
 
@@ -1143,18 +1080,67 @@ All breach types support:
 
 **Purpose:** Replace scattered debug logs with comprehensive structured statistics output
 
-**Implementation Status:**
-- ✅ **AP Breach:** Fully integrated (`BreachProcessing.reds`)
-- ⏸️ **Remote Breach:** Pending integration (`RemoteBreachNetworkUnlock.reds`)
-- ⏸️ **Unconscious NPC Breach:** Pending integration (`NPCBreachExperience.reds`)
+**Integration Status:**
+- ✅ AP Breach: Fully integrated
+- ✅ Remote Breach: Fully integrated
+- ✅ Unconscious NPC Breach: Fully integrated
 
-**Architecture:**
-- `Utils/BreachStatisticsCollector.reds` (276 lines) - Data collection (DTO pattern)
-- `Utils/BreachSessionLogger.reds` (397 lines) - Formatting & output with emoji icons
+**Components:**
+- Data collection
+- Formatting & output with emoji icons
+- Minigame display tracking
+
+### DisplayedDaemonsStateSystem
+
+**Purpose:** Track daemons displayed in minigame vs daemons successfully executed
+
+**Problem Solved:**
+- ActivePrograms array only contains successfully executed daemons (available after minigame completion)
+- No way to distinguish "displayed in minigame" vs "successfully executed"
+- Statistics collection needed both sets for accurate reporting
+
+**Data Flow:**
+
+```
+FilterPlayerPrograms
+  ↓ Step 1-6: Filter programs
+  ↓ Step 7: Store displayed daemons
+DisplayedDaemonsStateSystem.SetDisplayedDaemons()
+  ↓ Minigame executes
+  ↓ Success/Failure
+RefreshSlaves
+  ├─ GetDisplayedDaemons() → CollectDisplayedDaemons()
+  └─ ActivePrograms → CollectExecutedDaemons()
+     ↓
+BreachSessionStats (complete statistics)
+  ↓
+LogBreachSummary() (formatted output)
+```
+
+**Timing Guarantee:**
+1. **FilterPlayerPrograms end:** Displayed daemons recorded
+2. **Minigame completion:** Executed daemons available in ActivePrograms
+3. **RefreshSlaves execution:** Both datasets available for statistics
+
+**Usage Pattern:**
+
+```redscript
+// Retrieve displayed daemons from state system
+let stateSystem: ref<DisplayedDaemonsStateSystem> = ...;
+let displayedDaemons: array<TweakDBID> = stateSystem.GetDisplayedDaemons();
+
+// Collect both datasets
+BreachStatisticsCollector.CollectDisplayedDaemons(displayedDaemons, stats);
+BreachStatisticsCollector.CollectExecutedDaemons(activePrograms, stats);
+```
+
+**Benefits:**
+- ✅ Accurate "displayed vs executed" distinction
+- ✅ No timing dependencies on ActivePrograms
+- ✅ Single source of truth for displayed daemons
+- ✅ Clean separation of concerns
 
 ### BreachSessionStats Structure (DTO)
-
-**File:** `Utils/BreachStatisticsCollector.reds` (276 lines)
 
 **Field Categories (20+ fields):**
 
@@ -1268,161 +1254,21 @@ public class BreachSessionStats {
 └──────────────────────────────────────────────────────────┘
 ```
 
-### Output Format Example
-
-**Emoji Icon Set:**
-```
-Device Types:
-  🔧 Basic     - General devices (doors, terminals, etc.)
-  📷 Cameras   - Surveillance cameras
-  🔫 Turrets   - Security turrets
-  👤 NPCs      - Network-connected NPCs
-
-RadialUnlock:
-  🔌 Devices   - Standalone devices
-  🚗 Vehicles  - Unlocked vehicles
-  🚶 NPCs      - Standalone NPCs
-
-Unlock Status:
-  ✅ UNLOCKED  - Successfully unlocked
-  🔒 Locked    - Locked state
-```
-
-**Output Format:**
-```
-╔═══════════════════════════════════════════════════════════╗
-║             BREACH SESSION SUMMARY                        ║
-╠═══════════════════════════════════════════════════════════╣
-║ Breach Method: Access Point Breach                       ║
-║ Target Device: corp_server_01                            ║
-║ Timestamp: 2025-10-19 22:15:30                           ║
-║                                                           ║
-║ ┌─ MINIGAME PHASE ────────────────────────────────────┐  ║
-║ │ Programs Injected: 2 (PING, Datamine V2)            │  ║
-║ │ Minigame Result: ✓ SUCCESS                          │  ║
-║ └─────────────────────────────────────────────────────┘  ║
-║                                                           ║
-║ ┌─ DEVICE TYPE BREAKDOWN ──────────────────────────────┐  ║
-║ │ 🔧 Basic     : 5                                     │  ║
-║ │ 📷 Cameras   : 3                                     │  ║
-║ │ 🔫 Turrets   : 2                                     │  ║
-║ │ 👤 NPCs      : 4                                     │  ║
-║ └─────────────────────────────────────────────────────┘  ║
-║                                                           ║
-║ ┌─ RADIAL UNLOCK (50m) ────────────────────────────────┐  ║
-║ │ 🔌 Devices   : 2                                     │  ║
-║ │ 🚗 Vehicles  : 1                                     │  ║
-║ │ 🚶 NPCs      : 3                                     │  ║
-║ └─────────────────────────────────────────────────────┘  ║
-║                                                           ║
-║ ┌─ UNLOCK FLAGS ───────────────────────────────────────┐  ║
-║ │ Basic Subnet   : ✅ UNLOCKED                         │  ║
-║ │ Camera Subnet  : ✅ UNLOCKED                         │  ║
-║ │ Turret Subnet  : 🔒 Locked                           │  ║
-║ │ NPC Subnet     : 🔒 Locked                           │  ║
-║ └─────────────────────────────────────────────────────┘  ║
-║                                                           ║
-║ Processing Time: 23.5ms                                   ║
-╚═══════════════════════════════════════════════════════════╝
-```
-
-**Box-Drawing Characters Used:**
-- `╔ ═ ╗` - Top border
-- `║` - Vertical borders
-- `╠ ═ ╣` - Horizontal dividers
-- `┌ ─ ┐` - Section headers
-- `│` - Section vertical borders
-- `└ ─ ┘` - Section footers
-- `╚ ═ ╝` - Bottom border
-
-### Log Optimization Results
-
-**Optimization Metrics:**
-
-| Metric | Value | Description |
-|--------|-------|-------------|
-| **Total optimizations** | 66 | Completed improvements |
-| **Deletions** | 9 | Redundant logs removed |
-| **TRACE conversions** | 22 | Internal details moved to Level 4 |
-| **SRP fixes** | 16 | Redundant level checks removed |
-| **Style fixes** | 19 | Redundant comments eliminated |
-| **DEBUG noise reduction** | 75% | Reduced noise in default log level |
-
-**Optimized Files:**
-1. `betterNetrunning.reds` - 6 deletions + 3 TRACE conversions
-2. `Utils/BonusDaemonUtils.reds` - 3 deletions + 4 TRACE conversions
-3. `Breach/BreachProcessing.reds` - 3 TRACE conversions
-4. `Minigame/ProgramInjection.reds` - 4 TRACE conversions
-5. `Devices/DeviceQuickhackFilters.reds` - 8 TRACE conversions
-6. `Utils/BreachSessionLogger.reds` - Emoji icons + DTO pattern
-
-**Implementation Details:**
-1. **SRP Compliance:** Logger.reds handles all level filtering internally
-2. **TRACE Level:** Internal processing details moved to Level 4
-3. **Visual Enhancement:** Emoji icons for device types and status
-4. **Code Clarity:** Redundant comments eliminated (standard pattern applied)
-5. **Maintainability:** Consistent annotation pattern across all logs
-
-**Benefits:**
-1. **Readability:** Structured output with visual icons vs. scattered text logs
-2. **Performance:** Reduced string operations, internal filtering optimization
-3. **Maintainability:** Statistics logic isolated in BreachStatisticsCollector.reds (DTO) + BreachSessionLogger.reds (formatting)
-4. **Debugging:**
-   - INFO (default): Comprehensive summaries only
-   - DEBUG: Major state changes
-   - TRACE: Complete internal processing flow
-
-### Integration Guidelines
-
-**For new breach types:**
-
-1. **Create stats at entry point:**
-   ```redscript
-   let stats = BreachSessionStats.Create("BreachTypeName", targetName);
-   ```
-
-2. **Pass by reference through pipeline:**
-   ```redscript
-   public func ProcessBreach(..., stats: script_ref<BreachSessionStats>) -> Void {
-       // Update stats fields
-       Deref(stats).fieldName = value;
-   }
-   ```
-
-3. **Track device types in unlock loop:**
-   ```redscript
-   switch deviceType {
-       case DeviceType.Camera: Deref(stats).cameraCount += 1;
-       // ... other types
-   }
-   ```
-
-4. **Finalize and output:**
-   ```redscript
-   stats.Finalize();
-   LogBreachSummary(stats);
-   ```
-
 ---
 
 ## Related Documents
 
-- `ARCHITECTURE_DESIGN.md` - Better Netrunning overall architecture (Version 2.4)
-- Source files:
-  - `Devices/DeviceNetworkAccess.reds` - Network access relaxation
-  - `RadialUnlock/RemoteBreachNetworkUnlock.reds` (603 lines) - Network unlock with nearby device support
-  - `Utils/BonusDaemonUtils.reds` (385 lines) - Auto PING/Datamine
-  - `Devices/DeviceProgressiveUnlock.reds` (307 lines) - Progressive unlock with diagnostic logging
-  - `NPCs/NPCLifecycle.reds` (219 lines) - Unconscious NPC breach
-  - `Minigame/ProgramInjection.reds` (145 lines) - Daemon injection logic
-  - `Minigame/ProgramFiltering*.reds` - Daemon filtering logic (Core/Rules)
-  - `Utils/BreachStatisticsCollector.reds` (276 lines) - Statistics collection (DTO pattern)
-  - `Utils/BreachSessionLogger.reds` (397 lines) - Statistics formatting with emoji icons
-  - `Core/Logger.reds` (204 lines) - Debug logging system (5-level logging, duplicate suppression)
-  - `Core/TimeUtils.reds` (57 lines) - Timestamp management utilities
-  - `Core/Events.reds` - Persistent field definitions (unlock timestamps, breach state)
+- `ARCHITECTURE_DESIGN.md` - Better Netrunning overall architecture (Version 2.5)
+- Source modules:
+  - Devices/ - Network access, device unlock, QuickHack filters, remote actions
+  - RadialUnlock/ - Network unlock with nearby device support
+  - Logging/ - Auto PING/Datamine, statistics collection, session logging, debug utilities
+  - NPCs/ - Unconscious NPC breach
+  - Minigame/ - Daemon injection, program filtering
+  - Core/ - Timestamp utilities, event definitions
+  - Utils/ - Breach lock utilities
 
 ---
 
-**Last Updated:** 2025-10-24
+**Last Updated:** 2025-11-02
 

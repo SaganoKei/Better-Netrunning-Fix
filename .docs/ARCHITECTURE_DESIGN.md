@@ -1,7 +1,7 @@
 # Better Netrunning - Architecture Design Document
 
-**Version:** 2.4
-**Last Updated:** 2025-10-24
+**Version:** 2.5
+**Last Updated:** 2025-11-02
 
 ---
 
@@ -110,7 +110,7 @@ Better Netrunning follows a **modular, layered architecture** with clear separat
 
 ### Directory Layout
 
-**Last Updated:** 2025-10-19
+**Last Updated:** 2025-11-02
 
 ```
 bin/x64/plugins/cyber_engine_tweaks/mods/BetterNetrunning/
@@ -127,23 +127,29 @@ r6/scripts/BetterNetrunning/
 ├── betterNetrunning.reds              (383 lines) - Main entry point
 ├── config.reds                        (81 lines)  - Configuration settings
 │
-├── Core/                              ✅ (8 files, 2,266 lines) - Foundation layer
+├── Core/                              ✅ (7 files, ~2,000 lines) - Foundation layer
 │   ├── Constants.reds                 (431 lines) - 44 constants (Class/Action names, TweakDBIDs)
 │   ├── DeviceDistanceUtils.reds       (102 lines) - Physical distance calculations (DRY principle)
 │   ├── DeviceTypeUtils.reds           (203 lines) - Device type detection & classification
 │   ├── DeviceUnlockUtils.reds         (810 lines) - Shared device/vehicle/NPC unlock logic
 │   ├── Events.reds                    (251 lines) - Breach event definitions & SharedGameplayPS fields
-│   ├── Logger.reds                    (204 lines) - 5-level logging (ERROR/WARN/INFO/DEBUG/TRACE)
 │   ├── MinigameProgramUtils.reds      (208 lines) - Program manipulation utilities
 │   └── TimeUtils.reds                 (57 lines)  - Timestamp management
+│   Note: Logger.reds located in Logging/ module
 │
-├── Utils/                             ✅ (6 files, 1,942 lines) - Business logic utilities
-│   ├── BonusDaemonUtils.reds          (385 lines) - Auto PING/Datamine execution
-│   ├── BreachLockUtils.reds           (153 lines) - Entity/Player/Position retrieval (DRY principle)
+├── Logging/                           ✅ (5 files, ~1,300 lines) - Debug & statistics
+│   ├── Logger.reds                    (204 lines) - 5-level logging (ERROR/WARN/INFO/DEBUG/TRACE)
 │   ├── BreachSessionLogger.reds       (397 lines) - Breach statistics formatting & output
-│   ├── BreachStatisticsCollector.reds (276 lines) - Breach statistics data collection (DTO)
+│   ├── BreachStatisticsCollector.reds (347 lines) - Statistics collection + DisplayedDaemonsStateSystem
+│   ├── DebugUtils.reds                (420 lines) - Diagnostic tools & formatted output
+│   └── (centralized debug/statistics modules)
+│   Note: DisplayedDaemonsStateSystem provides minigame display tracking
+│
+├── Utils/                             ✅ (3 files, ~850 lines) - Business logic utilities
+│   ├── BonusDaemonUtils.reds          (385 lines) - Auto PING/Datamine execution (static class)
+│   ├── BreachLockUtils.reds           (153 lines) - Unified timestamp-based penalty logic
 │   ├── DaemonUtils.reds               (311 lines) - Daemon type identification
-│   └── DebugUtils.reds                (420 lines) - Diagnostic tools & formatted output
+│   Note: Statistics modules located in Logging/
 │
 ├── Integration/                       ✅ (3 files, 638 lines) - External MOD dependencies (100% centralization)
 │   ├── DNRGating.reds                 (105 lines) - Daemon Netrunning Revamp integration
@@ -185,7 +191,7 @@ r6/scripts/BetterNetrunning/
 │   Note: No Core/ subdirectory, flat structure
 │
 ├── Devices/                           ✅ (4 files, 754 lines)
-│   ├── DeviceNetworkAccess.reds       (90 lines)  - Network access relaxation
+│   ├── DeviceNetworkAccess.reds       (90 lines)  - Network access relaxation (⚠️ disabled)
 │   ├── DeviceProgressiveUnlock.reds   (307 lines) - Progressive unlock logic
 │   ├── DeviceQuickhackFilters.reds    (244 lines) - HackingExtensions integration, RemoteBreach replacement
 │   └── DeviceRemoteActions.reds       (113 lines) - Remote action execution
@@ -209,24 +215,26 @@ r6/scripts/BetterNetrunning/
 │   ├── Japanese.reds                  (260 lines) - Japanese localization (142 entries)
 │   └── LocalizationProvider.reds      (45 lines)  - Localization provider
 │
-TOTAL: 54 files, 14,094 lines (11 directories, 19 modules)
+TOTAL: 54 files, ~14,000 lines (12 directories including Logging/)
 
 **File Structure Notes:**
-- **Statistics Split**: BreachStatisticsCollector.reds (DTO data collection) + BreachSessionLogger.reds (formatting/output)
-- **RemoteBreach/Common/**: Utility classes for JackIn control and unlock expiration (2 files, 332 lines)
-- **Core/DeviceDistanceUtils.reds**: Centralized physical distance calculations (DRY principle)
-- **Breach/**: Flat structure (4 files, alphabetical order)
-- **Systems/**: Top-level directory for ProgressionSystem (cross-cutting progression logic)
+- **Logging Module**: Logger, BreachSessionLogger, BreachStatisticsCollector, DebugUtils in `Logging/`
+- **DisplayedDaemonsStateSystem**: System in BreachStatisticsCollector for minigame display tracking
+- **BreachLockUtils**: Utility for unified timestamp-based penalty management
+- **BonusDaemonUtils**: Implemented as static class (global functions → static methods)
+- **DeviceNetworkAccess**: Disabled due to softlock bug (functionality commented out)
+- **Type Renaming**: DeviceType → TargetType (11 occurrences across codebase)
 ```
 
 **Architecture Notes:**
-- ✅ **Module Separation**: Core/, Utils/, Integration/ provide foundation functionality
+- ✅ **Module Separation**: Core/, Logging/, Utils/, Integration/ provide foundation functionality
+- ✅ **Logging Directory**: Centralized debug/statistics modules (5 files, ~1,300 lines)
 - ✅ **RemoteBreach Architecture**: 4-tier hierarchy (Core/Actions/Common/UI)
 - ✅ **Breach Architecture**: Flat structure (4 files)
 - ✅ **RadialUnlock Architecture**: Flat structure (2 files)
 - ✅ **Integration Directory**: All external MOD dependencies centralized (100% isolation)
 - ✅ **Systems Directory**: Top-level Systems/ for cross-cutting concerns (Progression)
-- ✅ **Statistics Split**: BreachStatisticsCollector (DTO) + BreachSessionLogger (formatting)
+- ✅ **Statistics Split**: BreachStatisticsCollector (DTO + DisplayedDaemonsStateSystem) + BreachSessionLogger (formatting)
 - 🟡 **500-line Exceptions**: RemoteBreachHelpers.reds (1092), DeviceUnlockUtils.reds (810), BreachPenaltySystem.reds (736), ProgramFilteringRules.reds (665), RemoteBreachNetworkUnlock.reds (603)
 
 ### Module Dependencies
@@ -234,42 +242,56 @@ TOTAL: 54 files, 14,094 lines (11 directories, 19 modules)
 ```
 betterNetrunning.reds (Entry Point)
     ├── imports Core.*
+    ├── imports Logging.* (separated from Utils)
     ├── imports Utils.*
     ├── imports Integration.*
     └── imports config.*
 
 Breach/ modules
-    ├── depends on Core.* (DeviceTypeUtils, Events, Logger, Constants)
+    ├── depends on Core.* (DeviceTypeUtils, Events, Constants)
+    ├── depends on Logging.Logger
     ├── depends on Integration.* (TracePositionOverhaulGating)
-    └── depends on Utils.* (BreachSessionLogger)
+    └── depends on Utils.* (BreachLockUtils)
 
 RemoteBreach/ modules
-    ├── Core/: depends on Core.*, Utils.*
+    ├── Core/: depends on Core.*, Logging.*, Utils.*
     ├── Actions/: depends on RemoteBreach.Core.*
-    ├── Common/: depends on Core.*, Utils.*
+    ├── Common/: depends on Core.*, Logging.*, Utils.*
     ├── UI/: depends on RemoteBreach.Core.*, config.*
     └── Note: HackingExtensions guards distributed (20+ @if conditions)
 
 Devices/ modules
-    ├── depends on Core.* (DeviceTypeUtils, Logger, Constants)
+    ├── depends on Core.* (DeviceTypeUtils, Constants)
+    ├── depends on Logging.Logger
     ├── depends on Utils.* (DaemonUtils)
     └── depends on Systems.* (ProgressionSystem)
 
 Minigame/ modules
-    ├── depends on Core.* (Logger, Constants)
+    ├── depends on Core.* (Constants)
+    ├── depends on Logging.Logger
     ├── depends on Utils.* (DaemonUtils)
     └── depends on Integration.* (DNRGating)
 
 NPCs/ modules
-    ├── depends on Core.* (DeviceTypeUtils, Events, Logger)
-    ├── depends on Utils.* (BonusDaemonUtils)
+    ├── depends on Core.* (DeviceTypeUtils, Events)
+    ├── depends on Logging.Logger
+    ├── depends on Utils.* (BonusDaemonUtils - static class)
     └── depends on Systems.* (ProgressionSystem)
 
 RadialUnlock/ modules
-    └── depends on Core.*, Utils.*
+    ├── depends on Core.*
+    ├── depends on Logging.*
+    └── depends on Utils.*
 
 Systems/ modules
     └── ProgressionSystem.reds (standalone, cross-cutting concerns)
+
+Logging/ modules
+    ├── Logger.reds: standalone (no dependencies)
+    ├── BreachSessionLogger.reds: depends on Logging.Logger
+    ├── BreachStatisticsCollector.reds: depends on Core.*, Logging.Logger
+    │   └── includes DisplayedDaemonsStateSystem
+    └── DebugUtils.reds: depends on Logging.Logger
 
 CET Lua modules (bin/x64/plugins/cyber_engine_tweaks/mods/BetterNetrunning/)
 init.lua
@@ -948,7 +970,7 @@ public static func LogBreachSummary(stats: ref<BreachSessionStats>) -> Void {
   - Applied bonuses (Auto PING, Auto Datamine)
   - Unlocked subnets (Basic/Camera/Turret/NPC)
   - Device breakdown with emoji icons:
-    🔧 Basic     - General devices
+    🔌 Basic     - General devices
     📷 Cameras   - Surveillance cameras
     🔫 Turrets   - Security turrets
     👤 NPCs      - Network-connected NPCs
@@ -960,27 +982,6 @@ public static func LogBreachSummary(stats: ref<BreachSessionStats>) -> Void {
     ✅ UNLOCKED  - Successfully unlocked
     🔒 Locked    - Locked state
 
-Output Format (with emoji icons):
-  ╔═══════════════════════════════════════════════════════════╗
-  ║             BREACH SESSION SUMMARY                        ║
-  ╠═══════════════════════════════════════════════════════════╣
-  ║ Target:      AccessPoint (Computer)                       ║
-  ║ Success:     3 daemons uploaded                           ║
-  ║ Device Type Breakdown:                                    ║
-  ║ │ 🔧 Basic     : 5                                        ║
-  ║ │ 📷 Cameras   : 3                                        ║
-  ║ │ 🔫 Turrets   : 2                                        ║
-  ║ │ 👤 NPCs      : 4                                        ║
-  ║ Radial Unlock:                                            ║
-  ║ │ 🔌 Devices   : 2                                        ║
-  ║ │ 🚗 Vehicles  : 1                                        ║
-  ║ │ 🚶 NPCs      : 3                                        ║
-  ║ Unlock Flags:                                             ║
-  ║ │ Basic Subnet   : ✅ UNLOCKED                            ║
-  ║ │ Camera Subnet  : ✅ UNLOCKED                            ║
-  ║ │ Turret Subnet  : 🔒 Locked                              ║
-  ║ │ NPC Subnet     : 🔒 Locked                              ║
-  ╚═══════════════════════════════════════════════════════════╝
 ```
 
 ### 10. Localization System (Localization/)
@@ -1317,9 +1318,10 @@ REDscript Game Logic
 | **EnableClassicMode** | `false` | Disable all Better Netrunning features (vanilla behavior) |
 | **AllowBreachingUnconsciousNPCs** | `true` | Enable Unconscious NPC breach |
 | **UnlockIfNoAccessPoint** | `false` | RadialUnlock Mode (false = 50m radius, true = auto-unlock all) |
+| **RadialUnlockCrossNetwork** | `true` | Cross-network unlock (true = all devices, false = standalone only) |
 | **AutoDatamineBySuccessCount** | `true` | Auto-add Datamine POST-breach based on success count |
 | **AutoExecutePingOnSuccess** | `true` | Auto-execute PING on any daemon success |
-| **RemoteBreachEnabledComputer** | `true` | Enable Computer RemoteBreach |
+| **RemoteBreachEnabledComputer** | `false` | Enable Computer RemoteBreach |
 | **RemoteBreachEnabledCamera** | `true` | Enable Camera RemoteBreach |
 | **RemoteBreachEnabledTurret** | `true` | Enable Turret RemoteBreach |
 | **RemoteBreachEnabledDevice** | `true` | Enable Device RemoteBreach (Terminal/Other) |
