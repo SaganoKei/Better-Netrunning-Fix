@@ -46,9 +46,9 @@ public class English extends ModLocalizationPackage {
 
     // ===== REMOTE BREACH =====
     this.Text("Category-RemoteBreach", "Remote Breach");
-    this.Text("DisplayName-BetterNetrunning-RemoteBreachEnabledDevice", "Remote Breach - Device");
+    this.Text("DisplayName-BetterNetrunning-RemoteBreachEnabledDevice", "Remote Breach - Basic Devices");
     this.Text("Description-BetterNetrunning-RemoteBreachEnabledDevice",
-              "Enable/Disable Remote Breach action for Devices (Camera/Turret/Terminal/etc). \nWhen disabled, the Breach Protocol quickhack will not appear on these devices.");
+              "Enable/Disable Remote Breach action for general devices (TV/Radio/Speaker/Door/Light/Vending Machine/Jukebox/Security Locker/etc). \nWhen disabled, the Breach Protocol quickhack will not appear on these devices.");
 
     this.Text("DisplayName-BetterNetrunning-RemoteBreachEnabledComputer", "Remote Breach - Computer");
     this.Text("Description-BetterNetrunning-RemoteBreachEnabledComputer",

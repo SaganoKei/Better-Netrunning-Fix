@@ -164,7 +164,7 @@ public final func TryAddCustomRemoteBreach(outActions: script_ref<array<ref<Devi
           return;
         }
       } else {
-        // Other devices (Terminal, Door, etc.)
+        // Basic devices (Door, Vending Machine, Jukebox, etc. - excludes Computer/Camera/Turret/Vehicle)
         if !BetterNetrunningSettings.RemoteBreachEnabledDevice() {
           return;
         }
@@ -226,7 +226,7 @@ public final func TryAddMissingCustomRemoteBreach(outActions: script_ref<array<r
         return;
       }
     } else {
-      // Other devices (Terminal, Door, etc.)
+      // Basic devices (Door, Vending Machine, Jukebox, etc. - excludes Computer/Camera/Turret/Vehicle)
       if !BetterNetrunningSettings.RemoteBreachEnabledDevice() {
         return;
       }

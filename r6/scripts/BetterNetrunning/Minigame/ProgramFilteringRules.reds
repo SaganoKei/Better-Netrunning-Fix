@@ -273,7 +273,7 @@ public func ShouldRemoveOutOfRangeDevicePrograms(actionID: TweakDBID, gameInstan
   }
 
   // Basic subnet (UnlockQuickhacks) is always available if any basic devices exist
-  // (Doors, Terminals, Computers, etc.)
+  // (Doors, Vending Machines, Jukeboxes, Lights, etc. - excludes Computer/Camera/Turret)
   if actionID == BNConstants.PROGRAM_UNLOCK_QUICKHACKS() && !devicesInRange.hasBasicDevices {
     return true;
   }

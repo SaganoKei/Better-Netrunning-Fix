@@ -46,9 +46,9 @@ public class Japanese extends ModLocalizationPackage {
 
     // ===== REMOTE BREACH =====
     this.Text("Category-RemoteBreach", "リモートブリーチ");
-    this.Text("DisplayName-BetterNetrunning-RemoteBreachEnabledDevice", "リモートブリーチ - デバイス");
+    this.Text("DisplayName-BetterNetrunning-RemoteBreachEnabledDevice", "リモートブリーチ - 一般デバイス");
     this.Text("Description-BetterNetrunning-RemoteBreachEnabledDevice",
-              "デバイス類（カメラ/タレット/端末/etc）に対するリモートブリーチの有効/無効を切り替えます。\n無効にすると、これらのデバイスに『ブリーチプロトコル』クイックハックが表示されなくなります");
+              "一般デバイス（TV/ラジオ/スピーカー/ドア/照明/自販機/ジュークボックス/セキュリティロッカー/etc）に対するリモートブリーチの有効/無効を切り替えます。\n無効にすると、これらのデバイスに『ブリーチプロトコル』クイックハックが表示されなくなります");
 
     this.Text("DisplayName-BetterNetrunning-RemoteBreachEnabledComputer", "リモートブリーチ - コンピュータ");
     this.Text("Description-BetterNetrunning-RemoteBreachEnabledComputer",
